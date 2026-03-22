@@ -18,6 +18,9 @@ class DispatchService:
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
+        if request.reference is None or not request.reference.strip():
+            return await self._lookup_current_assignments(request)
+
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
         dispatch_result = await self.adapter.get_job(
             request.reference,
@@ -32,6 +35,41 @@ class DispatchService:
                 bluefolder_result,
             )
         )
+
+    async def _lookup_current_assignments(self, request: JobLookupRequest) -> CommandResult:
+        """Return a mapped operator's current assignment summary."""
+        if request.operator_bluefolder_user_id is None:
+            return CommandResult(
+                message="Current assignment lookup requires a mapped BlueFolder user. Add an operator mapping first."
+            )
+
+        assignments = await self.adapter.get_assignments_for_user(request.operator_bluefolder_user_id)
+        if not assignments:
+            return CommandResult(
+                message=(
+                    f"No current assignments were found for mapped BlueFolder user "
+                    f"`{request.operator_bluefolder_user_id}`."
+                )
+            )
+
+        lines = [
+            f"Current assignments for BlueFolder user `{request.operator_bluefolder_user_id}`",
+        ]
+        for assignment in assignments[:10]:
+            sr_id = assignment.get("serviceRequestId") or "unknown"
+            subject = assignment.get("subject") or "Unlabeled Service Request"
+            city = assignment.get("city")
+            state = assignment.get("state")
+            location = " ".join(part for part in [city, state] if part).strip()
+            if location:
+                lines.append(f"`SR-{sr_id}` {subject} [{location}]")
+            else:
+                lines.append(f"`SR-{sr_id}` {subject}")
+
+        if len(assignments) > 10:
+            lines.append(f"...and {len(assignments) - 10} more assignment(s)")
+
+        return CommandResult(message="\n".join(lines))
 
     def _format_job_message(
         self,

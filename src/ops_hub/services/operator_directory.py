@@ -20,6 +20,11 @@ class OperatorDirectoryService:
     def resolve_identity(self, *, user_id: int, role_ids: set[int]) -> OperatorIdentity:
         """Return the current Ops Hub identity for a Discord user."""
         is_admin = user_id in self.settings.admin_user_ids or bool(role_ids & set(self.settings.admin_role_ids))
+        is_dispatcher = (
+            is_admin
+            or user_id in self.settings.dispatcher_user_ids
+            or bool(role_ids & set(self.settings.dispatcher_role_ids))
+        )
         is_operator = (
             is_admin
             or user_id in self.settings.operator_user_ids
@@ -29,6 +34,7 @@ class OperatorDirectoryService:
             discord_user_id=user_id,
             is_admin=is_admin,
             is_operator=is_operator,
+            is_dispatcher=is_dispatcher,
             bluefolder_user_id=self.mappings().get(user_id),
         )
 
@@ -51,3 +57,17 @@ class OperatorDirectoryService:
         """Reload file-backed mappings and return the merged result."""
         self.store.load()
         return self.mappings()
+
+    def set_mapping(self, *, discord_user_id: int, bluefolder_user_id: int) -> None:
+        """Insert or update a mapping in the file-backed store."""
+        mappings = self.mappings()
+        mappings[discord_user_id] = bluefolder_user_id
+        self.store.export(mappings)
+
+    def remove_mapping(self, *, discord_user_id: int) -> bool:
+        """Remove a mapping from the file-backed store if present."""
+        mappings = self.mappings()
+        removed = discord_user_id in mappings
+        mappings.pop(discord_user_id, None)
+        self.store.export(mappings)
+        return removed

@@ -49,6 +49,9 @@ class DispatchAdapter:
         module_name = "optimized_routing.routing"
         try:
             with _temporary_sys_path(resolved_path):
+                importlib.invalidate_caches()
+                sys.modules.pop("optimized_routing", None)
+                sys.modules.pop(module_name, None)
                 module = importlib.import_module(module_name)
                 preview_builder = getattr(module, "bluefolder_to_routestops")
         except (ImportError, AttributeError, ModuleNotFoundError) as exc:
@@ -120,6 +123,8 @@ class DispatchAdapter:
         if operator_bluefolder_user_id is not None:
             try:
                 with _temporary_sys_path(resolved_path):
+                    importlib.invalidate_caches()
+                    sys.modules.pop("optimized_routing.bluefolder_integration", None)
                     integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
                     integration_class = getattr(integration_module, "BlueFolderIntegration")
                     integration = integration_class()
@@ -151,6 +156,29 @@ class DispatchAdapter:
             technician_assignment_status=technician_assignment_status,
             technician_origin_address=technician_origin_address,
         )
+
+    async def get_assignments_for_user(self, operator_bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
+        """Return today's assignments for a mapped BlueFolder user via the existing routing wrapper."""
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        if resolved_path is None or not resolved_path.exists():
+            return []
+
+        try:
+            with _temporary_sys_path(resolved_path):
+                importlib.invalidate_caches()
+                sys.modules.pop("optimized_routing.bluefolder_integration", None)
+                integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                integration_class = getattr(integration_module, "BlueFolderIntegration")
+                integration = integration_class()
+                assignments = integration.get_user_assignments_today(operator_bluefolder_user_id) or []
+        except Exception:
+            logger.exception(
+                "Failed to load assignments for mapped BlueFolder user %s",
+                operator_bluefolder_user_id,
+            )
+            return []
+
+        return assignments
 
 
 class _temporary_sys_path:

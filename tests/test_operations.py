@@ -37,6 +37,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "dispatcher_user_ids": [],
+        "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
         "operator_mapping_file": None,
         "log_level": "INFO",
@@ -96,3 +98,13 @@ def test_resolve_identity_includes_bluefolder_mapping() -> None:
     assert identity.is_operator is True
     assert identity.is_admin is False
     assert identity.bluefolder_user_id == 13051
+
+
+def test_resolve_identity_includes_dispatcher_access() -> None:
+    cog = _build_cog(dispatcher_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert identity.is_dispatcher is True
+    assert identity.is_operator is False

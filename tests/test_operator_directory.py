@@ -17,6 +17,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "dispatcher_user_ids": [],
+        "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
         "operator_mapping_file": None,
         "log_level": "INFO",
@@ -59,3 +61,14 @@ def test_operator_directory_exports_mappings(tmp_path: Path) -> None:
 
     assert exported == file_path
     assert file_path.read_text(encoding="utf-8").strip() == '{\n  "42": 13051\n}'
+
+
+def test_operator_directory_set_mapping_updates_runtime_without_file() -> None:
+    service = OperatorDirectoryService(
+        settings=_settings(),
+        store=OperatorMappingStore(file_path=None),
+    )
+
+    service.set_mapping(discord_user_id=42, bluefolder_user_id=13051)
+
+    assert service.mappings() == {42: 13051}

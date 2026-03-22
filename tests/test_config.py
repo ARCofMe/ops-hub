@@ -11,6 +11,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "dispatcher_user_ids": [],
+        "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
         "operator_mapping_file": None,
         "log_level": "INFO",
@@ -89,6 +91,22 @@ def test_validation_errors_reject_non_positive_operator_role_ids() -> None:
     errors = settings.validation_errors()
 
     assert "OPS_HUB_OPERATOR_ROLE_IDS must contain only positive Discord role IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_dispatcher_user_ids() -> None:
+    settings = _settings(dispatcher_user_ids=[0])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_DISPATCHER_USER_IDS must contain only positive Discord user IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_dispatcher_role_ids() -> None:
+    settings = _settings(dispatcher_role_ids=[-7])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_DISPATCHER_ROLE_IDS must contain only positive Discord role IDs." in errors
 
 
 def test_validation_errors_reject_non_positive_operator_map_keys() -> None:

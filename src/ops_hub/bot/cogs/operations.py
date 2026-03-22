@@ -17,17 +17,19 @@ class OperationsCog(commands.Cog):
         self.bot = bot
 
     async def cog_app_command_check(self, interaction: discord.Interaction) -> bool:
-        """Restrict operations commands to configured operators and admins."""
+        """Restrict the operations surface to recognized operators, dispatchers, or admins."""
         identity = self._resolve_identity(interaction)
-        if identity.is_operator:
+        if identity.is_operator or identity.is_dispatcher:
             return True
         raise app_commands.CheckFailure("You do not have permission to use this command.")
 
     @app_commands.command(name="job", description="Look up a job or service request in Ops Hub.")
-    @app_commands.describe(reference="Job reference, SR id, or other lookup token.")
-    async def job(self, interaction: discord.Interaction, reference: str) -> None:
+    @app_commands.describe(reference="Optional job reference or SR id. Leave blank to see current assignments.")
+    async def job(self, interaction: discord.Interaction, reference: str | None = None) -> None:
         """Job lookup command."""
         identity = self._resolve_identity(interaction)
+        if not (identity.is_operator or identity.is_dispatcher):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
         request = JobLookupRequest(
             reference=reference,
             requested_by_user_id=interaction.user.id,
@@ -42,6 +44,8 @@ class OperationsCog(commands.Cog):
     async def part(self, interaction: discord.Interaction, reference: str) -> None:
         """Parts workflow command."""
         identity = self._resolve_identity(interaction)
+        if not identity.is_operator:
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
         request = PartLookupRequest(
             reference=reference,
             requested_by_user_id=interaction.user.id,

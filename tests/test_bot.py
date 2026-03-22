@@ -59,6 +59,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "dispatcher_user_ids": [],
+        "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
         "operator_mapping_file": None,
         "log_level": "INFO",

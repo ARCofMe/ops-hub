@@ -27,6 +27,7 @@ class OperatorMappingStore:
 
     def export(self, records: dict[int, int]) -> Path | None:
         """Persist mappings to the configured file path."""
+        self.records = dict(records)
         if self.file_path is None:
             return None
 
@@ -35,7 +36,6 @@ class OperatorMappingStore:
             json.dumps({str(k): v for k, v in sorted(records.items())}, indent=2),
             encoding="utf-8",
         )
-        self.records = dict(records)
         return self.file_path
 
     def current_records(self) -> list[OperatorMappingRecord]:

@@ -59,6 +59,32 @@ class AdminCog(commands.Cog):
         """Reload file-backed operator mappings."""
         await interaction.response.send_message(self._build_reload_operator_mappings(), ephemeral=True)
 
+    @app_commands.command(name="set_operator_mapping", description="Set a Discord user to BlueFolder user mapping.")
+    async def set_operator_mapping(
+        self,
+        interaction: discord.Interaction,
+        discord_user_id: int,
+        bluefolder_user_id: int,
+    ) -> None:
+        """Create or update an operator mapping."""
+        await interaction.response.send_message(
+            self._build_set_operator_mapping(discord_user_id, bluefolder_user_id),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="remove_operator_mapping", description="Remove a Discord user to BlueFolder user mapping.")
+    async def remove_operator_mapping(self, interaction: discord.Interaction, discord_user_id: int) -> None:
+        """Remove an operator mapping."""
+        await interaction.response.send_message(
+            self._build_remove_operator_mapping(discord_user_id),
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="command_access", description="Show the current command access model.")
+    async def command_access(self, interaction: discord.Interaction) -> None:
+        """Report command scope definitions for admins/operators/dispatchers."""
+        await interaction.response.send_message(self._build_command_access(), ephemeral=True)
+
     def _build_ops_status(self) -> str:
         """Render a concise runtime status summary."""
         settings = self.bot.settings
@@ -163,6 +189,33 @@ class AdminCog(commands.Cog):
         """Reload file-backed mappings and report the result."""
         mappings = self.bot.container.operator_directory_service.reload_mappings()
         return f"Reloaded `{len(mappings)}` operator mappings."
+
+    def _build_set_operator_mapping(self, discord_user_id: int, bluefolder_user_id: int) -> str:
+        """Create or update an operator mapping."""
+        self.bot.container.operator_directory_service.set_mapping(
+            discord_user_id=discord_user_id,
+            bluefolder_user_id=bluefolder_user_id,
+        )
+        return f"Mapped Discord user `{discord_user_id}` to BlueFolder user `{bluefolder_user_id}`."
+
+    def _build_remove_operator_mapping(self, discord_user_id: int) -> str:
+        """Remove an operator mapping."""
+        removed = self.bot.container.operator_directory_service.remove_mapping(discord_user_id=discord_user_id)
+        if removed:
+            return f"Removed operator mapping for Discord user `{discord_user_id}`."
+        return f"No operator mapping existed for Discord user `{discord_user_id}`."
+
+    def _build_command_access(self) -> str:
+        """Render the current command access model."""
+        return "\n".join(
+            [
+                "Command Access",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/operator_mappings`, `/export_operator_mappings`, `/reload_operator_mappings`, `/set_operator_mapping`, `/remove_operator_mapping`, `/command_access`: admin only",
+                "`/job`: operators, dispatchers, admins",
+                "`/part`: operators and admins",
+                "`/ping`: open to anyone who can invoke the bot",
+            ]
+        )
 
     def _path_line(self, label: str, path_value: str | None) -> str:
         """Render a filesystem path status line."""

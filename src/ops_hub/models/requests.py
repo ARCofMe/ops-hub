@@ -10,7 +10,7 @@ from pathlib import Path
 class JobLookupRequest:
     """Input for job lookup operations."""
 
-    reference: str
+    reference: str | None
     requested_by_user_id: int
     operator_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
@@ -60,6 +60,7 @@ class OperatorIdentity:
     discord_user_id: int
     is_admin: bool
     is_operator: bool
+    is_dispatcher: bool
     bluefolder_user_id: int | None = None
 
 
