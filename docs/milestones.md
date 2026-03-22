@@ -29,9 +29,10 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
 - [x] Parts wrapper boundary exists
 - [x] Admin/debug commands exist
 - [x] Operator/admin/dispatcher access tiers exist
+- [x] Dedicated Parts access tier exists
 - [x] Operator mapping persistence exists
+- [x] Dedicated dispatcher command surface exists
 - [ ] Photo ingest direction is redefined
-- [ ] Dispatcher-only workflow surface is defined
 - [ ] Primary workflows are considered stable
 
 ## Next Patch Tags (`V0.0.x`)
@@ -40,10 +41,14 @@ Use patch tags while the app is still moving quickly but each increment is worth
 
 ### Checklist
 
-- [ ] A small set of related commits is complete and tested
-- [ ] Docs reflect the new behavior
-- [ ] No known broken command path remains in the changed area
-- [ ] The increment would be useful to roll back to or refer to later
+- [x] A small set of related commits is complete and tested
+- [x] Docs reflect the new behavior
+- [x] No known broken command path remains in the changed area
+- [x] The increment would be useful to roll back to or refer to later
+
+### Current Recommendation
+
+- `V0.0.2` is now a reasonable tag point.
 
 ## Milestone: `V0.1.0`
 
@@ -53,6 +58,7 @@ Treat this as the first real Ops Hub beta.
 
 - [ ] Core command surface is intentionally defined
 - [ ] `/job` behavior is stable enough for regular users
+- [ ] `/assignments` and dispatcher-focused assignment flows are stable enough for regular users
 - [ ] `/part` behavior is stable enough for regular users
 - [ ] Access tiers are settled enough that frequent changes are no longer expected
 - [ ] Operator mapping workflow is usable without hand-editing env values
@@ -117,8 +123,8 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 
 ## Recommended Near-Term Sequence
 
-1. Define dispatcher-specific workflows beyond generic `/job`
-2. Expand mapped assignment workflows
+1. Expand mapped assignment workflows
+2. Start real parts workflow actions behind the Parts tier
 3. Revisit photo ingest after the revised concept is ready
 4. Introduce real notification delivery targets
 5. Decide what should qualify as `V0.1.0`

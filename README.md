@@ -84,6 +84,9 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 
 - `/ping`
 - `/job`
+- `/assignments`
+- `/tech_assignments`
+- `/tech_job`
 - `/part`
 - `/ops_status`
 - `/config_check`
@@ -99,6 +102,12 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 `/job` now supports two modes:
 - pass a reference like `SR-100` for a direct lookup
 - omit the reference to show the mapped technician's current assignments
+
+Dispatcher-focused commands now exist explicitly instead of relying only on shared commands:
+
+- `/assignments`
+- `/tech_assignments`
+- `/tech_job`
 
 ## Role Terms
 
@@ -116,6 +125,7 @@ So, in business-facing language, the intended role vocabulary is:
 Today, the code/config distinguishes:
 
 - `Admin`
+- `Parts`
 - `Dispatcher`
 - `Operator` (technician-facing)
 
@@ -136,7 +146,11 @@ That naming can be cleaned up later in code, but the README should be read using
   - `/command_access`
 - Technician, Dispatch, and Admin:
   - `/job`
-- Technician and Admin:
+  - `/assignments`
+- Dispatch and Admin:
+  - `/tech_assignments`
+  - `/tech_job`
+- Parts and Admin:
   - `/part`
 - Open bot health:
   - `/ping`
@@ -144,16 +158,16 @@ That naming can be cleaned up later in code, but the README should be read using
 Current hierarchy:
 
 1. `Admin`
-2. `Dispatch` and `Technician`
+2. `Dispatch`, `Parts`, and `Technician`
 3. open utility health command access
 
 Current implementation note:
 
 - `OPS_HUB_OPERATOR_*` config values currently represent technician-facing access
+- `OPS_HUB_PARTS_*` config values represent parts-facing access
 - `OPS_HUB_DISPATCHER_*` config values represent dispatch-facing access
-- parts does not yet have a separate dedicated role tier in code, but that can be added once parts workflows stop being wrapper-only
 
-Ops Hub currently uses config-backed user/role lists for admin, technician-facing operator, and dispatcher scope decisions.
+Ops Hub currently uses config-backed user/role lists for admin, technician-facing operator, parts, and dispatcher scope decisions.
 
 ## Operator Mappings
 
@@ -204,12 +218,13 @@ This keeps the foundation clean while allowing gradual adoption.
 
 - BlueFolder has a real read-only lookup path
 - dispatch can build a stop preview and mapped technician context through the existing routing project
+- dispatch now has dedicated dispatcher-facing commands instead of relying only on shared operations commands
 - parts is still a wrapper/status surface with dry-run notification tracking
 - photo ingest remains intentionally paused while the concept is being revised
-- technician/admin/dispatch access is now explicit instead of implicit
+- technician/admin/dispatch/parts access is now explicit instead of implicit
 
 ## Next Practical Moves
 
-1. decide whether dispatcher-only commands should get their own dedicated cog
-2. expand mapped assignment workflows beyond simple `/job` summaries
+1. expand mapped assignment workflows beyond simple summaries
+2. start real parts workflow actions behind the new Parts access tier
 3. revisit photo ingest once the new direction is settled
