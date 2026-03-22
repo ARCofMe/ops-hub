@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
-from ops_hub.models.requests import BlueFolderJobSummary, CommandResult
+from ops_hub.models.requests import BlueFolderJobSummary, CommandResult, PartsCommentRecord, PartsLifecycleSnapshot
 
 
 @dataclass(slots=True)
@@ -39,14 +39,27 @@ class BlueFolderService:
             f"Customer: {summary.customer_name or 'n/a'}",
             f"Address: {self._format_address(summary) or 'n/a'}",
         ]
-        if comments:
-            latest = comments[0]
-            lines.append(
-                f"Latest parts note: `{latest.date_created or 'unknown'}` by `{latest.author or 'Unknown'}`"
-            )
-            lines.append(f"Latest text: {latest.text[:220]}")
-        else:
+        if not comments:
             lines.append("No recent parts-related comments found.")
+            return CommandResult(message="\n".join(lines))
+
+        snapshot = self._build_parts_lifecycle_snapshot(comments)
+        lines.append(f"Parts stage: `{snapshot.stage_label}`")
+        if snapshot.latest_status_at or snapshot.latest_status_author:
+            lines.append(
+                "Latest status note: "
+                f"`{snapshot.latest_status_at or 'unknown'}` by `{snapshot.latest_status_author or 'Unknown'}`"
+            )
+        if snapshot.latest_status_text:
+            lines.append(f"Status detail: {snapshot.latest_status_text[:220]}")
+        if snapshot.latest_issue_type:
+            lines.append(
+                "Latest issue: "
+                f"`{snapshot.latest_issue_type.replace('_', '-')}` at "
+                f"`{snapshot.latest_issue_at or 'unknown'}` by `{snapshot.latest_issue_author or 'Unknown'}`"
+            )
+        if snapshot.latest_issue_text:
+            lines.append(f"Issue detail: {snapshot.latest_issue_text[:220]}")
         return CommandResult(message="\n".join(lines))
 
     async def get_parts_notes(self, sr_id: int) -> CommandResult:
@@ -136,4 +149,68 @@ class BlueFolderService:
                 ).strip(),
             ]
             if part
+        )
+
+    def _build_parts_lifecycle_snapshot(self, comments: list[PartsCommentRecord]) -> PartsLifecycleSnapshot:
+        """Derive a normalized parts stage and relevant details from recent comments."""
+        latest_issue: tuple[str, PartsCommentRecord] | None = None
+        latest_status: tuple[str, str, PartsCommentRecord] | None = None
+        status_markers = [
+            ("part_ready", "Ready for Scheduling", ("part ready for scheduling", "ready for scheduling")),
+            ("part_received", "Received", ("part received", "received")),
+            ("part_tracking", "Tracking Posted", ("part tracking update", "tracking update", "tracking #", "tracking number")),
+            ("part_eta", "ETA Posted", ("part eta update", "eta update", "eta ")),
+            ("part_ordered", "Ordered", ("part ordered", "ordered")),
+        ]
+
+        for comment in comments:
+            text = comment.text.casefold()
+            if latest_issue is None:
+                if "missing part reported" in text:
+                    latest_issue = ("missing_part", comment)
+                elif "damaged part reported" in text:
+                    latest_issue = ("damaged_part", comment)
+            if latest_status is None:
+                for stage, label, markers in status_markers:
+                    if any(marker in text for marker in markers):
+                        latest_status = (stage, label, comment)
+                        break
+            if latest_issue and latest_status:
+                break
+
+        if latest_status is not None:
+            stage, label, status_comment = latest_status
+            return PartsLifecycleSnapshot(
+                stage=stage,
+                stage_label=label,
+                latest_status_text=status_comment.text,
+                latest_status_author=status_comment.author,
+                latest_status_at=status_comment.date_created,
+                latest_issue_type=latest_issue[0] if latest_issue else None,
+                latest_issue_text=latest_issue[1].text if latest_issue else None,
+                latest_issue_author=latest_issue[1].author if latest_issue else None,
+                latest_issue_at=latest_issue[1].date_created if latest_issue else None,
+            )
+
+        if latest_issue is not None:
+            issue_type, issue_comment = latest_issue
+            return PartsLifecycleSnapshot(
+                stage="issue_reported",
+                stage_label="Issue Reported",
+                latest_status_text=issue_comment.text,
+                latest_status_author=issue_comment.author,
+                latest_status_at=issue_comment.date_created,
+                latest_issue_type=issue_type,
+                latest_issue_text=issue_comment.text,
+                latest_issue_author=issue_comment.author,
+                latest_issue_at=issue_comment.date_created,
+            )
+
+        latest_comment = comments[0]
+        return PartsLifecycleSnapshot(
+            stage="parts_activity",
+            stage_label="Parts Activity Logged",
+            latest_status_text=latest_comment.text,
+            latest_status_author=latest_comment.author,
+            latest_status_at=latest_comment.date_created,
         )

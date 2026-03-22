@@ -167,6 +167,21 @@ class PartsCommentRecord:
 
 
 @dataclass(slots=True)
+class PartsLifecycleSnapshot:
+    """Normalized summary of the current parts lifecycle state for an SR."""
+
+    stage: str
+    stage_label: str
+    latest_status_text: str | None = None
+    latest_status_author: str | None = None
+    latest_status_at: str | None = None
+    latest_issue_type: str | None = None
+    latest_issue_text: str | None = None
+    latest_issue_author: str | None = None
+    latest_issue_at: str | None = None
+
+
+@dataclass(slots=True)
 class PhotoIngestMessage:
     """Minimal Discord message data passed into the photo-ingest service."""
 

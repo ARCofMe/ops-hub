@@ -442,8 +442,58 @@ def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) ->
     assert "SR `100`" in result.message
     assert "Subject: SR description 100" in result.message
     assert "Customer: Jane Customer" in result.message
-    assert "Latest parts note:" in result.message
-    assert "Tracking update: UPS 123" in result.message
+    assert "Parts stage: `Tracking Posted`" in result.message
+    assert "Latest status note:" in result.message
+    assert "Status detail: Tracking update: UPS 123" in result.message
+
+
+def test_bluefolder_service_returns_issue_stage_when_only_issue_comments_exist(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerName").text = "Jane Customer"
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    return [
+                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "Missing part reported at 9:00 AM. Details: belt.", "isVisibleToCustomer": False},
+                    ]
+
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(service.get_parts_brief(100))
+
+    assert "Parts stage: `Issue Reported`" in result.message
+    assert "Latest issue: `missing-part`" in result.message
+    assert "Issue detail: Missing part reported" in result.message
 
 
 def test_bluefolder_service_lists_parts_notes_from_bluefolder_comments(tmp_path: Path) -> None:
