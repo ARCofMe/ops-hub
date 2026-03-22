@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     guild_id: int | None = None
     log_level: str = "INFO"
     environment: str = "dev"
+    photo_ingest_channel_id: int | None = None
 
     bluefolder_api_path: str | None = None
     bluebot_discord_extension_path: str | None = None

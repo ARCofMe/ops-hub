@@ -43,10 +43,9 @@ def build_container(settings: Settings) -> ServiceContainer:
         notification_service=notification_service,
         bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
         parts_cannon_service=PartsCannonService(adapter=parts_adapter, notifications=notification_service),
-        photo_ingest_service=PhotoIngestService(adapter=photo_adapter),
+        photo_ingest_service=PhotoIngestService(settings=settings, adapter=photo_adapter),
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
         ),
     )
-

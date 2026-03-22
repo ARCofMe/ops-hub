@@ -10,6 +10,7 @@ from discord.ext import commands
 from ops_hub.bot.extensions import EXTENSIONS
 from ops_hub.core.config import Settings
 from ops_hub.core.container import ServiceContainer
+from ops_hub.models.requests import PhotoIngestMessage
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,32 @@ class OpsHubBot(commands.Bot):
         if self.user is None:
             return
         logger.info("Ops Hub bot ready", extra={"bot_user": str(self.user), "bot_id": self.user.id})
+
+    async def on_message(self, message: discord.Message) -> None:
+        """Route message events into placeholder listeners without affecting existing projects."""
+        if message.author.bot:
+            return
+
+        photo_result = await self.container.photo_ingest_service.handle_message(
+            PhotoIngestMessage(
+                channel_id=message.channel.id,
+                message_id=message.id,
+                author_id=message.author.id,
+                content=message.content or "",
+                attachment_count=len(message.attachments),
+            )
+        )
+        if photo_result.handled:
+            logger.info(
+                "Photo ingest listener handled message",
+                extra={
+                    "channel_id": message.channel.id,
+                    "message_id": message.id,
+                    "status": photo_result.status,
+                },
+            )
+
+        await self.process_commands(message)
 
     async def on_app_command_error(
         self,

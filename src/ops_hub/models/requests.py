@@ -38,3 +38,23 @@ class BlueFolderJobSummary:
     integration_status: str
     message: str
     source_path: Path | None = None
+
+
+@dataclass(slots=True)
+class PhotoIngestMessage:
+    """Minimal Discord message data passed into the photo-ingest service."""
+
+    channel_id: int
+    message_id: int
+    author_id: int
+    content: str
+    attachment_count: int
+
+
+@dataclass(slots=True)
+class PhotoIngestResult:
+    """Placeholder result for photo-ingest message handling."""
+
+    handled: bool
+    status: str
+    message: str
