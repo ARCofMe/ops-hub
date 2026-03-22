@@ -11,6 +11,8 @@ This project is the start of a migration path, not a rewrite. It creates a clean
 - Parts Cannon is the internal codename for the parts-related subsystem and the broader migration effort.
 - Ops Hub is the user-facing application name and the long-term platform direction.
 
+The longer-term milestone checklist lives in `docs/milestones.md`.
+
 ## Goals
 
 - One Discord bot identity.
