@@ -128,7 +128,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 
 ## Recommended Near-Term Sequence
 
-1. Turn richer assignment context into more dispatch actions
+1. Build on the dispatch board with more dispatch actions
 2. Turn the current handoff/receipt loop into a real external consuming downstream process
 3. Strengthen assignment/job workflows where live use exposes gaps
 4. Revisit photo ingest after the revised concept is ready

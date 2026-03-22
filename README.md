@@ -88,6 +88,7 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - `/assignments`
 - `/tech_assignments`
 - `/tech_job`
+- `/dispatch_board`
 - `/part`
 - `/part_request`
 - `/my_part_requests`
@@ -124,6 +125,7 @@ Dispatcher-focused commands now exist explicitly instead of relying only on shar
 - `/assignments`
 - `/tech_assignments`
 - `/tech_job`
+- `/dispatch_board`
 
 ## Role Terms
 
@@ -169,6 +171,7 @@ That naming can be cleaned up later in code, but the README should be read using
 - Dispatch and Admin:
   - `/tech_assignments`
   - `/tech_job`
+  - `/dispatch_board`
 - Parts and Admin:
   - `/part`
   - `/part_requests`
@@ -248,6 +251,7 @@ This keeps the foundation clean while allowing gradual adoption.
 - BlueFolder has a real read-only lookup path
 - dispatch can build a stop preview and mapped technician context through the existing routing project
 - dispatch now has dedicated dispatcher-facing commands instead of relying only on shared operations commands
+- dispatch now includes a team board summary across all mapped technicians
 - parts now has a lightweight tracked request lifecycle with create, list, and update flows
 - technicians can submit and review their own parts requests while Parts manages the shared queue
 - parts queue ownership is now explicit through claim/unclaim and detailed request inspection
@@ -262,6 +266,6 @@ This keeps the foundation clean while allowing gradual adoption.
 
 ## Next Practical Moves
 
-1. keep strengthening mapped assignment workflows around real dispatch use
+1. build on the dispatch board with more action-oriented dispatcher workflows
 2. build on the current two-way handoff with a real consuming parts workflow or project wrapper
 3. revisit photo ingest once the revised concept is settled
