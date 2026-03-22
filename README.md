@@ -95,6 +95,7 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - `/part_update`
 - `/part_claim`
 - `/part_unclaim`
+- `/part_sync`
 - `/ops_status`
 - `/config_check`
 - `/service_status`
@@ -167,6 +168,7 @@ That naming can be cleaned up later in code, but the README should be read using
   - `/part_update`
   - `/part_claim`
   - `/part_unclaim`
+  - `/part_sync`
 - Open bot health:
   - `/ping`
 
@@ -238,6 +240,7 @@ This keeps the foundation clean while allowing gradual adoption.
 - parts now has a lightweight tracked request lifecycle with create, list, and update flows
 - technicians can submit and review their own parts requests while Parts manages the shared queue
 - parts queue ownership is now explicit through claim/unclaim and detailed request inspection
+- parts can now export the tracked queue to a downstream handoff file under the configured Parts project path
 - admin service status now reports live parts queue counts in addition to adapter status
 - photo ingest remains intentionally paused while the concept is being revised
 - technician/admin/dispatch/parts access is now explicit instead of implicit
@@ -245,5 +248,5 @@ This keeps the foundation clean while allowing gradual adoption.
 ## Next Practical Moves
 
 1. expand mapped assignment workflows beyond simple summaries
-2. connect the tracked parts request lifecycle and queue ownership model to a real downstream workflow or project wrapper
+2. build on the downstream queue handoff with a real consuming parts workflow or project wrapper
 3. revisit photo ingest once the new direction is settled

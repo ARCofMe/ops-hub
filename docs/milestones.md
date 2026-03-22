@@ -48,7 +48,7 @@ Use patch tags while the app is still moving quickly but each increment is worth
 
 ### Current Recommendation
 
-- `V0.0.4` is a reasonable next tag point once the queue-ownership docs are current.
+- `V0.0.5` is a reasonable next tag point once the downstream queue handoff docs are current.
 
 ## Milestone: `V0.1.0`
 
@@ -70,7 +70,8 @@ Treat this as the first real Ops Hub beta.
 - [ ] BlueFolder read-only integration is dependable
 - [ ] Dispatch integration does more than stop preview and assignment presence
 - [x] Parts wrapper has at least one real workflow path
-- [ ] Parts request lifecycle is connected to a real downstream process
+- [x] Parts request lifecycle is connected to a basic downstream handoff file
+- [ ] Parts request lifecycle is connected to a real consuming downstream process
 - [ ] Notification routing model is defined beyond dry-run logging
 
 ### Operational Shape
@@ -126,7 +127,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Expand mapped assignment workflows
-2. Connect the tracked parts request lifecycle and queue ownership flow to a real downstream process
+2. Turn the queue handoff file into a real consuming downstream process
 3. Revisit photo ingest after the revised concept is ready
 4. Introduce real notification delivery targets
 5. Decide what should qualify as `V0.1.0`
