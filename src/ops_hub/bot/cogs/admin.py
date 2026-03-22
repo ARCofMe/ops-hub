@@ -17,6 +17,12 @@ class AdminCog(commands.Cog):
     def __init__(self, bot: OpsHubBot) -> None:
         self.bot = bot
 
+    async def cog_app_command_check(self, interaction: discord.Interaction) -> bool:
+        """Restrict admin/debug commands to configured Ops Hub admins."""
+        if self._is_admin(interaction):
+            return True
+        raise app_commands.CheckFailure("You do not have permission to use this command.")
+
     @app_commands.command(name="ops_status", description="Show current Ops Hub runtime status.")
     async def ops_status(self, interaction: discord.Interaction) -> None:
         """Report high-level runtime and wiring status."""
@@ -126,6 +132,21 @@ class AdminCog(commands.Cog):
         path = Path(path_value).expanduser()
         status = "exists" if path.exists() else "missing"
         return f"{label}: `{path}` ({status})"
+
+    def _is_admin(self, interaction: discord.Interaction) -> bool:
+        """Return whether the invoking user matches configured admin users or roles."""
+        settings = self.bot.settings
+        user = getattr(interaction, "user", None)
+        user_id = getattr(user, "id", None)
+        if user_id in settings.admin_user_ids:
+            return True
+
+        user_roles = getattr(user, "roles", None)
+        if not user_roles:
+            return False
+
+        role_ids = {getattr(role, "id", None) for role in user_roles}
+        return any(role_id in settings.admin_role_ids for role_id in role_ids)
 
 
 async def setup(bot: OpsHubBot) -> None:

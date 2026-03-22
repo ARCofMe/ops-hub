@@ -7,6 +7,8 @@ def _settings(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "discord_token": "token",
         "guild_id": None,
+        "admin_user_ids": [],
+        "admin_role_ids": [],
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -51,6 +53,22 @@ def test_validate_or_raise_passes_for_valid_settings() -> None:
     settings = _settings()
 
     settings.validate_or_raise()
+
+
+def test_validation_errors_reject_non_positive_admin_user_ids() -> None:
+    settings = _settings(admin_user_ids=[123, 0])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_ADMIN_USER_IDS must contain only positive Discord user IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_admin_role_ids() -> None:
+    settings = _settings(admin_role_ids=[-1])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs." in errors
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     discord_token: str = ""
     guild_id: int | None = None
+    admin_user_ids: list[int] = []
+    admin_role_ids: list[int] = []
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
@@ -42,6 +44,12 @@ class Settings(BaseSettings):
 
         if not self.log_level.strip():
             errors.append("OPS_HUB_LOG_LEVEL cannot be empty.")
+
+        if any(user_id <= 0 for user_id in self.admin_user_ids):
+            errors.append("OPS_HUB_ADMIN_USER_IDS must contain only positive Discord user IDs.")
+
+        if any(role_id <= 0 for role_id in self.admin_role_ids):
+            errors.append("OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs.")
 
         bluefolder_key = (self.bluefolder_api_key or "").strip()
         bluefolder_account = (self.bluefolder_account_name or "").strip()

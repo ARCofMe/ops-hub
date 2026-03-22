@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 
 from ops_hub.bot.client import OpsHubBot
 from ops_hub.bot.cogs.admin import AdminCog
@@ -14,6 +15,8 @@ def _settings(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "discord_token": "token",
         "guild_id": 123456,
+        "admin_user_ids": [],
+        "admin_role_ids": [],
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": 222,
@@ -34,6 +37,22 @@ def _build_cog(**overrides: object) -> AdminCog:
     settings = _settings(**overrides)
     bot = OpsHubBot(settings=settings, container=build_container(settings))
     return AdminCog(bot)
+
+
+@dataclass(slots=True)
+class _DummyRole:
+    id: int
+
+
+@dataclass(slots=True)
+class _DummyUser:
+    id: int
+    roles: list[_DummyRole]
+
+
+@dataclass(slots=True)
+class _DummyInteraction:
+    user: _DummyUser
 
 
 def test_build_ops_status_reports_basic_runtime_state() -> None:
@@ -91,3 +110,27 @@ def test_build_recent_notices_renders_latest_entries() -> None:
     assert "Recent Notices" in result
     assert "`parts.lookup` via `dry_run`" in result
     assert "Parts lookup requested for SR-100." in result
+
+
+def test_is_admin_allows_configured_user_id() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+
+    result = cog._is_admin(_DummyInteraction(user=_DummyUser(id=42, roles=[])))
+
+    assert result is True
+
+
+def test_is_admin_allows_configured_role_id() -> None:
+    cog = _build_cog(admin_role_ids=[7])
+
+    result = cog._is_admin(_DummyInteraction(user=_DummyUser(id=42, roles=[_DummyRole(id=7)])))
+
+    assert result is True
+
+
+def test_is_admin_rejects_unconfigured_user() -> None:
+    cog = _build_cog(admin_user_ids=[100], admin_role_ids=[200])
+
+    result = cog._is_admin(_DummyInteraction(user=_DummyUser(id=42, roles=[_DummyRole(id=7)])))
+
+    assert result is False
