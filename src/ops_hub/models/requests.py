@@ -198,6 +198,27 @@ class PartsExportSummary:
 
 
 @dataclass(slots=True)
+class PartsReceiptRecord:
+    """A downstream receipt update for a tracked parts request."""
+
+    request_id: int
+    status: str
+    note: str | None = None
+
+
+@dataclass(slots=True)
+class PartsImportSummary:
+    """Summary of importing downstream receipt updates into Ops Hub."""
+
+    available: bool
+    integration_status: str
+    message: str
+    imported_count: int
+    receipt_path: Path | None = None
+    receipts: list[PartsReceiptRecord] | None = None
+
+
+@dataclass(slots=True)
 class PartRequestRecord:
     """Persistent parts request record."""
 
@@ -211,3 +232,5 @@ class PartRequestRecord:
     created_at: str
     updated_at: str
     last_synced_at: str | None = None
+    last_reconciled_at: str | None = None
+    downstream_note: str | None = None

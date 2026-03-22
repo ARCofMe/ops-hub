@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from dataclasses import dataclass
 from pathlib import Path
 
-from ops_hub.models.requests import PartRequestRecord, PartsExportSummary, PartsWorkflowSummary
+from ops_hub.models.requests import (
+    PartRequestRecord,
+    PartsExportSummary,
+    PartsImportSummary,
+    PartsReceiptRecord,
+    PartsWorkflowSummary,
+)
 
 @dataclass(slots=True)
 class PartsCannonAdapter:
@@ -80,4 +85,49 @@ class PartsCannonAdapter:
             message="Tracked parts requests were exported to the downstream handoff file.",
             exported_count=len(records),
             export_path=export_path,
+        )
+
+    async def import_receipts(self) -> PartsImportSummary:
+        """Import downstream receipt updates from the configured parts workflow path."""
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        if resolved_path is None:
+            return PartsImportSummary(
+                available=False,
+                integration_status="unconfigured",
+                message="Parts workflow path is not configured yet.",
+                imported_count=0,
+                receipt_path=None,
+                receipts=[],
+            )
+
+        if not resolved_path.exists():
+            return PartsImportSummary(
+                available=False,
+                integration_status="missing_path",
+                message="Parts workflow path is configured but does not exist.",
+                imported_count=0,
+                receipt_path=resolved_path,
+                receipts=[],
+            )
+
+        receipt_path = resolved_path / "ops_hub_exports" / "parts_request_receipts.json"
+        if not receipt_path.exists():
+            return PartsImportSummary(
+                available=True,
+                integration_status="no_receipts",
+                message="No downstream parts receipt file was found yet.",
+                imported_count=0,
+                receipt_path=receipt_path,
+                receipts=[],
+            )
+
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipts = [PartsReceiptRecord(**item) for item in payload]
+        return PartsImportSummary(
+            available=True,
+            integration_status="imported",
+            message="Downstream parts receipts were loaded from the handoff directory.",
+            imported_count=len(receipts),
+            receipt_path=receipt_path,
+            receipts=receipts,
         )

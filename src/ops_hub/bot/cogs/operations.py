@@ -211,6 +211,15 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.parts_cannon_service.sync_requests_to_parts_system()
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="part_reconcile", description="Import downstream parts receipts into the tracked queue.")
+    async def part_reconcile(self, interaction: discord.Interaction) -> None:
+        """Reconcile downstream parts receipts back into Ops Hub."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_parts_queue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.reconcile_requests_from_parts_system()
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub operator/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)

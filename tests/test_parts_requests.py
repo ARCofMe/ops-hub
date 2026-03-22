@@ -186,6 +186,7 @@ def test_get_request_renders_detailed_view() -> None:
     assert "Parts request `1`" in result.message
     assert "Assigned parts user: unassigned" in result.message
     assert "Last synced: never" in result.message
+    assert "Last reconciled: never" in result.message
     assert "Mapped BlueFolder user: `13051`" in result.message
 
 

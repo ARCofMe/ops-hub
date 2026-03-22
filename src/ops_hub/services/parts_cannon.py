@@ -66,6 +66,8 @@ class PartsCannonService:
             created_at=timestamp,
             updated_at=timestamp,
             last_synced_at=None,
+            last_reconciled_at=None,
+            downstream_note=None,
         )
         records.append(record)
         self.request_store.save(records)
@@ -151,6 +153,8 @@ class PartsCannonService:
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 last_synced_at=record.last_synced_at,
+                last_reconciled_at=record.last_reconciled_at,
+                downstream_note=record.downstream_note,
             )
             records[index] = updated
             self.request_store.save(records)
@@ -185,10 +189,13 @@ class PartsCannonService:
             f"Created at: `{record.created_at}`",
             f"Updated at: `{record.updated_at}`",
             f"Last synced: `{record.last_synced_at}`" if record.last_synced_at is not None else "Last synced: never",
+            f"Last reconciled: `{record.last_reconciled_at}`" if record.last_reconciled_at is not None else "Last reconciled: never",
             f"Description: {record.description}",
         ]
         if record.operator_bluefolder_user_id is not None:
             lines.append(f"Mapped BlueFolder user: `{record.operator_bluefolder_user_id}`")
+        if record.downstream_note:
+            lines.append(f"Downstream note: {record.downstream_note}")
         return CommandResult(message="\n".join(lines))
 
     async def claim_request(self, request: PartRequestClaim) -> CommandResult:
@@ -209,6 +216,8 @@ class PartsCannonService:
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
                 last_synced_at=record.last_synced_at,
+                last_reconciled_at=record.last_reconciled_at,
+                downstream_note=record.downstream_note,
             )
             records[index] = updated
             self.request_store.save(records)
@@ -253,6 +262,8 @@ class PartsCannonService:
                     created_at=record.created_at,
                     updated_at=record.updated_at,
                     last_synced_at=synced_at if record.request_id in synced_ids else record.last_synced_at,
+                    last_reconciled_at=record.last_reconciled_at,
+                    downstream_note=record.downstream_note,
                 )
                 for record in records
             ]
@@ -271,6 +282,60 @@ class PartsCannonService:
             lines.append(f"Synced at: `{synced_at}`")
         if export_result.export_path is not None:
             lines.append(f"Export path: `{export_result.export_path}`")
+        return CommandResult(message="\n".join(lines))
+
+    async def reconcile_requests_from_parts_system(self) -> CommandResult:
+        """Apply downstream receipt updates back onto tracked parts requests."""
+        import_result = await self.adapter.import_receipts()
+        records = self.request_store.load()
+        receipts = import_result.receipts or []
+        applied = 0
+        ignored = 0
+        reconciled_at = datetime.now(UTC).isoformat(timespec="seconds")
+        indexed = {record.request_id: record for record in records}
+        updated_records: list[PartRequestRecord] = []
+        updates: dict[int, PartRequestRecord] = {}
+
+        if import_result.integration_status == "imported":
+            for receipt in receipts:
+                normalized_status = self._normalize_status(receipt.status)
+                existing = indexed.get(receipt.request_id)
+                if normalized_status is None or existing is None:
+                    ignored += 1
+                    continue
+                applied += 1
+                updates[receipt.request_id] = PartRequestRecord(
+                    request_id=existing.request_id,
+                    reference=existing.reference,
+                    description=existing.description,
+                    requested_by_user_id=existing.requested_by_user_id,
+                    operator_bluefolder_user_id=existing.operator_bluefolder_user_id,
+                    assigned_parts_user_id=existing.assigned_parts_user_id,
+                    status=normalized_status,
+                    created_at=existing.created_at,
+                    updated_at=reconciled_at,
+                    last_synced_at=existing.last_synced_at,
+                    last_reconciled_at=reconciled_at,
+                    downstream_note=receipt.note,
+                )
+
+            updated_records = [updates.get(record.request_id, record) for record in records]
+            if applied:
+                self.request_store.save(updated_records)
+
+        await self.notifications.send_notice(
+            topic="parts.request.reconcile",
+            message=f"Parts queue reconcile finished with status {import_result.integration_status}.",
+        )
+        lines = [
+            "Parts queue reconcile",
+            f"Status: `{import_result.integration_status}`",
+            f"Details: {import_result.message}",
+            f"Applied receipts: `{applied}`",
+            f"Ignored receipts: `{ignored}`",
+        ]
+        if import_result.receipt_path is not None:
+            lines.append(f"Receipt path: `{import_result.receipt_path}`")
         return CommandResult(message="\n".join(lines))
 
     def supported_request_statuses(self) -> tuple[str, ...]:

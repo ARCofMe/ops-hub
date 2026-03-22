@@ -108,3 +108,54 @@ def test_parts_adapter_sync_reports_unconfigured_status() -> None:
     result = asyncio.run(service.sync_requests_to_parts_system())
 
     assert "Status: `unconfigured`" in result.message
+
+
+def test_parts_adapter_reconciles_receipts_from_handoff_directory(tmp_path: Path) -> None:
+    export_dir = tmp_path / "ops_hub_exports"
+    export_dir.mkdir()
+    (export_dir / "parts_request_receipts.json").write_text(
+        json.dumps(
+            [
+                {"request_id": 1, "status": "ordered", "note": "PO created"},
+                {"request_id": 999, "status": "received", "note": "unknown request"},
+                {"request_id": 1, "status": "not-a-real-status", "note": "bad status"},
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=str(tmp_path)),
+        notifications=NotificationService(),
+        request_store=PartsRequestStore(file_path=None),
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-200",
+                description="Need control board",
+                requested_by_user_id=1,
+            )
+        )
+    )
+
+    result = asyncio.run(service.reconcile_requests_from_parts_system())
+
+    assert "Status: `imported`" in result.message
+    assert "Applied receipts: `1`" in result.message
+    assert "Ignored receipts: `2`" in result.message
+    assert service.request_store.records[0].status == "ordered"
+    assert service.request_store.records[0].downstream_note == "PO created"
+    assert service.request_store.records[0].last_reconciled_at is not None
+
+
+def test_parts_adapter_reconcile_reports_missing_receipt_file(tmp_path: Path) -> None:
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=str(tmp_path)),
+        notifications=NotificationService(),
+        request_store=PartsRequestStore(file_path=None),
+    )
+
+    result = asyncio.run(service.reconcile_requests_from_parts_system())
+
+    assert "Status: `no_receipts`" in result.message
