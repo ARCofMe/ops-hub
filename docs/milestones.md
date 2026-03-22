@@ -89,7 +89,7 @@ Treat this as the point where Ops Hub is clearly useful in daily work.
 
 ### Workflow Coverage
 
-- [ ] BlueFolder lookups are broadly useful
+- [x] BlueFolder lookups are broadly useful
 - [x] Dispatch workflows are moving beyond basic previews into more actionable assignment context
 - [x] Parts workflows include real operational actions
 - [ ] Photo ingest replacement direction is implemented enough to use
@@ -129,7 +129,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Build on the dispatch board with more dispatch actions
-2. Turn the current handoff/receipt loop into a real external consuming downstream process
+2. Build on the BlueFolder-native parts path and current handoff loop without splitting the source of truth
 3. Strengthen assignment/job workflows where live use exposes gaps
 4. Revisit photo ingest after the revised concept is ready
 5. Decide what should qualify as `V0.5.0`

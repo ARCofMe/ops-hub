@@ -99,6 +99,10 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - `/part_unclaim`
 - `/part_sync`
 - `/part_reconcile`
+- `/parts_brief`
+- `/parts_notes`
+- `/missing_part`
+- `/damaged_part`
 - `/ops_status`
 - `/config_check`
 - `/service_status`
@@ -168,10 +172,14 @@ That naming can be cleaned up later in code, but the README should be read using
 - Technician, Parts, and Admin:
   - `/part_request`
   - `/my_part_requests`
+  - `/missing_part`
+  - `/damaged_part`
 - Dispatch and Admin:
   - `/tech_assignments`
   - `/tech_job`
   - `/dispatch_board`
+  - `/parts_brief`
+  - `/parts_notes`
 - Parts and Admin:
   - `/part`
   - `/part_requests`
@@ -181,6 +189,8 @@ That naming can be cleaned up later in code, but the README should be read using
   - `/part_unclaim`
   - `/part_sync`
   - `/part_reconcile`
+  - `/parts_brief`
+  - `/parts_notes`
   - `unsynced_only` filtering is available on `/part_requests`
 - Open bot health:
   - `/ping`
@@ -258,6 +268,7 @@ This keeps the foundation clean while allowing gradual adoption.
 - parts can now export the tracked queue to a downstream handoff file under the configured Parts project path
 - parts can now reconcile downstream receipt updates back into the tracked queue
 - parts queue records now track last sync state so unsynced work can be filtered directly
+- parts now also has BlueFolder-native summary and note-write commands, closer to the real source-of-truth workflow
 - notifications can optionally route to a configured Discord channel instead of staying logger-only
 - admin service status now reports live parts queue counts in addition to adapter status
 - the bot now includes `/ops_help` as an in-bot command guide for the stable beta surface
@@ -267,5 +278,5 @@ This keeps the foundation clean while allowing gradual adoption.
 ## Next Practical Moves
 
 1. build on the dispatch board with more action-oriented dispatcher workflows
-2. build on the current two-way handoff with a real consuming parts workflow or project wrapper
+2. build on the BlueFolder-native parts path and current two-way handoff without splitting the source of truth
 3. revisit photo ingest once the revised concept is settled
