@@ -68,6 +68,14 @@ class DispatchCog(commands.Cog):
         result = await self.bot.container.dispatch_service.lookup_dispatch_board(mappings)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
+    async def dispatch_attention(self, interaction: discord.Interaction) -> None:
+        """Dispatcher-focused triage view for parts-related attention states."""
+        mappings = self.bot.container.technician_directory_service.mapping_records()
+        await interaction.response.defer(ephemeral=True)
+        result = await self.bot.container.dispatch_service.lookup_dispatch_attention(mappings)
+        await interaction.followup.send(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)

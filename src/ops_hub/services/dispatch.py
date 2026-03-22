@@ -132,6 +132,67 @@ class DispatchService:
         lines.insert(3, f"Total visible assignments: `{total_assignments}`")
         return CommandResult(message="\n".join(lines))
 
+    async def lookup_dispatch_attention(self, mappings: list[TechnicianMappingRecord]) -> CommandResult:
+        """Return a dispatcher triage view for jobs that appear actionable."""
+        if not mappings:
+            return CommandResult(message="Dispatch attention view requires at least one technician mapping.")
+
+        attention_items: list[str] = []
+        scanned_jobs = 0
+        for record in mappings:
+            assignments = await self.adapter.get_assignments_for_user(record.bluefolder_user_id)
+            for assignment in assignments[:10]:
+                sr_id = assignment.get("serviceRequestId")
+                if sr_id in (None, ""):
+                    continue
+                scanned_jobs += 1
+                try:
+                    snapshot = await self.bluefolder_service.get_parts_snapshot(int(str(sr_id)))
+                except ValueError:
+                    continue
+                if snapshot is None:
+                    continue
+                if snapshot.stage not in {"issue_reported", "part_received", "part_ready"}:
+                    continue
+
+                subject = assignment.get("subject") or "Unlabeled Service Request"
+                route_label = assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow")
+                location = " ".join(
+                    part for part in [assignment.get("city"), assignment.get("state")] if part
+                ).strip()
+                details = [snapshot.stage_label]
+                if location:
+                    details.append(location)
+                if route_label:
+                    details.append(str(route_label))
+                line = (
+                    f"`SR-{sr_id}` {subject} "
+                    f"[Discord `{record.discord_user_id}` / BlueFolder `{record.bluefolder_user_id}` | {' | '.join(details)}]"
+                )
+                attention_items.append(line)
+
+        if not attention_items:
+            return CommandResult(
+                message="\n".join(
+                    [
+                        "Dispatch attention",
+                        f"Scanned jobs: `{scanned_jobs}`",
+                        "No mapped assignments currently match the parts-attention stages.",
+                    ]
+                )
+            )
+
+        lines = [
+            "Dispatch attention",
+            f"Scanned jobs: `{scanned_jobs}`",
+            f"Attention jobs: `{len(attention_items)}`",
+            "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`",
+            *attention_items[:20],
+        ]
+        if len(attention_items) > 20:
+            lines.append(f"...and {len(attention_items) - 20} more attention job(s)")
+        return CommandResult(message="\n".join(lines))
+
     def _format_job_message(
         self,
         request: JobLookupRequest,

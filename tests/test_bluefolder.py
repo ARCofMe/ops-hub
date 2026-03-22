@@ -188,6 +188,79 @@ def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     assert "Discord `43` -> BlueFolder `13052`: `0` assignment(s)" in result.message
 
 
+def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> None:
+    dispatch_package = tmp_path / "optimized_routing"
+    dispatch_package.mkdir()
+    (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    if user_id == 13051:
+                        return [
+                            {"serviceRequestId": "100", "subject": "Dryer repair", "city": "Portland", "state": "ME", "routeLabel": "AM"},
+                            {"serviceRequestId": "101", "subject": "Washer repair", "city": "Lewiston", "state": "ME", "routeLabel": "PM"},
+                        ]
+                    return []
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    if service_request_id == 100:
+                        return [
+                            {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False},
+                        ]
+                    return [
+                        {"author": "Parts", "dateCreated": "2026-03-22 09:00", "text": "Part tracking update: UPS 123", "isVisibleToCustomer": False},
+                    ]
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(tmp_path)),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_dispatch_attention(
+            [
+                TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
+            ]
+        )
+    )
+
+    assert "Dispatch attention" in result.message
+    assert "Scanned jobs: `2`" in result.message
+    assert "Attention jobs: `1`" in result.message
+    assert "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`" in result.message
+    assert "`SR-100` Dryer repair [Discord `42` / BlueFolder `13051` | Ready for Scheduling | Portland ME | AM]" in result.message
+    assert "`SR-101`" not in result.message
+
+
 def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:
     bluefolder_package = tmp_path / "bluefolder_api"
     bluefolder_package.mkdir()

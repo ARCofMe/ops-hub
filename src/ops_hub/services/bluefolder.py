@@ -21,7 +21,6 @@ class BlueFolderService:
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""
         summary = await self.adapter.get_job_summary(f"SR-{sr_id}")
-        comments = await self.adapter.get_recent_parts_comments(sr_id, limit=3)
         if not summary.available:
             return CommandResult(
                 message="\n".join(
@@ -39,11 +38,11 @@ class BlueFolderService:
             f"Customer: {summary.customer_name or 'n/a'}",
             f"Address: {self._format_address(summary) or 'n/a'}",
         ]
-        if not comments:
+        snapshot = await self.get_parts_snapshot(sr_id)
+        if snapshot is None:
             lines.append("No recent parts-related comments found.")
             return CommandResult(message="\n".join(lines))
 
-        snapshot = self._build_parts_lifecycle_snapshot(comments)
         lines.append(f"Parts stage: `{snapshot.stage_label}`")
         if snapshot.latest_status_at or snapshot.latest_status_author:
             lines.append(
@@ -73,6 +72,13 @@ class BlueFolderService:
             blocks.append(f"{idx}. `{comment.date_created or 'unknown'}` by `{comment.author or 'Unknown'}`")
             blocks.append(comment.text)
         return CommandResult(message="\n".join(blocks))
+
+    async def get_parts_snapshot(self, sr_id: int) -> PartsLifecycleSnapshot | None:
+        """Return a normalized parts lifecycle snapshot when recent parts comments exist."""
+        comments = await self.adapter.get_recent_parts_comments(sr_id, limit=6)
+        if not comments:
+            return None
+        return self._build_parts_lifecycle_snapshot(comments)
 
     async def log_parts_issue(
         self,
