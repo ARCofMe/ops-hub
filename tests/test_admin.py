@@ -134,7 +134,7 @@ def test_build_command_access_describes_current_scopes() -> None:
 
     result = cog._build_command_access()
 
-    assert "`/job`: technicians, dispatchers, admins" in result
+    assert "`/job`, `/assignments`: technicians, dispatchers, admins" in result
     assert "`/part`: parts, admins" in result
 
 

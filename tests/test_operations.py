@@ -120,3 +120,10 @@ def test_resolve_identity_includes_parts_access() -> None:
 
     assert identity.is_parts is True
     assert identity.is_operator is False
+
+
+def test_operations_check_allows_dispatcher_user() -> None:
+    cog = _build_cog(dispatcher_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    assert asyncio.run(cog.cog_app_command_check(interaction)) is True

@@ -39,6 +39,31 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.dispatch_service.lookup_job(request)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="assignments", description="Show current assignments for a mapped or specified BlueFolder user.")
+    @app_commands.describe(
+        bluefolder_user_id="Optional BlueFolder user id. Dispatch/Admin can override; technicians use their mapping by default."
+    )
+    async def assignments(
+        self,
+        interaction: discord.Interaction,
+        bluefolder_user_id: int | None = None,
+    ) -> None:
+        """Current assignment summary command."""
+        identity = self._resolve_identity(interaction)
+        if not (identity.is_operator or identity.is_dispatcher):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        if bluefolder_user_id is not None and not (identity.is_dispatcher or identity.is_admin):
+            raise app_commands.CheckFailure("Only dispatch or admin can request another user's assignments.")
+        request = JobLookupRequest(
+            reference=None,
+            requested_by_user_id=interaction.user.id,
+            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            target_bluefolder_user_id=bluefolder_user_id,
+            requester_is_admin=identity.is_admin,
+        )
+        result = await self.bot.container.dispatch_service.lookup_assignments(request)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
     async def part(self, interaction: discord.Interaction, reference: str) -> None:

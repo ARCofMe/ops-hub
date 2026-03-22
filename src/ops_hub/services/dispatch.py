@@ -19,7 +19,7 @@ class DispatchService:
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
         if request.reference is None or not request.reference.strip():
-            return await self._lookup_current_assignments(request)
+            return await self.lookup_assignments(request)
 
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
         dispatch_result = await self.adapter.get_job(
@@ -36,24 +36,25 @@ class DispatchService:
             )
         )
 
-    async def _lookup_current_assignments(self, request: JobLookupRequest) -> CommandResult:
-        """Return a mapped operator's current assignment summary."""
-        if request.operator_bluefolder_user_id is None:
+    async def lookup_assignments(self, request: JobLookupRequest) -> CommandResult:
+        """Return current assignments for the mapped or explicitly requested BlueFolder user."""
+        target_user_id = request.target_bluefolder_user_id or request.operator_bluefolder_user_id
+        if target_user_id is None:
             return CommandResult(
                 message="Current assignment lookup requires a mapped BlueFolder user. Add an operator mapping first."
             )
 
-        assignments = await self.adapter.get_assignments_for_user(request.operator_bluefolder_user_id)
+        assignments = await self.adapter.get_assignments_for_user(target_user_id)
         if not assignments:
             return CommandResult(
                 message=(
                     f"No current assignments were found for mapped BlueFolder user "
-                    f"`{request.operator_bluefolder_user_id}`."
+                    f"`{target_user_id}`."
                 )
             )
 
         lines = [
-            f"Current assignments for BlueFolder user `{request.operator_bluefolder_user_id}`",
+            f"Current assignments for BlueFolder user `{target_user_id}`",
         ]
         for assignment in assignments[:10]:
             sr_id = assignment.get("serviceRequestId") or "unknown"

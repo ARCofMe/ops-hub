@@ -13,6 +13,7 @@ class JobLookupRequest:
     reference: str | None
     requested_by_user_id: int
     operator_bluefolder_user_id: int | None = None
+    target_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
 
 
