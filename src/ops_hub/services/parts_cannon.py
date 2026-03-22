@@ -65,6 +65,7 @@ class PartsCannonService:
             status="requested",
             created_at=timestamp,
             updated_at=timestamp,
+            last_synced_at=None,
         )
         records.append(record)
         self.request_store.save(records)
@@ -113,6 +114,8 @@ class PartsCannonService:
             lines.append(f"`{record.request_id}` `{record.status}` `{record.reference}` requested by `{record.requested_by_user_id}`")
             if record.assigned_parts_user_id is not None:
                 lines.append(f"Assigned parts user: `{record.assigned_parts_user_id}`")
+            if record.last_synced_at is not None:
+                lines.append(f"Last synced: `{record.last_synced_at}`")
             lines.append(f"Description: {record.description}")
         if len(records) > 15:
             lines.append(f"...and {len(records) - 15} more request(s)")
@@ -144,6 +147,7 @@ class PartsCannonService:
                 status=normalized_status,
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                last_synced_at=record.last_synced_at,
             )
             records[index] = updated
             self.request_store.save(records)
@@ -177,6 +181,7 @@ class PartsCannonService:
             f"Assigned parts user: `{record.assigned_parts_user_id}`" if record.assigned_parts_user_id is not None else "Assigned parts user: unassigned",
             f"Created at: `{record.created_at}`",
             f"Updated at: `{record.updated_at}`",
+            f"Last synced: `{record.last_synced_at}`" if record.last_synced_at is not None else "Last synced: never",
             f"Description: {record.description}",
         ]
         if record.operator_bluefolder_user_id is not None:
@@ -200,6 +205,7 @@ class PartsCannonService:
                 status=record.status,
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                last_synced_at=record.last_synced_at,
             )
             records[index] = updated
             self.request_store.save(records)
@@ -227,7 +233,27 @@ class PartsCannonService:
     async def sync_requests_to_parts_system(self) -> CommandResult:
         """Export the tracked request queue to the configured parts workflow path."""
         records = self.request_store.load()
-        export_result = await self.adapter.export_requests(records)
+        exportable_records = [record for record in records if record.status not in {"resolved", "cancelled"}]
+        export_result = await self.adapter.export_requests(exportable_records)
+        synced_at = datetime.now(UTC).isoformat(timespec="seconds")
+        if export_result.integration_status == "exported":
+            synced_ids = {record.request_id for record in exportable_records}
+            updated_records = [
+                PartRequestRecord(
+                    request_id=record.request_id,
+                    reference=record.reference,
+                    description=record.description,
+                    requested_by_user_id=record.requested_by_user_id,
+                    operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                    assigned_parts_user_id=record.assigned_parts_user_id,
+                    status=record.status,
+                    created_at=record.created_at,
+                    updated_at=record.updated_at,
+                    last_synced_at=synced_at if record.request_id in synced_ids else record.last_synced_at,
+                )
+                for record in records
+            ]
+            self.request_store.save(updated_records)
         await self.notifications.send_notice(
             topic="parts.request.sync",
             message=f"Parts queue sync finished with status {export_result.integration_status}.",
@@ -238,6 +264,8 @@ class PartsCannonService:
             f"Details: {export_result.message}",
             f"Exported requests: `{export_result.exported_count}`",
         ]
+        if export_result.integration_status == "exported":
+            lines.append(f"Synced at: `{synced_at}`")
         if export_result.export_path is not None:
             lines.append(f"Export path: `{export_result.export_path}`")
         return CommandResult(message="\n".join(lines))
@@ -252,10 +280,13 @@ class PartsCannonService:
         counts = {status: 0 for status in PARTS_REQUEST_STATUSES}
         assigned_requests = 0
         open_requests = 0
+        synced_requests = 0
         for record in records:
             counts[record.status] = counts.get(record.status, 0) + 1
             if record.assigned_parts_user_id is not None:
                 assigned_requests += 1
+            if record.last_synced_at is not None:
+                synced_requests += 1
             if record.status not in {"resolved", "cancelled"}:
                 open_requests += 1
 
@@ -264,6 +295,7 @@ class PartsCannonService:
             open_requests=open_requests,
             assigned_requests=assigned_requests,
             unassigned_requests=max(len(records) - assigned_requests, 0),
+            synced_requests=synced_requests,
             requested_count=counts["requested"],
             ordered_count=counts["ordered"],
             received_count=counts["received"],

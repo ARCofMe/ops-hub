@@ -141,6 +141,7 @@ class AdminCog(commands.Cog):
             f"Parts Cannon detail: {parts.message}",
             f"Parts queue open: `{parts_queue.open_requests}` of `{parts_queue.total_requests}` total",
             f"Parts queue assigned/unassigned: `{parts_queue.assigned_requests}` / `{parts_queue.unassigned_requests}`",
+            f"Parts queue synced: `{parts_queue.synced_requests}`",
             "Parts queue status counts: "
             f"requested `{parts_queue.requested_count}`, "
             f"ordered `{parts_queue.ordered_count}`, "

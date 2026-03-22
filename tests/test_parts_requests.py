@@ -185,6 +185,7 @@ def test_get_request_renders_detailed_view() -> None:
 
     assert "Parts request `1`" in result.message
     assert "Assigned parts user: unassigned" in result.message
+    assert "Last synced: never" in result.message
     assert "Mapped BlueFolder user: `13051`" in result.message
 
 
@@ -269,5 +270,6 @@ def test_parts_queue_summary_reports_counts() -> None:
     assert summary.open_requests == 1
     assert summary.assigned_requests == 1
     assert summary.unassigned_requests == 1
+    assert summary.synced_requests == 0
     assert summary.requested_count == 1
     assert summary.resolved_count == 1

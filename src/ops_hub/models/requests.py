@@ -91,6 +91,7 @@ class PartsRequestQueueSummary:
     open_requests: int
     assigned_requests: int
     unassigned_requests: int
+    synced_requests: int
     requested_count: int
     ordered_count: int
     received_count: int
@@ -209,3 +210,4 @@ class PartRequestRecord:
     status: str
     created_at: str
     updated_at: str
+    last_synced_at: str | None = None

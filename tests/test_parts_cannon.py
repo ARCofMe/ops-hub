@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
-from ops_hub.models.requests import PartLookupRequest, PartRequestCreate
+from ops_hub.models.requests import PartLookupRequest, PartRequestCreate, PartRequestUpdate
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.parts_cannon import PartsCannonService
 from ops_hub.services.parts_request_store import PartsRequestStore
@@ -66,14 +66,36 @@ def test_parts_adapter_exports_requests_to_handoff_file(tmp_path: Path) -> None:
             )
         )
     )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-201",
+                description="Already resolved",
+                requested_by_user_id=1,
+            )
+        )
+    )
+    asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=2,
+                status="resolved",
+                updated_by_user_id=1,
+            )
+        )
+    )
 
     result = asyncio.run(service.sync_requests_to_parts_system())
 
     export_path = tmp_path / "ops_hub_exports" / "parts_requests.json"
     assert "Status: `exported`" in result.message
     assert f"Export path: `{export_path}`" in result.message
+    assert "Synced at: `" in result.message
     payload = json.loads(export_path.read_text(encoding="utf-8"))
+    assert len(payload) == 1
     assert payload[0]["reference"] == "SR-200"
+    assert service.request_store.records[0].last_synced_at is not None
+    assert service.request_store.records[1].last_synced_at is None
 
 
 def test_parts_adapter_sync_reports_unconfigured_status() -> None:
