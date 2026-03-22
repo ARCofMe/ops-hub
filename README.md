@@ -88,6 +88,10 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - `/tech_assignments`
 - `/tech_job`
 - `/part`
+- `/part_request`
+- `/my_part_requests`
+- `/part_requests`
+- `/part_update`
 - `/ops_status`
 - `/config_check`
 - `/service_status`
@@ -147,11 +151,16 @@ That naming can be cleaned up later in code, but the README should be read using
 - Technician, Dispatch, and Admin:
   - `/job`
   - `/assignments`
+- Technician, Parts, and Admin:
+  - `/part_request`
+  - `/my_part_requests`
 - Dispatch and Admin:
   - `/tech_assignments`
   - `/tech_job`
 - Parts and Admin:
   - `/part`
+  - `/part_requests`
+  - `/part_update`
 - Open bot health:
   - `/ping`
 
@@ -185,6 +194,7 @@ The merged mapping set is used for:
 - technician-aware `/job` context
 - mapped current-assignment lookup when `/job` is called without a reference
 - technician-specific dispatch context such as assignment presence and origin address
+- technician-created parts request records that can carry mapped BlueFolder user context later
 
 If `OPS_HUB_OPERATOR_MAPPING_FILE` is set, the admin mapping commands can export and reload mappings from disk.
 
@@ -219,12 +229,13 @@ This keeps the foundation clean while allowing gradual adoption.
 - BlueFolder has a real read-only lookup path
 - dispatch can build a stop preview and mapped technician context through the existing routing project
 - dispatch now has dedicated dispatcher-facing commands instead of relying only on shared operations commands
-- parts is still a wrapper/status surface with dry-run notification tracking
+- parts now has a lightweight tracked request lifecycle with create, list, and update flows
+- technicians can submit and review their own parts requests while Parts manages the shared queue
 - photo ingest remains intentionally paused while the concept is being revised
 - technician/admin/dispatch/parts access is now explicit instead of implicit
 
 ## Next Practical Moves
 
 1. expand mapped assignment workflows beyond simple summaries
-2. start real parts workflow actions behind the new Parts access tier
+2. connect the tracked parts request lifecycle to a real downstream workflow or project wrapper
 3. revisit photo ingest once the new direction is settled

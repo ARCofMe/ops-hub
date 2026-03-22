@@ -48,7 +48,7 @@ Use patch tags while the app is still moving quickly but each increment is worth
 
 ### Current Recommendation
 
-- `V0.0.2` is now a reasonable tag point.
+- `V0.0.3` is the next reasonable tag point once the parts request workflow docs are current.
 
 ## Milestone: `V0.1.0`
 
@@ -60,6 +60,7 @@ Treat this as the first real Ops Hub beta.
 - [ ] `/job` behavior is stable enough for regular users
 - [ ] `/assignments` and dispatcher-focused assignment flows are stable enough for regular users
 - [ ] `/part` behavior is stable enough for regular users
+- [ ] parts request submission and queue handling are stable enough for regular users
 - [ ] Access tiers are settled enough that frequent changes are no longer expected
 - [ ] Operator mapping workflow is usable without hand-editing env values
 - [ ] Photo ingest direction is decided, even if not fully complete
@@ -68,7 +69,8 @@ Treat this as the first real Ops Hub beta.
 
 - [ ] BlueFolder read-only integration is dependable
 - [ ] Dispatch integration does more than stop preview and assignment presence
-- [ ] Parts wrapper has at least one real workflow path
+- [x] Parts wrapper has at least one real workflow path
+- [ ] Parts request lifecycle is connected to a real downstream process
 - [ ] Notification routing model is defined beyond dry-run logging
 
 ### Operational Shape
@@ -124,7 +126,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Expand mapped assignment workflows
-2. Start real parts workflow actions behind the Parts tier
+2. Connect the tracked parts request lifecycle to a real downstream process
 3. Revisit photo ingest after the revised concept is ready
 4. Introduce real notification delivery targets
 5. Decide what should qualify as `V0.1.0`
