@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     dispatcher_role_ids: list[int] = []
     operator_bluefolder_user_map: dict[int, int] = {}
     operator_mapping_file: str | None = None
+    parts_request_file: str | None = None
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None

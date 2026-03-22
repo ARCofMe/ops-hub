@@ -16,6 +16,7 @@ from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import OperatorDirectoryService
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
 from ops_hub.services.parts_cannon import PartsCannonService
+from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 
 
@@ -50,6 +51,9 @@ def build_container(settings: Settings) -> ServiceContainer:
         base_url=settings.bluefolder_base_url,
     )
     parts_adapter = PartsCannonAdapter(base_path=settings.parts_cannon_project_path)
+    parts_request_store = PartsRequestStore(
+        file_path=Path(settings.parts_request_file).expanduser() if settings.parts_request_file else None,
+    )
     photo_adapter = PhotoIngestAdapter(base_path=settings.photo_ingest_project_path)
     dispatch_adapter = DispatchAdapter(base_path=settings.dispatch_project_path)
 
@@ -58,7 +62,11 @@ def build_container(settings: Settings) -> ServiceContainer:
         notification_service=notification_service,
         operator_directory_service=operator_directory_service,
         bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
-        parts_cannon_service=PartsCannonService(adapter=parts_adapter, notifications=notification_service),
+        parts_cannon_service=PartsCannonService(
+            adapter=parts_adapter,
+            notifications=notification_service,
+            request_store=parts_request_store,
+        ),
         photo_ingest_service=PhotoIngestService(settings=settings, adapter=photo_adapter),
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,

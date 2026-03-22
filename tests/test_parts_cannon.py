@@ -7,6 +7,7 @@ from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
 from ops_hub.models.requests import PartLookupRequest
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.parts_cannon import PartsCannonService
+from ops_hub.services.parts_request_store import PartsRequestStore
 
 
 def test_parts_adapter_reports_unconfigured_status() -> None:
@@ -33,6 +34,7 @@ def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> Non
     service = PartsCannonService(
         adapter=PartsCannonAdapter(base_path=str(tmp_path)),
         notifications=notifications,
+        request_store=PartsRequestStore(file_path=None),
     )
 
     result = asyncio.run(

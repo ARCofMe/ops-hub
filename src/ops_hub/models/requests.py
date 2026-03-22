@@ -28,6 +28,26 @@ class PartLookupRequest:
 
 
 @dataclass(slots=True)
+class PartRequestCreate:
+    """Input for creating a parts request."""
+
+    reference: str
+    description: str
+    requested_by_user_id: int
+    operator_bluefolder_user_id: int | None = None
+    requester_is_admin: bool = False
+
+
+@dataclass(slots=True)
+class PartRequestUpdate:
+    """Input for updating a parts request status."""
+
+    request_id: int
+    status: str
+    updated_by_user_id: int
+
+
+@dataclass(slots=True)
 class CommandResult:
     """Simple user-facing command response."""
 
@@ -139,3 +159,17 @@ class PartsWorkflowSummary:
     integration_status: str
     message: str
     source_path: Path | None = None
+
+
+@dataclass(slots=True)
+class PartRequestRecord:
+    """Persistent parts request record."""
+
+    request_id: int
+    reference: str
+    description: str
+    requested_by_user_id: int
+    operator_bluefolder_user_id: int | None
+    status: str
+    created_at: str
+    updated_at: str
