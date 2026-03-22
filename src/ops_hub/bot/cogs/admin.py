@@ -110,6 +110,11 @@ class AdminCog(commands.Cog):
             "Ops Hub Config Check",
             f"Discord token: {'set' if bool(settings.discord_token.strip()) else 'missing'}",
             f"Log level: `{settings.log_level}`",
+            (
+                f"Notification channel: `{settings.notification_channel_id}`"
+                if settings.notification_channel_id is not None
+                else "Notification channel: not set"
+            ),
             f"BlueFolder credentials: {self._bluefolder_config_status()}",
             self._path_line("BlueFolder library path", settings.bluefolder_api_path),
             self._path_line("Parts Cannon path", settings.parts_cannon_project_path),

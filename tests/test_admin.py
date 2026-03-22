@@ -80,11 +80,13 @@ def test_build_config_check_hides_secret_values() -> None:
     cog = _build_cog(
         bluefolder_api_key="secret-key",
         bluefolder_account_name="acme",
+        notification_channel_id=777,
     )
 
     result = cog._build_config_check()
 
     assert "Discord token: set" in result
+    assert "Notification channel: `777`" in result
     assert "BlueFolder credentials: configured" in result
     assert "secret-key" not in result
     assert "BlueFolder library path: not set" in result

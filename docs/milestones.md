@@ -11,6 +11,7 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
 - `V0.1.0`
   - First coherent operator-facing beta
   - Core command model and access model feel intentional
+  - Photo ingest is explicitly outside the beta scope
 - `V0.5.0`
   - Most major subsystems have real operational value
   - Migration seams are stable and used regularly
@@ -33,7 +34,7 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
 - [x] Operator mapping persistence exists
 - [x] Dedicated dispatcher command surface exists
 - [ ] Photo ingest direction is redefined
-- [ ] Primary workflows are considered stable
+- [x] Primary workflows are considered stable
 
 ## Next Patch Tags (`V0.0.x`)
 
@@ -48,7 +49,7 @@ Use patch tags while the app is still moving quickly but each increment is worth
 
 ### Current Recommendation
 
-- `V0.0.5` is a reasonable next tag point once the downstream queue handoff docs are current.
+- `V0.1.0` is now a reasonable milestone tag for the first coherent beta.
 
 ## Milestone: `V0.1.0`
 
@@ -56,30 +57,30 @@ Treat this as the first real Ops Hub beta.
 
 ### Product Shape
 
-- [ ] Core command surface is intentionally defined
-- [ ] `/job` behavior is stable enough for regular users
-- [ ] `/assignments` and dispatcher-focused assignment flows are stable enough for regular users
-- [ ] `/part` behavior is stable enough for regular users
-- [ ] parts request submission, queue handling, and ownership flow are stable enough for regular users
-- [ ] Access tiers are settled enough that frequent changes are no longer expected
-- [ ] Operator mapping workflow is usable without hand-editing env values
-- [ ] Photo ingest direction is decided, even if not fully complete
+- [x] Core command surface is intentionally defined
+- [x] `/job` behavior is stable enough for regular users
+- [x] `/assignments` and dispatcher-focused assignment flows are stable enough for regular users
+- [x] `/part` behavior is stable enough for regular users
+- [x] parts request submission, queue handling, and ownership flow are stable enough for regular users
+- [x] Access tiers are settled enough that frequent changes are no longer expected
+- [x] Operator mapping workflow is usable without hand-editing env values
+- [x] Photo ingest is explicitly deferred from beta scope and documented
 
 ### Integration Shape
 
-- [ ] BlueFolder read-only integration is dependable
-- [ ] Dispatch integration does more than stop preview and assignment presence
+- [x] BlueFolder read-only integration is dependable
+- [x] Dispatch integration does more than stop preview and assignment presence
 - [x] Parts wrapper has at least one real workflow path
 - [x] Parts request lifecycle is connected to a basic downstream handoff file
 - [ ] Parts request lifecycle is connected to a real consuming downstream process
-- [ ] Notification routing model is defined beyond dry-run logging
+- [x] Notification routing model is defined beyond dry-run logging
 
 ### Operational Shape
 
-- [ ] README is current
-- [ ] `.env.example` is current and understandable
-- [ ] Admin/debug commands are sufficient for basic troubleshooting
-- [ ] Another team member could stand the bot up from docs and config
+- [x] README is current
+- [x] `.env.example` is current and understandable
+- [x] Admin/debug commands are sufficient for basic troubleshooting
+- [x] Another team member could stand the bot up from docs and config
 
 ## Milestone: `V0.5.0`
 
@@ -128,6 +129,6 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 
 1. Expand mapped assignment workflows
 2. Turn the queue handoff file into a real consuming downstream process
-3. Revisit photo ingest after the revised concept is ready
-4. Introduce real notification delivery targets
-5. Decide what should qualify as `V0.1.0`
+3. Strengthen assignment/job workflows where live use exposes gaps
+4. Revisit photo ingest after the revised concept is ready
+5. Decide what should qualify as `V0.5.0`

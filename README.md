@@ -12,6 +12,7 @@ This project is the start of a migration path, not a rewrite. It creates a clean
 - Ops Hub is the user-facing application name and the long-term platform direction.
 
 The longer-term milestone checklist lives in `docs/milestones.md`.
+Photo ingest beta scope notes live in `docs/photo-ingest-scope.md`.
 
 ## Goals
 
@@ -106,6 +107,7 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - `/set_operator_mapping`
 - `/remove_operator_mapping`
 - `/command_access`
+- `/ops_help`
 
 `/job` now supports two modes:
 - pass a reference like `SR-100` for a direct lookup
@@ -171,6 +173,7 @@ That naming can be cleaned up later in code, but the README should be read using
   - `/part_sync`
 - Open bot health:
   - `/ping`
+  - `/ops_help`
 
 Current hierarchy:
 
@@ -241,7 +244,9 @@ This keeps the foundation clean while allowing gradual adoption.
 - technicians can submit and review their own parts requests while Parts manages the shared queue
 - parts queue ownership is now explicit through claim/unclaim and detailed request inspection
 - parts can now export the tracked queue to a downstream handoff file under the configured Parts project path
+- notifications can optionally route to a configured Discord channel instead of staying logger-only
 - admin service status now reports live parts queue counts in addition to adapter status
+- the bot now includes `/ops_help` as an in-bot command guide for the stable beta surface
 - photo ingest remains intentionally paused while the concept is being revised
 - technician/admin/dispatch/parts access is now explicit instead of implicit
 
@@ -249,4 +254,4 @@ This keeps the foundation clean while allowing gradual adoption.
 
 1. expand mapped assignment workflows beyond simple summaries
 2. build on the downstream queue handoff with a real consuming parts workflow or project wrapper
-3. revisit photo ingest once the new direction is settled
+3. revisit photo ingest once the revised concept is settled
