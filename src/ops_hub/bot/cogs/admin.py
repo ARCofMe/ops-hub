@@ -213,7 +213,7 @@ class AdminCog(commands.Cog):
                 "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/operator_mappings`, `/export_operator_mappings`, `/reload_operator_mappings`, `/set_operator_mapping`, `/remove_operator_mapping`, `/command_access`: admin only",
                 "`/job`, `/assignments`: technicians, dispatchers, admins",
                 "`/part_request`, `/my_part_requests`: technicians, parts, admins",
-                "`/part`, `/part_requests`, `/part_update`: parts, admins",
+                "`/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`: parts, admins",
                 "`/ping`: open to anyone who can invoke the bot",
             ]
         )

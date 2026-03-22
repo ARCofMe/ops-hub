@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from ops_hub.bot.client import OpsHubBot
-from ops_hub.models.requests import JobLookupRequest, PartLookupRequest, PartRequestCreate, PartRequestUpdate
+from ops_hub.models.requests import JobLookupRequest, PartLookupRequest, PartRequestClaim, PartRequestCreate, PartRequestUpdate
 
 
 class OperationsCog(commands.Cog):
@@ -124,6 +124,15 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.parts_cannon_service.list_requests(status=status)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="part_request_detail", description="Show full detail for a tracked parts request.")
+    async def part_request_detail(self, interaction: discord.Interaction, request_id: int) -> None:
+        """Show a detailed tracked parts request view."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_parts_queue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.get_request(request_id)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part_update", description="Update the status of a tracked parts request.")
     @app_commands.describe(
         request_id="Tracked parts request id.",
@@ -138,6 +147,36 @@ class OperationsCog(commands.Cog):
             PartRequestUpdate(
                 request_id=request_id,
                 status=status,
+                updated_by_user_id=interaction.user.id,
+            )
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="part_claim", description="Claim a tracked parts request for yourself.")
+    async def part_claim(self, interaction: discord.Interaction, request_id: int) -> None:
+        """Assign a tracked parts request to the current parts user."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_parts_queue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.claim_request(
+            PartRequestClaim(
+                request_id=request_id,
+                parts_user_id=interaction.user.id,
+                updated_by_user_id=interaction.user.id,
+            )
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="part_unclaim", description="Remove the current parts assignment from a tracked request.")
+    async def part_unclaim(self, interaction: discord.Interaction, request_id: int) -> None:
+        """Unassign a tracked parts request."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_parts_queue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.claim_request(
+            PartRequestClaim(
+                request_id=request_id,
+                parts_user_id=None,
                 updated_by_user_id=interaction.user.id,
             )
         )

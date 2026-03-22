@@ -9,6 +9,7 @@ from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
 from ops_hub.models.requests import (
     CommandResult,
     PartLookupRequest,
+    PartRequestClaim,
     PartRequestCreate,
     PartRequestRecord,
     PartRequestUpdate,
@@ -59,6 +60,7 @@ class PartsCannonService:
             description=request.description,
             requested_by_user_id=request.requested_by_user_id,
             operator_bluefolder_user_id=request.operator_bluefolder_user_id,
+            assigned_parts_user_id=None,
             status="requested",
             created_at=timestamp,
             updated_at=timestamp,
@@ -108,6 +110,8 @@ class PartsCannonService:
         lines = ["Parts requests"]
         for record in records[:15]:
             lines.append(f"`{record.request_id}` `{record.status}` `{record.reference}` requested by `{record.requested_by_user_id}`")
+            if record.assigned_parts_user_id is not None:
+                lines.append(f"Assigned parts user: `{record.assigned_parts_user_id}`")
             lines.append(f"Description: {record.description}")
         if len(records) > 15:
             lines.append(f"...and {len(records) - 15} more request(s)")
@@ -135,6 +139,7 @@ class PartsCannonService:
                 description=record.description,
                 requested_by_user_id=record.requested_by_user_id,
                 operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                assigned_parts_user_id=record.assigned_parts_user_id,
                 status=normalized_status,
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -157,6 +162,67 @@ class PartsCannonService:
 
         return CommandResult(message=f"Parts request `{request.request_id}` was not found.")
 
+    async def get_request(self, request_id: int) -> CommandResult:
+        """Return a detailed view of a tracked parts request."""
+        record = self._find_record(request_id)
+        if record is None:
+            return CommandResult(message=f"Parts request `{request_id}` was not found.")
+
+        lines = [
+            f"Parts request `{record.request_id}`",
+            f"Reference: `{record.reference}`",
+            f"Status: `{record.status}`",
+            f"Requested by Discord user: `{record.requested_by_user_id}`",
+            f"Assigned parts user: `{record.assigned_parts_user_id}`" if record.assigned_parts_user_id is not None else "Assigned parts user: unassigned",
+            f"Created at: `{record.created_at}`",
+            f"Updated at: `{record.updated_at}`",
+            f"Description: {record.description}",
+        ]
+        if record.operator_bluefolder_user_id is not None:
+            lines.append(f"Mapped BlueFolder user: `{record.operator_bluefolder_user_id}`")
+        return CommandResult(message="\n".join(lines))
+
+    async def claim_request(self, request: PartRequestClaim) -> CommandResult:
+        """Assign or unassign a parts request."""
+        records = self.request_store.load()
+        for index, record in enumerate(records):
+            if record.request_id != request.request_id:
+                continue
+
+            updated = PartRequestRecord(
+                request_id=record.request_id,
+                reference=record.reference,
+                description=record.description,
+                requested_by_user_id=record.requested_by_user_id,
+                operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                assigned_parts_user_id=request.parts_user_id,
+                status=record.status,
+                created_at=record.created_at,
+                updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            )
+            records[index] = updated
+            self.request_store.save(records)
+            if request.parts_user_id is None:
+                topic = "parts.request.unclaimed"
+                message = f"Unassigned parts request {request.request_id}."
+                response = f"Parts request `{updated.request_id}` is now unassigned."
+            else:
+                topic = "parts.request.claimed"
+                message = f"Assigned parts request {request.request_id} to parts user {request.parts_user_id}."
+                response = f"Parts request `{updated.request_id}` assigned to parts user `{request.parts_user_id}`."
+            await self.notifications.send_notice(topic=topic, message=message)
+            return CommandResult(
+                message="\n".join(
+                    [
+                        response,
+                        f"Reference: `{updated.reference}`",
+                        f"Status: `{updated.status}`",
+                    ]
+                )
+            )
+
+        return CommandResult(message=f"Parts request `{request.request_id}` was not found.")
+
     def supported_request_statuses(self) -> tuple[str, ...]:
         """Return the supported parts request statuses."""
         return PARTS_REQUEST_STATUSES
@@ -166,6 +232,13 @@ class PartsCannonService:
         candidate = status.strip().lower()
         if candidate in PARTS_REQUEST_STATUSES:
             return candidate
+        return None
+
+    def _find_record(self, request_id: int) -> PartRequestRecord | None:
+        """Find a stored parts request record by id."""
+        for record in self.request_store.load():
+            if record.request_id == request_id:
+                return record
         return None
 
     def _build_lookup_result(

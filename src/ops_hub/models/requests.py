@@ -48,6 +48,15 @@ class PartRequestUpdate:
 
 
 @dataclass(slots=True)
+class PartRequestClaim:
+    """Input for claiming or unclaiming a parts request."""
+
+    request_id: int
+    parts_user_id: int | None
+    updated_by_user_id: int
+
+
+@dataclass(slots=True)
 class CommandResult:
     """Simple user-facing command response."""
 
@@ -170,6 +179,7 @@ class PartRequestRecord:
     description: str
     requested_by_user_id: int
     operator_bluefolder_user_id: int | None
+    assigned_parts_user_id: int | None
     status: str
     created_at: str
     updated_at: str
