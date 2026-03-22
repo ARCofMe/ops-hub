@@ -72,7 +72,8 @@ Treat this as the first real Ops Hub beta.
 - [x] Dispatch integration does more than stop preview and assignment presence
 - [x] Parts wrapper has at least one real workflow path
 - [x] Parts request lifecycle is connected to a basic downstream handoff file
-- [ ] Parts request lifecycle is connected to a real consuming downstream process
+- [x] Parts request lifecycle is connected to a basic consuming downstream receipt loop
+- [ ] Parts request lifecycle is connected to a real external consuming downstream process
 - [x] Notification routing model is defined beyond dry-run logging
 
 ### Operational Shape
@@ -128,7 +129,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Turn richer assignment context into more dispatch actions
-2. Turn the queue handoff file into a real consuming downstream process
+2. Turn the current handoff/receipt loop into a real external consuming downstream process
 3. Strengthen assignment/job workflows where live use exposes gaps
 4. Revisit photo ingest after the revised concept is ready
 5. Decide what should qualify as `V0.5.0`
