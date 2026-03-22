@@ -2,6 +2,7 @@
 
 EXTENSIONS: tuple[str, ...] = (
     "ops_hub.bot.cogs.admin",
+    "ops_hub.bot.cogs.dispatch",
     "ops_hub.bot.cogs.health",
     "ops_hub.bot.cogs.operations",
 )
