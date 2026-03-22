@@ -45,25 +45,36 @@ class DispatchService:
             )
 
         assignments = await self.adapter.get_assignments_for_user(target_user_id)
+        origin_address = await self.adapter.get_origin_for_user(target_user_id)
         if not assignments:
-            return CommandResult(
-                message=(
-                    f"No current assignments were found for mapped BlueFolder user "
-                    f"`{target_user_id}`."
-                )
-            )
+            lines = [f"No current assignments were found for mapped BlueFolder user `{target_user_id}`."]
+            if origin_address:
+                lines.append(f"Origin: {origin_address}")
+            return CommandResult(message="\n".join(lines))
 
         lines = [
             f"Current assignments for BlueFolder user `{target_user_id}`",
+            f"Assignment count: `{len(assignments)}`",
         ]
+        if origin_address:
+            lines.append(f"Origin: {origin_address}")
         for assignment in assignments[:10]:
             sr_id = assignment.get("serviceRequestId") or "unknown"
             subject = assignment.get("subject") or "Unlabeled Service Request"
             city = assignment.get("city")
             state = assignment.get("state")
+            start = assignment.get("start")
+            route_label = assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow")
             location = " ".join(part for part in [city, state] if part).strip()
+            detail_parts = []
             if location:
-                lines.append(f"`SR-{sr_id}` {subject} [{location}]")
+                detail_parts.append(location)
+            if route_label:
+                detail_parts.append(str(route_label))
+            if start:
+                detail_parts.append(f"start {start}")
+            if detail_parts:
+                lines.append(f"`SR-{sr_id}` {subject} [{' | '.join(detail_parts)}]")
             else:
                 lines.append(f"`SR-{sr_id}` {subject}")
 

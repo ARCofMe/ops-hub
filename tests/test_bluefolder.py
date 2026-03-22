@@ -63,9 +63,25 @@ def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Pa
             class BlueFolderIntegration:
                 def get_user_assignments_today(self, user_id: int):
                     return [
-                        {"serviceRequestId": "100", "subject": "Dryer repair", "city": "Portland", "state": "ME"},
-                        {"serviceRequestId": "101", "subject": "Washer repair", "city": "Lewiston", "state": "ME"},
+                        {
+                            "serviceRequestId": "100",
+                            "subject": "Dryer repair",
+                            "city": "Portland",
+                            "state": "ME",
+                            "routeLabel": "AM",
+                            "start": "08:00",
+                        },
+                        {
+                            "serviceRequestId": "101",
+                            "subject": "Washer repair",
+                            "city": "Lewiston",
+                            "state": "ME",
+                            "routeLabel": "PM",
+                        },
                     ]
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
             """
         ),
         encoding="utf-8",
@@ -86,8 +102,46 @@ def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Pa
     )
 
     assert "Current assignments for BlueFolder user `13051`" in result.message
-    assert "`SR-100` Dryer repair [Portland ME]" in result.message
-    assert "`SR-101` Washer repair [Lewiston ME]" in result.message
+    assert "Assignment count: `2`" in result.message
+    assert "Origin: South Paris, ME" in result.message
+    assert "`SR-100` Dryer repair [Portland ME | AM | start 08:00]" in result.message
+    assert "`SR-101` Washer repair [Lewiston ME | PM]" in result.message
+
+
+def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:
+    dispatch_package = tmp_path / "optimized_routing"
+    dispatch_package.mkdir()
+    (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    return []
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(tmp_path)),
+        bluefolder_service=BlueFolderService(adapter=BlueFolderAdapter(base_path=None)),
+    )
+
+    result = asyncio.run(
+        service.lookup_job(
+            JobLookupRequest(
+                reference=None,
+                requested_by_user_id=1,
+                operator_bluefolder_user_id=13051,
+            )
+        )
+    )
+
+    assert "No current assignments were found for mapped BlueFolder user `13051`." in result.message
+    assert "Origin: South Paris, ME" in result.message
 
 
 def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:

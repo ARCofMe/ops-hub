@@ -166,6 +166,7 @@ class DispatchAdapter:
         try:
             with _temporary_sys_path(resolved_path):
                 importlib.invalidate_caches()
+                sys.modules.pop("optimized_routing", None)
                 sys.modules.pop("optimized_routing.bluefolder_integration", None)
                 integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
@@ -179,6 +180,28 @@ class DispatchAdapter:
             return []
 
         return assignments
+
+    async def get_origin_for_user(self, operator_bluefolder_user_id: int) -> str | None:
+        """Return the mapped user's origin address when available from the routing wrapper."""
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        if resolved_path is None or not resolved_path.exists():
+            return None
+
+        try:
+            with _temporary_sys_path(resolved_path):
+                importlib.invalidate_caches()
+                sys.modules.pop("optimized_routing", None)
+                sys.modules.pop("optimized_routing.bluefolder_integration", None)
+                integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                integration_class = getattr(integration_module, "BlueFolderIntegration")
+                integration = integration_class()
+                return integration.get_user_origin_address(operator_bluefolder_user_id)
+        except Exception:
+            logger.exception(
+                "Failed to load origin address for mapped BlueFolder user %s",
+                operator_bluefolder_user_id,
+            )
+            return None
 
 
 class _temporary_sys_path:
