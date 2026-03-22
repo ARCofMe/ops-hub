@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import CommandResult, JobLookupRequest
+from ops_hub.models.requests import BlueFolderJobSummary, CommandResult, JobLookupRequest
 from ops_hub.services.bluefolder import BlueFolderService
 
 
@@ -17,15 +17,35 @@ class DispatchService:
     bluefolder_service: BlueFolderService
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
-        """Return a placeholder job lookup response."""
+        """Return a job lookup response using the best available read-only data."""
         # TODO: Start by combining read-only BlueFolder lookups with dispatch wrappers.
         dispatch_result = await self.adapter.get_job(request.reference)
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
-        return CommandResult(
-            message=(
-                f"Job lookup placeholder for `{request.reference}`. "
-                f"Dispatch source: {dispatch_result['source']}; "
-                f"BlueFolder status: {bluefolder_result.integration_status}. "
-                f"{bluefolder_result.message}"
-            )
+        return CommandResult(message=self._format_job_message(request.reference, dispatch_result["source"], bluefolder_result))
+
+    def _format_job_message(
+        self,
+        reference: str,
+        dispatch_source: str,
+        summary: BlueFolderJobSummary,
+    ) -> str:
+        """Build a user-facing job response from the current adapter results."""
+        if summary.available and summary.integration_status == "live_read":
+            lines = [
+                f"Job `{reference}`",
+                f"BlueFolder SR: `{summary.service_request_id or reference}`",
+                f"Subject: {summary.subject or 'Unlabeled Service Request'}",
+            ]
+            if summary.customer_id:
+                lines.append(f"Customer ID: `{summary.customer_id}`")
+            if summary.customer_location_id:
+                lines.append(f"Location ID: `{summary.customer_location_id}`")
+            lines.append(f"Dispatch source: {dispatch_source}")
+            return "\n".join(lines)
+
+        return (
+            f"Job lookup for `{reference}` is not fully wired yet. "
+            f"Dispatch source: {dispatch_source}; "
+            f"BlueFolder status: {summary.integration_status}. "
+            f"{summary.message}"
         )

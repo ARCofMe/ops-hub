@@ -56,6 +56,57 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
     assert "Failed to import bluefolder_api from configured path" in result.message
 
 
+def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+            """
+        ),
+        encoding="utf-8",
+    )
+    bluefolder_service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+    )
+
+    result = asyncio.run(
+        service.lookup_job(JobLookupRequest(reference="SR-100", requested_by_user_id=1))
+    )
+
+    assert "Job `SR-100`" in result.message
+    assert "BlueFolder SR: `100`" in result.message
+    assert "Subject: SR description 100" in result.message
+    assert "Customer ID: `42`" in result.message
+    assert "Location ID: `9`" in result.message
+    assert "Dispatch source: dispatch_adapter" in result.message
+
+
 def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) -> None:
     package_dir = tmp_path / "bluefolder_api"
     package_dir.mkdir()
