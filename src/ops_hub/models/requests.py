@@ -58,3 +58,14 @@ class PhotoIngestResult:
     handled: bool
     status: str
     message: str
+
+
+@dataclass(slots=True)
+class PartsWorkflowSummary:
+    """Placeholder summary for a future parts workflow wrapper."""
+
+    reference: str
+    available: bool
+    integration_status: str
+    message: str
+    source_path: Path | None = None

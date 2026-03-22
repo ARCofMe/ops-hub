@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
-from ops_hub.models.requests import CommandResult, PartLookupRequest
+from ops_hub.models.requests import CommandResult, PartLookupRequest, PartsWorkflowSummary
 from ops_hub.services.notifications import NotificationService
 
 
@@ -20,13 +20,17 @@ class PartsCannonService:
     notifications: NotificationService
 
     async def lookup_part(self, request: PartLookupRequest) -> CommandResult:
-        """Return a placeholder parts response."""
+        """Return a placeholder parts wrapper response."""
         # TODO: Wrap existing parts workflow logic here instead of moving code prematurely.
         result = await self.adapter.get_part_status(request.reference)
+        return self._build_lookup_result(result)
+
+    def _build_lookup_result(self, summary: PartsWorkflowSummary) -> CommandResult:
+        """Convert a typed parts summary into a user-facing command response."""
         return CommandResult(
             message=(
-                f"Parts Cannon placeholder for `{request.reference}`. "
-                f"Current source: {result['source']}."
+                f"Parts Cannon wrapper placeholder for `{summary.reference}`. "
+                f"Status: {summary.integration_status}. "
+                f"{summary.message}"
             )
         )
-
