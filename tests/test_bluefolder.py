@@ -2,6 +2,7 @@
 
 import asyncio
 from pathlib import Path
+import textwrap
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.models.requests import JobLookupRequest
@@ -30,13 +31,13 @@ def test_bluefolder_adapter_reports_unconfigured_status() -> None:
     assert result.available is False
 
 
-def test_bluefolder_adapter_reports_ready_status_for_existing_path(tmp_path: Path) -> None:
+def test_bluefolder_adapter_reports_import_error_for_non_library_path(tmp_path: Path) -> None:
     adapter = BlueFolderAdapter(base_path=str(tmp_path))
 
     result = asyncio.run(adapter.get_job_summary("SR-100"))
 
-    assert result.integration_status == "placeholder_ready"
-    assert result.available is True
+    assert result.integration_status == "import_error"
+    assert result.available is False
     assert result.source_path == tmp_path
 
 
@@ -51,5 +52,58 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
         service.lookup_job(JobLookupRequest(reference="SR-100", requested_by_user_id=1))
     )
 
-    assert "BlueFolder status: placeholder_ready." in result.message
-    assert "Read-only wrapper not implemented yet." in result.message
+    assert "BlueFolder status: import_error." in result.message
+    assert "Failed to import bluefolder_api from configured path" in result.message
+
+
+def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_job_summary("SR-100"))
+
+    assert result.integration_status == "live_read"
+    assert result.available is True
+    assert result.service_request_id == "100"
+    assert result.subject == "SR description 100"
+    assert result.customer_id == "42"
+    assert result.customer_location_id == "9"
+    assert "BlueFolder SR `100`: SR description 100" == result.message
+
+
+def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> None:
+    adapter = BlueFolderAdapter(base_path=str(tmp_path), api_key="key", account_name="acme")
+
+    result = asyncio.run(adapter.get_job_summary("ticket-alpha"))
+
+    assert result.integration_status == "unsupported_reference"
+    assert result.available is False

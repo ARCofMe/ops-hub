@@ -1,23 +1,33 @@
-"""Placeholder BlueFolder adapter for future migration work."""
+"""BlueFolder adapter for incremental read-only migration work."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
+import logging
+import os
 from pathlib import Path
+import re
+import sys
+from types import TracebackType
 
 from ops_hub.models.requests import BlueFolderJobSummary
+
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class BlueFolderAdapter:
     """Adapter boundary for BlueFolder-facing behavior."""
 
     base_path: str | None = None
+    api_key: str | None = None
+    account_name: str | None = None
+    base_url: str | None = None
 
     async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
-        """Return a placeholder BlueFolder lookup result.
-
-        TODO: Wrap existing local BlueFolder libraries instead of implementing new logic here first.
-        """
+        """Return a read-only BlueFolder lookup result when the local library is available."""
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None:
             return BlueFolderJobSummary(
@@ -37,10 +47,162 @@ class BlueFolderAdapter:
                 source_path=resolved_path,
             )
 
+        service_request_id = self._extract_service_request_id(reference)
+        if service_request_id is None:
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="unsupported_reference",
+                message="BlueFolder read-only lookup currently requires a numeric SR id.",
+                source_path=resolved_path,
+            )
+
+        try:
+            client_class = self._load_client_class(resolved_path)
+        except (ImportError, AttributeError, ModuleNotFoundError) as exc:
+            logger.exception("Failed to load bluefolder_api from %s", resolved_path)
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="import_error",
+                message=f"Failed to import bluefolder_api from configured path: {exc}",
+                source_path=resolved_path,
+                service_request_id=service_request_id,
+            )
+
+        if not (self.api_key or "").strip():
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="client_unconfigured",
+                message="BlueFolder API key is not configured for Ops Hub.",
+                source_path=resolved_path,
+                service_request_id=service_request_id,
+            )
+
+        if not ((self.account_name or "").strip() or (self.base_url or "").strip()):
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="client_unconfigured",
+                message="BlueFolder account name or base URL is not configured for Ops Hub.",
+                source_path=resolved_path,
+                service_request_id=service_request_id,
+            )
+
+        with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+            api_key=self.api_key,
+            account_name=self.account_name,
+            base_url=self.base_url,
+        ):
+            try:
+                client = client_class(base_url=(self.base_url or None))
+                sr_xml = client.service_requests.get_by_id(int(service_request_id))
+            except Exception as exc:
+                logger.exception("BlueFolder lookup failed for %s", reference)
+                return BlueFolderJobSummary(
+                    reference=reference,
+                    available=False,
+                    integration_status="lookup_failed",
+                    message=f"BlueFolder read-only lookup failed: {exc}",
+                    source_path=resolved_path,
+                    service_request_id=service_request_id,
+                )
+
+        sr = sr_xml.find(".//serviceRequest")
+        if sr is None:
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="not_found",
+                message=f"No BlueFolder service request was found for `{service_request_id}`.",
+                source_path=resolved_path,
+                service_request_id=service_request_id,
+            )
+
+        subject = (
+            sr.findtext("description")
+            or sr.findtext("subject")
+            or sr.findtext(".//subject")
+            or sr.findtext(".//title")
+            or "Unlabeled Service Request"
+        )
+        customer_id = sr.findtext("customerId")
+        customer_location_id = sr.findtext("customerLocationId")
+
         return BlueFolderJobSummary(
             reference=reference,
             available=True,
-            integration_status="placeholder_ready",
-            message="BlueFolder adapter path is available. Read-only wrapper not implemented yet.",
+            integration_status="live_read",
+            message=f"BlueFolder SR `{service_request_id}`: {subject}",
             source_path=resolved_path,
+            service_request_id=service_request_id,
+            subject=subject,
+            customer_id=customer_id,
+            customer_location_id=customer_location_id,
         )
+
+    def _extract_service_request_id(self, reference: str) -> str | None:
+        """Extract a numeric SR id from a user-supplied lookup token."""
+        match = re.search(r"(\d+)", reference)
+        return match.group(1) if match else None
+
+    def _load_client_class(self, resolved_path: Path) -> type[object]:
+        """Load the shared BlueFolder client from a local repo path."""
+        with _temporary_sys_path(resolved_path):
+            module = importlib.import_module("bluefolder_api.client")
+        return getattr(module, "BlueFolderClient")
+
+
+class _temporary_sys_path:
+    """Context manager that temporarily prepends a path to ``sys.path``."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = str(path)
+
+    def __enter__(self) -> None:
+        if self.path not in sys.path:
+            sys.path.insert(0, self.path)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        try:
+            sys.path.remove(self.path)
+        except ValueError:
+            pass
+
+
+class _temporary_bluefolder_env:
+    """Context manager for configuring the shared BlueFolder client safely."""
+
+    def __init__(self, api_key: str | None, account_name: str | None, base_url: str | None) -> None:
+        self.values = {
+            "BLUEFOLDER_API_KEY": api_key or "",
+            "BLUEFOLDER_ACCOUNT_NAME": account_name or "",
+            "BLUEFOLDER_BASE_URL": base_url or "",
+        }
+        self.previous: dict[str, str | None] = {}
+
+    def __enter__(self) -> None:
+        for key, value in self.values.items():
+            self.previous[key] = os.environ.get(key)
+            if value:
+                os.environ[key] = value
+            else:
+                os.environ.pop(key, None)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        for key, previous_value in self.previous.items():
+            if previous_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous_value

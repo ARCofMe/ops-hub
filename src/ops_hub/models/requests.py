@@ -38,6 +38,10 @@ class BlueFolderJobSummary:
     integration_status: str
     message: str
     source_path: Path | None = None
+    service_request_id: str | None = None
+    subject: str | None = None
+    customer_id: str | None = None
+    customer_location_id: str | None = None
 
 
 @dataclass(slots=True)

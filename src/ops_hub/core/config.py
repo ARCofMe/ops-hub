@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     photo_ingest_channel_id: int | None = None
 
     bluefolder_api_path: str | None = None
+    bluefolder_api_key: str | None = None
+    bluefolder_account_name: str | None = None
+    bluefolder_base_url: str | None = None
     bluebot_discord_extension_path: str | None = None
     photo_ingest_project_path: str | None = None
     parts_cannon_project_path: str | None = None
@@ -39,6 +42,25 @@ class Settings(BaseSettings):
 
         if not self.log_level.strip():
             errors.append("OPS_HUB_LOG_LEVEL cannot be empty.")
+
+        bluefolder_key = (self.bluefolder_api_key or "").strip()
+        bluefolder_account = (self.bluefolder_account_name or "").strip()
+        bluefolder_base_url = (self.bluefolder_base_url or "").strip()
+
+        if bluefolder_account and bluefolder_base_url:
+            errors.append(
+                "Set either OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL, not both."
+            )
+
+        if bluefolder_key and not (bluefolder_account or bluefolder_base_url):
+            errors.append(
+                "OPS_HUB_BLUEFOLDER_API_KEY requires OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL."
+            )
+
+        if (bluefolder_account or bluefolder_base_url) and not bluefolder_key:
+            errors.append(
+                "OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL requires OPS_HUB_BLUEFOLDER_API_KEY."
+            )
 
         return errors
 

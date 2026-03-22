@@ -76,6 +76,8 @@ python -m ops_hub
 
 Once `OPS_HUB_DISCORD_TOKEN` is set, the bot should start and register a basic `/ping` command plus placeholder `/job` and `/part` commands.
 
+For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API_PATH` to the local `bluefolder-api` repository root and provide either `OPS_HUB_BLUEFOLDER_ACCOUNT_NAME` or `OPS_HUB_BLUEFOLDER_BASE_URL` plus `OPS_HUB_BLUEFOLDER_API_KEY`.
+
 ## Current Scaffold Scope
 
 - Discord bot foundation with `discord.py`
@@ -108,4 +110,3 @@ This keeps the foundation clean while allowing gradual adoption.
 3. BlueFolder read-only adapter
 4. photo ingest channel listener
 5. parts workflow wrapper
-

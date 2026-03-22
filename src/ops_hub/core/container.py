@@ -33,7 +33,12 @@ def build_container(settings: Settings) -> ServiceContainer:
     notification_service = NotificationService()
 
     # TODO: Replace these placeholders with real wrappers around existing local projects.
-    bluefolder_adapter = BlueFolderAdapter(base_path=settings.bluefolder_api_path)
+    bluefolder_adapter = BlueFolderAdapter(
+        base_path=settings.bluefolder_api_path,
+        api_key=settings.bluefolder_api_key,
+        account_name=settings.bluefolder_account_name,
+        base_url=settings.bluefolder_base_url,
+    )
     parts_adapter = PartsCannonAdapter(base_path=settings.parts_cannon_project_path)
     photo_adapter = PhotoIngestAdapter(base_path=settings.photo_ingest_project_path)
     dispatch_adapter = DispatchAdapter(base_path=settings.dispatch_project_path)
