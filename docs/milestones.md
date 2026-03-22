@@ -89,8 +89,8 @@ Treat this as the point where Ops Hub is clearly useful in daily work.
 ### Workflow Coverage
 
 - [ ] BlueFolder lookups are broadly useful
-- [ ] Dispatch workflows are genuinely actionable
-- [ ] Parts workflows include real operational actions
+- [x] Dispatch workflows are moving beyond basic previews into more actionable assignment context
+- [x] Parts workflows include real operational actions
 - [ ] Photo ingest replacement direction is implemented enough to use
 - [ ] Notification routing reaches actual destination channels or users
 
@@ -127,7 +127,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 
 ## Recommended Near-Term Sequence
 
-1. Expand mapped assignment workflows
+1. Turn richer assignment context into more dispatch actions
 2. Turn the queue handoff file into a real consuming downstream process
 3. Strengthen assignment/job workflows where live use exposes gaps
 4. Revisit photo ingest after the revised concept is ready

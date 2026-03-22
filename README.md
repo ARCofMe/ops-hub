@@ -113,6 +113,11 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 - pass a reference like `SR-100` for a direct lookup
 - omit the reference to show the mapped technician's current assignments
 
+Assignment summaries now include:
+- assignment count
+- mapped origin when available
+- richer route/window/start context when the dispatch wrapper provides it
+
 Dispatcher-focused commands now exist explicitly instead of relying only on shared commands:
 
 - `/assignments`
@@ -171,6 +176,7 @@ That naming can be cleaned up later in code, but the README should be read using
   - `/part_claim`
   - `/part_unclaim`
   - `/part_sync`
+  - `unsynced_only` filtering is available on `/part_requests`
 - Open bot health:
   - `/ping`
   - `/ops_help`
@@ -244,6 +250,7 @@ This keeps the foundation clean while allowing gradual adoption.
 - technicians can submit and review their own parts requests while Parts manages the shared queue
 - parts queue ownership is now explicit through claim/unclaim and detailed request inspection
 - parts can now export the tracked queue to a downstream handoff file under the configured Parts project path
+- parts queue records now track last sync state so unsynced work can be filtered directly
 - notifications can optionally route to a configured Discord channel instead of staying logger-only
 - admin service status now reports live parts queue counts in addition to adapter status
 - the bot now includes `/ops_help` as an in-bot command guide for the stable beta surface
@@ -252,6 +259,6 @@ This keeps the foundation clean while allowing gradual adoption.
 
 ## Next Practical Moves
 
-1. expand mapped assignment workflows beyond simple summaries
+1. keep strengthening mapped assignment workflows around real dispatch use
 2. build on the downstream queue handoff with a real consuming parts workflow or project wrapper
 3. revisit photo ingest once the revised concept is settled
