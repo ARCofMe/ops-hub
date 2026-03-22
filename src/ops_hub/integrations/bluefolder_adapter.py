@@ -129,6 +129,33 @@ class BlueFolderAdapter:
         )
         customer_id = sr.findtext("customerId")
         customer_location_id = sr.findtext("customerLocationId")
+        address: str | None = None
+        city: str | None = None
+        state: str | None = None
+        postal_code: str | None = None
+
+        if customer_id and customer_location_id:
+            with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+                api_key=self.api_key,
+                account_name=self.account_name,
+                base_url=self.base_url,
+            ):
+                try:
+                    client = client_class(base_url=(self.base_url or None))
+                    loc_xml = client.customers.get_location_by_id(customer_id, customer_location_id)
+                except Exception:
+                    logger.exception(
+                        "BlueFolder location lookup failed for customer=%s location=%s",
+                        customer_id,
+                        customer_location_id,
+                    )
+                else:
+                    location = loc_xml.find(".//customerLocation")
+                    if location is not None:
+                        address = location.findtext("addressStreet")
+                        city = location.findtext("addressCity")
+                        state = location.findtext("addressState")
+                        postal_code = location.findtext("addressPostalCode")
 
         return BlueFolderJobSummary(
             reference=reference,
@@ -140,6 +167,10 @@ class BlueFolderAdapter:
             subject=subject,
             customer_id=customer_id,
             customer_location_id=customer_location_id,
+            address=address,
+            city=city,
+            state=state,
+            postal_code=postal_code,
         )
 
     def _extract_service_request_id(self, reference: str) -> str | None:

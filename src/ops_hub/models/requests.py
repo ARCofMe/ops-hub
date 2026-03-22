@@ -59,6 +59,9 @@ class DispatchJobSummary:
     message: str
     source_path: Path | None = None
     module_name: str | None = None
+    stop_label: str | None = None
+    stop_address: str | None = None
+    stop_window: str | None = None
 
 
 @dataclass(slots=True)
@@ -74,6 +77,10 @@ class BlueFolderJobSummary:
     subject: str | None = None
     customer_id: str | None = None
     customer_location_id: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    postal_code: str | None = None
 
 
 @dataclass(slots=True)

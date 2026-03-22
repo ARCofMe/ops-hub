@@ -18,8 +18,8 @@ class DispatchService:
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
-        dispatch_result = await self.adapter.get_job(request.reference)
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
+        dispatch_result = await self.adapter.get_job(request.reference, bluefolder_result)
         return CommandResult(
             message=self._format_job_message(
                 request.reference,
@@ -46,6 +46,24 @@ class DispatchService:
                 lines.append(f"Customer ID: `{summary.customer_id}`")
             if summary.customer_location_id:
                 lines.append(f"Location ID: `{summary.customer_location_id}`")
+            if summary.address:
+                location = summary.address
+                if summary.city or summary.state or summary.postal_code:
+                    location = ", ".join(
+                        part
+                        for part in [
+                            summary.address,
+                            " ".join(part for part in [summary.city, summary.state, summary.postal_code] if part).strip(),
+                        ]
+                        if part
+                    )
+                lines.append(f"Address: {location}")
+            if dispatch_summary.stop_label:
+                lines.append(f"Dispatch stop: `{dispatch_summary.stop_label}`")
+            if dispatch_summary.stop_window:
+                lines.append(f"Dispatch window: `{dispatch_summary.stop_window}`")
+            if dispatch_summary.stop_address:
+                lines.append(f"Dispatch stop address: {dispatch_summary.stop_address}")
             lines.append(f"Dispatch detail: {dispatch_summary.message}")
             return "\n".join(lines)
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 from types import TracebackType
 
-from ops_hub.models.requests import DispatchJobSummary
+from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
 
 logger = logging.getLogger(__name__)
@@ -20,8 +20,8 @@ class DispatchAdapter:
 
     base_path: str | None = None
 
-    async def get_job(self, reference: str) -> DispatchJobSummary:
-        """Return dispatch wrapper status for a future job lookup integration."""
+    async def get_job(self, reference: str, bluefolder_summary: BlueFolderJobSummary | None = None) -> DispatchJobSummary:
+        """Return dispatch wrapper status and a stop preview when enough data is available."""
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None:
             return DispatchJobSummary(
@@ -41,11 +41,11 @@ class DispatchAdapter:
                 source_path=resolved_path,
             )
 
-        module_name = "optimized_routing.bluefolder_integration"
+        module_name = "optimized_routing.routing"
         try:
             with _temporary_sys_path(resolved_path):
                 module = importlib.import_module(module_name)
-                integration_class = getattr(module, "BlueFolderIntegration")
+                preview_builder = getattr(module, "bluefolder_to_routestops")
         except (ImportError, AttributeError, ModuleNotFoundError) as exc:
             logger.exception("Failed to load dispatch wrapper from %s", resolved_path)
             return DispatchJobSummary(
@@ -57,16 +57,69 @@ class DispatchAdapter:
                 module_name=module_name,
             )
 
+        if bluefolder_summary is None or bluefolder_summary.integration_status != "live_read":
+            return DispatchJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="wrapper_ready",
+                message="Dispatch wrapper is available, but no live BlueFolder job data was available for a stop preview.",
+                source_path=resolved_path,
+                module_name=module_name,
+            )
+
+        if not bluefolder_summary.address:
+            return DispatchJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="wrapper_ready",
+                message="Dispatch wrapper is available, but the BlueFolder job did not include an address for stop preview.",
+                source_path=resolved_path,
+                module_name=module_name,
+            )
+
+        assignment = {
+            "serviceRequestId": bluefolder_summary.service_request_id or reference,
+            "address": bluefolder_summary.address,
+            "city": bluefolder_summary.city,
+            "state": bluefolder_summary.state,
+            "zip": bluefolder_summary.postal_code,
+            "start": "",
+        }
+        try:
+            with _temporary_sys_path(resolved_path):
+                stops = preview_builder([assignment])
+        except Exception as exc:
+            logger.exception("Failed to build dispatch stop preview for %s", reference)
+            return DispatchJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="preview_failed",
+                message=f"Dispatch stop preview failed: {exc}",
+                source_path=resolved_path,
+                module_name=module_name,
+            )
+
+        if not stops:
+            return DispatchJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="wrapper_ready",
+                message="Dispatch wrapper is available, but it did not return any stop previews for this job.",
+                source_path=resolved_path,
+                module_name=module_name,
+            )
+
+        stop = stops[0]
         return DispatchJobSummary(
             reference=reference,
             available=True,
-            integration_status="wrapper_ready",
-            message=(
-                f"Dispatch wrapper `{integration_class.__name__}` is importable. "
-                "Route and assignment lookup behavior is not wired into Ops Hub yet."
-            ),
+            integration_status="stop_preview",
+            message="Dispatch stop preview built from the existing routing wrapper.",
             source_path=resolved_path,
             module_name=module_name,
+            stop_label=getattr(stop, "label", None),
+            stop_address=getattr(stop, "address", None),
+            stop_window=getattr(getattr(stop, "window", None), "name", None),
         )
 
 
