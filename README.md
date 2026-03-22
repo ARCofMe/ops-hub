@@ -1,70 +1,137 @@
 # Ops Hub
 
-Ops Hub is the new unified Discord-facing operations application for the business.
+Ops Hub is a unified Discord operations bot for the appliance repair business.
 
-This project is the start of a migration path, not a rewrite. It creates a clean home for the long-term Discord bot while existing projects continue to remain intact and act as the current source of truth.
+It gives the team one Discord-facing surface for technician, dispatch, parts, and admin workflows while keeping the internals modular and testable.
 
-## Migration Philosophy
+## What It Does
 
-- Existing projects remain untouched.
-- Ops Hub wraps and integrates existing projects incrementally.
-- Parts Cannon is the internal codename for the parts-related subsystem and the broader migration effort.
-- Ops Hub is the user-facing application name and the long-term platform direction.
+Ops Hub currently focuses on:
 
-The longer-term milestone checklist lives in `docs/milestones.md`.
-Photo ingest beta scope notes live in `docs/photo-ingest-scope.md`.
+- BlueFolder job lookups and service request context
+- technician assignment views
+- dispatcher assignment and board views
+- BlueFolder-native parts comment/update flows
+- tracked internal parts queue workflows where supplemental coordination is useful
+- admin/debug visibility for runtime, config, mappings, and service state
 
-## Goals
+BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process.
 
-- One Discord bot identity.
-- Modular internal services.
-- Clean separation between bot, services, integrations, and core utilities.
-- Production-minded Python foundation that is easy to test and extend.
+## Current Roles
 
-## Project Layout
+Business-facing role model:
 
-```text
-ops-hub/
-├── .env.example
-├── pyproject.toml
-├── README.md
-├── src/
-│   └── ops_hub/
-│       ├── __init__.py
-│       ├── __main__.py
-│       ├── main.py
-│       ├── bot/
-│       │   ├── __init__.py
-│       │   ├── client.py
-│       │   ├── extensions.py
-│       │   └── cogs/
-│       │       ├── __init__.py
-│       │       ├── health.py
-│       │       └── operations.py
-│       ├── core/
-│       │   ├── __init__.py
-│       │   ├── config.py
-│       │   ├── container.py
-│       │   └── logging.py
-│       ├── integrations/
-│       │   ├── __init__.py
-│       │   ├── bluefolder_adapter.py
-│       │   ├── dispatch_adapter.py
-│       │   ├── parts_cannon_adapter.py
-│       │   └── photo_ingest_adapter.py
-│       ├── models/
-│       │   ├── __init__.py
-│       │   └── requests.py
-│       └── services/
-│           ├── __init__.py
-│           ├── bluefolder.py
-│           ├── dispatch.py
-│           ├── notifications.py
-│           ├── parts_cannon.py
-│           └── photo_ingest.py
-└── tests/
-    └── __init__.py
-```
+- `Admin`
+- `Dispatch`
+- `Parts`
+- `Technician`
+
+Current implementation note:
+
+- `operator` in code/config currently maps to the `Technician` role
+- `OPS_HUB_OPERATOR_*` settings are technician-facing
+- `OPS_HUB_DISPATCHER_*` settings are dispatch-facing
+- `OPS_HUB_PARTS_*` settings are parts-facing
+
+## Current Commands
+
+Open utility commands:
+
+- `/ping`
+- `/ops_help`
+
+Technician / dispatch / admin:
+
+- `/job`
+- `/assignments`
+
+Dispatch / admin:
+
+- `/tech_assignments`
+- `/tech_job`
+- `/dispatch_board`
+
+Technician / parts / admin:
+
+- `/part_request`
+- `/my_part_requests`
+- `/missing_part`
+- `/damaged_part`
+
+Technician / parts / dispatch / admin:
+
+- `/parts_brief`
+- `/parts_notes`
+
+Parts / admin:
+
+- `/part`
+- `/part_requests`
+- `/part_request_detail`
+- `/part_update`
+- `/part_claim`
+- `/part_unclaim`
+- `/part_sync`
+- `/part_reconcile`
+- `/part_ordered`
+- `/part_eta`
+- `/part_tracking`
+- `/part_received`
+- `/part_ready`
+
+Admin only:
+
+- `/ops_status`
+- `/config_check`
+- `/service_status`
+- `/recent_notices`
+- `/operator_mappings`
+- `/export_operator_mappings`
+- `/reload_operator_mappings`
+- `/set_operator_mapping`
+- `/remove_operator_mapping`
+- `/command_access`
+
+## Key Workflows
+
+### Job And Assignment Lookup
+
+- `/job` supports direct SR lookup
+- `/job` also supports mapped self-context when no reference is provided
+- `/assignments` shows the current mapped technician assignment view
+- dispatch has dedicated one-tech and team-board views
+
+### BlueFolder-Native Parts Flow
+
+Ops Hub supports the parts comment/update lifecycle directly against BlueFolder:
+
+- `/parts_brief`
+- `/parts_notes`
+- `/missing_part`
+- `/damaged_part`
+- `/part_ordered`
+- `/part_eta`
+- `/part_tracking`
+- `/part_received`
+- `/part_ready`
+
+This aligns the bot with the real business workflow instead of forcing a separate parallel system.
+
+### Supplemental Internal Parts Queue
+
+Ops Hub also has an internal tracked parts queue for coordination where it helps:
+
+- `/part_request`
+- `/my_part_requests`
+- `/part_requests`
+- `/part_request_detail`
+- `/part_update`
+- `/part_claim`
+- `/part_unclaim`
+- `/part_sync`
+- `/part_reconcile`
+
+That queue is supplemental. The long-term direction is still BlueFolder-centered operations.
 
 ## Quick Start
 
@@ -77,206 +144,62 @@ cp .env.example .env
 python -m ops_hub
 ```
 
-Once `OPS_HUB_DISCORD_TOKEN` is set, the bot should start and register the current Ops Hub command surface.
+Once `OPS_HUB_DISCORD_TOKEN` is set, the bot should start and register the current command surface.
 
-For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API_PATH` to the local `bluefolder-api` repository root and provide either `OPS_HUB_BLUEFOLDER_ACCOUNT_NAME` or `OPS_HUB_BLUEFOLDER_BASE_URL` plus `OPS_HUB_BLUEFOLDER_API_KEY`.
+To enable BlueFolder integration, set:
 
-## Current Commands
+- `OPS_HUB_BLUEFOLDER_API_PATH`
+- `OPS_HUB_BLUEFOLDER_API_KEY`
+- either `OPS_HUB_BLUEFOLDER_ACCOUNT_NAME` or `OPS_HUB_BLUEFOLDER_BASE_URL`
 
-- `/ping`
-- `/job`
-- `/assignments`
-- `/tech_assignments`
-- `/tech_job`
-- `/dispatch_board`
-- `/part`
-- `/part_request`
-- `/my_part_requests`
-- `/part_requests`
-- `/part_request_detail`
-- `/part_update`
-- `/part_claim`
-- `/part_unclaim`
-- `/part_sync`
-- `/part_reconcile`
-- `/parts_brief`
-- `/parts_notes`
-- `/missing_part`
-- `/damaged_part`
-- `/ops_status`
-- `/config_check`
-- `/service_status`
-- `/recent_notices`
-- `/operator_mappings`
-- `/export_operator_mappings`
-- `/reload_operator_mappings`
-- `/set_operator_mapping`
-- `/remove_operator_mapping`
-- `/command_access`
-- `/ops_help`
+## Project Layout
 
-`/job` now supports two modes:
-- pass a reference like `SR-100` for a direct lookup
-- omit the reference to show the mapped technician's current assignments
+```text
+ops-hub/
+├── .env.example
+├── pyproject.toml
+├── README.md
+├── docs/
+│   ├── milestones.md
+│   └── photo-ingest-scope.md
+├── src/
+│   └── ops_hub/
+│       ├── bot/
+│       ├── core/
+│       ├── integrations/
+│       ├── models/
+│       └── services/
+└── tests/
+```
 
-Assignment summaries now include:
-- assignment count
-- mapped origin when available
-- richer route/window/start context when the dispatch wrapper provides it
+Key areas:
 
-Dispatcher-focused commands now exist explicitly instead of relying only on shared commands:
+- `src/ops_hub/bot/`: Discord client and cogs
+- `src/ops_hub/services/`: business/service layer
+- `src/ops_hub/integrations/`: wrappers around external/local systems
+- `src/ops_hub/core/`: config, logging, and dependency wiring
+- `tests/`: regression coverage
 
-- `/assignments`
-- `/tech_assignments`
-- `/tech_job`
-- `/dispatch_board`
+## Development
 
-## Role Terms
+Typical local loop:
 
-Ops Hub currently uses one internal technical label that does not perfectly match business wording:
+```bash
+source .venv/bin/activate
+PYTHONPATH=src pytest -q
+```
 
-- `operator` in config/code currently maps most closely to `technician` in business terms
+The codebase is structured to keep bot behavior, service logic, and integration boundaries separate so workflows can be tested without coupling everything to Discord or external systems.
 
-So, in business-facing language, the intended role vocabulary is:
+## Docs
 
-- `Admin`
-- `Parts`
-- `Dispatch`
-- `Technician`
+Longer-form project and planning docs live in `docs/`:
 
-Today, the code/config distinguishes:
+- `docs/milestones.md`
+- `docs/photo-ingest-scope.md`
 
-- `Admin`
-- `Parts`
-- `Dispatcher`
-- `Operator` (technician-facing)
+## Project Direction
 
-That naming can be cleaned up later in code, but the README should be read using the business terms above.
+Ops Hub is the app and platform name.
 
-## Command Access Model
-
-- Admin-only:
-  - `/ops_status`
-  - `/config_check`
-  - `/service_status`
-  - `/recent_notices`
-  - `/operator_mappings`
-  - `/export_operator_mappings`
-  - `/reload_operator_mappings`
-  - `/set_operator_mapping`
-  - `/remove_operator_mapping`
-  - `/command_access`
-- Technician, Dispatch, and Admin:
-  - `/job`
-  - `/assignments`
-- Technician, Parts, and Admin:
-  - `/part_request`
-  - `/my_part_requests`
-  - `/missing_part`
-  - `/damaged_part`
-- Dispatch and Admin:
-  - `/tech_assignments`
-  - `/tech_job`
-  - `/dispatch_board`
-  - `/parts_brief`
-  - `/parts_notes`
-- Parts and Admin:
-  - `/part`
-  - `/part_requests`
-  - `/part_request_detail`
-  - `/part_update`
-  - `/part_claim`
-  - `/part_unclaim`
-  - `/part_sync`
-  - `/part_reconcile`
-  - `/parts_brief`
-  - `/parts_notes`
-  - `unsynced_only` filtering is available on `/part_requests`
-- Open bot health:
-  - `/ping`
-  - `/ops_help`
-
-Current hierarchy:
-
-1. `Admin`
-2. `Dispatch`, `Parts`, and `Technician`
-3. open utility health command access
-
-Current implementation note:
-
-- `OPS_HUB_OPERATOR_*` config values currently represent technician-facing access
-- `OPS_HUB_PARTS_*` config values represent parts-facing access
-- `OPS_HUB_DISPATCHER_*` config values represent dispatch-facing access
-
-Ops Hub currently uses config-backed user/role lists for admin, technician-facing operator, parts, and dispatcher scope decisions.
-
-## Operator Mappings
-
-Ops Hub can map Discord users to BlueFolder user IDs in two ways.
-
-Business term note:
-
-- these are effectively technician mappings today, even though the internal config key still says `operator`
-
-- inline environment config via `OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP`
-- optional JSON persistence via `OPS_HUB_OPERATOR_MAPPING_FILE`
-
-The merged mapping set is used for:
-
-- technician-aware `/job` context
-- mapped current-assignment lookup when `/job` is called without a reference
-- technician-specific dispatch context such as assignment presence and origin address
-- technician-created parts request records that can carry mapped BlueFolder user context later
-
-If `OPS_HUB_OPERATOR_MAPPING_FILE` is set, the admin mapping commands can export and reload mappings from disk.
-
-## Current Scaffold Scope
-
-- Discord bot foundation with `discord.py`
-- structured logging
-- environment-backed settings
-- dependency wiring container
-- current service layer for:
-  - BlueFolder
-  - Parts Cannon
-  - photo ingest
-  - dispatch
-  - notifications
-- operator directory and mapping persistence
-- integration adapters for wrapping existing local projects incrementally
-
-## How Migration Will Work
-
-Ops Hub does not replace current projects immediately. Instead:
-
-1. existing project logic stays where it is
-2. Ops Hub defines service interfaces and adapters around those projects
-3. Discord commands call Ops Hub services
-4. individual behaviors can be moved or rewritten later only when it is safe and worth it
-
-This keeps the foundation clean while allowing gradual adoption.
-
-## Current Status
-
-- BlueFolder has a real read-only lookup path
-- dispatch can build a stop preview and mapped technician context through the existing routing project
-- dispatch now has dedicated dispatcher-facing commands instead of relying only on shared operations commands
-- dispatch now includes a team board summary across all mapped technicians
-- parts now has a lightweight tracked request lifecycle with create, list, and update flows
-- technicians can submit and review their own parts requests while Parts manages the shared queue
-- parts queue ownership is now explicit through claim/unclaim and detailed request inspection
-- parts can now export the tracked queue to a downstream handoff file under the configured Parts project path
-- parts can now reconcile downstream receipt updates back into the tracked queue
-- parts queue records now track last sync state so unsynced work can be filtered directly
-- parts now also has BlueFolder-native summary and note-write commands, closer to the real source-of-truth workflow
-- notifications can optionally route to a configured Discord channel instead of staying logger-only
-- admin service status now reports live parts queue counts in addition to adapter status
-- the bot now includes `/ops_help` as an in-bot command guide for the stable beta surface
-- photo ingest remains intentionally paused while the concept is being revised
-- technician/admin/dispatch/parts access is now explicit instead of implicit
-
-## Next Practical Moves
-
-1. build on the dispatch board with more action-oriented dispatcher workflows
-2. build on the BlueFolder-native parts path and current two-way handoff without splitting the source of truth
-3. revisit photo ingest once the revised concept is settled
+`Parts Cannon` is an internal codename for the parts-related subsystem and the broader migration effort, but the bot itself is not limited to parts workflows.

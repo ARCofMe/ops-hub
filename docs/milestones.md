@@ -73,7 +73,8 @@ Treat this as the first real Ops Hub beta.
 - [x] Parts wrapper has at least one real workflow path
 - [x] Parts request lifecycle is connected to a basic downstream handoff file
 - [x] Parts request lifecycle is connected to a basic consuming downstream receipt loop
-- [ ] Parts request lifecycle is connected to a real external consuming downstream process
+- [x] BlueFolder-native parts issue/update flows exist for the core business comment lifecycle
+- [ ] BlueFolder-native parts flows cover enough live usage that the supplemental internal queue is clearly secondary
 - [x] Notification routing model is defined beyond dry-run logging
 
 ### Operational Shape
@@ -92,8 +93,10 @@ Treat this as the point where Ops Hub is clearly useful in daily work.
 - [x] BlueFolder lookups are broadly useful
 - [x] Dispatch workflows are moving beyond basic previews into more actionable assignment context
 - [x] Parts workflows include real operational actions
+- [x] BlueFolder-native parts update flows cover the main business comment lifecycle
 - [ ] Photo ingest replacement direction is implemented enough to use
 - [ ] Notification routing reaches actual destination channels or users
+- [ ] BlueFolder-native parts summaries and updates are preferred in daily use over the supplemental internal queue
 
 ### Stability
 
@@ -129,7 +132,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Build on the dispatch board with more dispatch actions
-2. Build on the BlueFolder-native parts path and current handoff loop without splitting the source of truth
-3. Strengthen assignment/job workflows where live use exposes gaps
-4. Revisit photo ingest after the revised concept is ready
-5. Decide what should qualify as `V0.5.0`
+2. Build on the BlueFolder-native parts path so Discord workflows match the real BlueFolder-centered business process
+3. Keep the internal parts queue and handoff loop supplemental, not primary
+4. Strengthen assignment/job workflows where live use exposes gaps
+5. Revisit photo ingest after the revised concept is ready
