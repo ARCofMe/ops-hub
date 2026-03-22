@@ -182,6 +182,15 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="part_sync", description="Export the tracked parts queue to the configured parts workflow path.")
+    async def part_sync(self, interaction: discord.Interaction) -> None:
+        """Sync the tracked parts queue into the downstream handoff file."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_parts_queue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.sync_requests_to_parts_system()
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub operator/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)

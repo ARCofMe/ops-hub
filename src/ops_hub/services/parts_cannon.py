@@ -224,6 +224,24 @@ class PartsCannonService:
 
         return CommandResult(message=f"Parts request `{request.request_id}` was not found.")
 
+    async def sync_requests_to_parts_system(self) -> CommandResult:
+        """Export the tracked request queue to the configured parts workflow path."""
+        records = self.request_store.load()
+        export_result = await self.adapter.export_requests(records)
+        await self.notifications.send_notice(
+            topic="parts.request.sync",
+            message=f"Parts queue sync finished with status {export_result.integration_status}.",
+        )
+        lines = [
+            "Parts queue sync",
+            f"Status: `{export_result.integration_status}`",
+            f"Details: {export_result.message}",
+            f"Exported requests: `{export_result.exported_count}`",
+        ]
+        if export_result.export_path is not None:
+            lines.append(f"Export path: `{export_result.export_path}`")
+        return CommandResult(message="\n".join(lines))
+
     def supported_request_statuses(self) -> tuple[str, ...]:
         """Return the supported parts request statuses."""
         return PARTS_REQUEST_STATUSES

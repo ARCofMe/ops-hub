@@ -186,6 +186,17 @@ class PartsWorkflowSummary:
 
 
 @dataclass(slots=True)
+class PartsExportSummary:
+    """Summary of exporting tracked parts requests to a downstream handoff file."""
+
+    available: bool
+    integration_status: str
+    message: str
+    exported_count: int
+    export_path: Path | None = None
+
+
+@dataclass(slots=True)
 class PartRequestRecord:
     """Persistent parts request record."""
 
