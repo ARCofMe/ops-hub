@@ -17,9 +17,9 @@ class OperationsCog(commands.Cog):
         self.bot = bot
 
     async def cog_app_command_check(self, interaction: discord.Interaction) -> bool:
-        """Restrict the operations surface to recognized operators, dispatchers, or admins."""
+        """Restrict the operations surface to recognized technicians, parts, dispatchers, or admins."""
         identity = self._resolve_identity(interaction)
-        if identity.is_operator or identity.is_dispatcher:
+        if identity.is_operator or identity.is_parts or identity.is_dispatcher:
             return True
         raise app_commands.CheckFailure("You do not have permission to use this command.")
 
@@ -44,7 +44,7 @@ class OperationsCog(commands.Cog):
     async def part(self, interaction: discord.Interaction, reference: str) -> None:
         """Parts workflow command."""
         identity = self._resolve_identity(interaction)
-        if not identity.is_operator:
+        if not identity.is_parts:
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         request = PartLookupRequest(
             reference=reference,

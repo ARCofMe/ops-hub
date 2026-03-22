@@ -60,6 +60,7 @@ class OperatorIdentity:
     discord_user_id: int
     is_admin: bool
     is_operator: bool
+    is_parts: bool
     is_dispatcher: bool
     bluefolder_user_id: int | None = None
 

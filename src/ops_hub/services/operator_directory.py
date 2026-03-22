@@ -20,6 +20,11 @@ class OperatorDirectoryService:
     def resolve_identity(self, *, user_id: int, role_ids: set[int]) -> OperatorIdentity:
         """Return the current Ops Hub identity for a Discord user."""
         is_admin = user_id in self.settings.admin_user_ids or bool(role_ids & set(self.settings.admin_role_ids))
+        is_parts = (
+            is_admin
+            or user_id in self.settings.parts_user_ids
+            or bool(role_ids & set(self.settings.parts_role_ids))
+        )
         is_dispatcher = (
             is_admin
             or user_id in self.settings.dispatcher_user_ids
@@ -34,6 +39,7 @@ class OperatorDirectoryService:
             discord_user_id=user_id,
             is_admin=is_admin,
             is_operator=is_operator,
+            is_parts=is_parts,
             is_dispatcher=is_dispatcher,
             bluefolder_user_id=self.mappings().get(user_id),
         )

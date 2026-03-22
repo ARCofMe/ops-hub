@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     admin_role_ids: list[int] = []
     operator_user_ids: list[int] = []
     operator_role_ids: list[int] = []
+    parts_user_ids: list[int] = []
+    parts_role_ids: list[int] = []
     dispatcher_user_ids: list[int] = []
     dispatcher_role_ids: list[int] = []
     operator_bluefolder_user_map: dict[int, int] = {}
@@ -62,6 +64,12 @@ class Settings(BaseSettings):
 
         if any(role_id <= 0 for role_id in self.operator_role_ids):
             errors.append("OPS_HUB_OPERATOR_ROLE_IDS must contain only positive Discord role IDs.")
+
+        if any(user_id <= 0 for user_id in self.parts_user_ids):
+            errors.append("OPS_HUB_PARTS_USER_IDS must contain only positive Discord user IDs.")
+
+        if any(role_id <= 0 for role_id in self.parts_role_ids):
+            errors.append("OPS_HUB_PARTS_ROLE_IDS must contain only positive Discord role IDs.")
 
         if any(user_id <= 0 for user_id in self.dispatcher_user_ids):
             errors.append("OPS_HUB_DISPATCHER_USER_IDS must contain only positive Discord user IDs.")

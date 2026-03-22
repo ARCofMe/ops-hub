@@ -37,6 +37,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "parts_user_ids": [],
+        "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
@@ -107,4 +109,14 @@ def test_resolve_identity_includes_dispatcher_access() -> None:
     identity = cog._resolve_identity(interaction)
 
     assert identity.is_dispatcher is True
+    assert identity.is_operator is False
+
+
+def test_resolve_identity_includes_parts_access() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert identity.is_parts is True
     assert identity.is_operator is False

@@ -19,6 +19,8 @@ def _settings(**overrides: object) -> Settings:
         "admin_role_ids": [],
         "operator_user_ids": [],
         "operator_role_ids": [],
+        "parts_user_ids": [],
+        "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
@@ -132,8 +134,8 @@ def test_build_command_access_describes_current_scopes() -> None:
 
     result = cog._build_command_access()
 
-    assert "`/job`: operators, dispatchers, admins" in result
-    assert "`/part`: operators and admins" in result
+    assert "`/job`: technicians, dispatchers, admins" in result
+    assert "`/part`: parts, admins" in result
 
 
 def test_is_admin_allows_configured_user_id() -> None:
