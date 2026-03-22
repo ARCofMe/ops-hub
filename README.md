@@ -98,7 +98,28 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
 
 `/job` now supports two modes:
 - pass a reference like `SR-100` for a direct lookup
-- omit the reference to show the mapped operator's current assignments
+- omit the reference to show the mapped technician's current assignments
+
+## Role Terms
+
+Ops Hub currently uses one internal technical label that does not perfectly match business wording:
+
+- `operator` in config/code currently maps most closely to `technician` in business terms
+
+So, in business-facing language, the intended role vocabulary is:
+
+- `Admin`
+- `Parts`
+- `Dispatch`
+- `Technician`
+
+Today, the code/config distinguishes:
+
+- `Admin`
+- `Dispatcher`
+- `Operator` (technician-facing)
+
+That naming can be cleaned up later in code, but the README should be read using the business terms above.
 
 ## Command Access Model
 
@@ -113,25 +134,41 @@ For the first real BlueFolder read-only integration, set `OPS_HUB_BLUEFOLDER_API
   - `/set_operator_mapping`
   - `/remove_operator_mapping`
   - `/command_access`
-- Operator, dispatcher, and admin:
+- Technician, Dispatch, and Admin:
   - `/job`
-- Operator and admin:
+- Technician and Admin:
   - `/part`
 - Open bot health:
   - `/ping`
 
-Ops Hub currently uses config-backed user/role lists for admin, operator, and dispatcher scope decisions.
+Current hierarchy:
+
+1. `Admin`
+2. `Dispatch` and `Technician`
+3. open utility health command access
+
+Current implementation note:
+
+- `OPS_HUB_OPERATOR_*` config values currently represent technician-facing access
+- `OPS_HUB_DISPATCHER_*` config values represent dispatch-facing access
+- parts does not yet have a separate dedicated role tier in code, but that can be added once parts workflows stop being wrapper-only
+
+Ops Hub currently uses config-backed user/role lists for admin, technician-facing operator, and dispatcher scope decisions.
 
 ## Operator Mappings
 
-Ops Hub can map Discord users to BlueFolder user IDs in two ways:
+Ops Hub can map Discord users to BlueFolder user IDs in two ways.
+
+Business term note:
+
+- these are effectively technician mappings today, even though the internal config key still says `operator`
 
 - inline environment config via `OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP`
 - optional JSON persistence via `OPS_HUB_OPERATOR_MAPPING_FILE`
 
 The merged mapping set is used for:
 
-- operator-aware `/job` context
+- technician-aware `/job` context
 - mapped current-assignment lookup when `/job` is called without a reference
 - technician-specific dispatch context such as assignment presence and origin address
 
@@ -169,7 +206,7 @@ This keeps the foundation clean while allowing gradual adoption.
 - dispatch can build a stop preview and mapped technician context through the existing routing project
 - parts is still a wrapper/status surface with dry-run notification tracking
 - photo ingest remains intentionally paused while the concept is being revised
-- operator/admin/dispatcher access is now explicit instead of implicit
+- technician/admin/dispatch access is now explicit instead of implicit
 
 ## Next Practical Moves
 
