@@ -135,18 +135,17 @@ class AdminCog(commands.Cog):
 
     def _is_admin(self, interaction: discord.Interaction) -> bool:
         """Return whether the invoking user matches configured admin users or roles."""
-        settings = self.bot.settings
         user = getattr(interaction, "user", None)
         user_id = getattr(user, "id", None)
-        if user_id in settings.admin_user_ids:
-            return True
-
         user_roles = getattr(user, "roles", None)
-        if not user_roles:
+        role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
+        if user_id is None:
             return False
-
-        role_ids = {getattr(role, "id", None) for role in user_roles}
-        return any(role_id in settings.admin_role_ids for role_id in role_ids)
+        identity = self.bot.container.operator_directory_service.resolve_identity(
+            user_id=user_id,
+            role_ids=role_ids,
+        )
+        return identity.is_admin
 
 
 async def setup(bot: OpsHubBot) -> None:

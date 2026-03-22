@@ -16,11 +16,24 @@ class OperationsCog(commands.Cog):
     def __init__(self, bot: OpsHubBot) -> None:
         self.bot = bot
 
+    async def cog_app_command_check(self, interaction: discord.Interaction) -> bool:
+        """Restrict operations commands to configured operators and admins."""
+        identity = self._resolve_identity(interaction)
+        if identity.is_operator:
+            return True
+        raise app_commands.CheckFailure("You do not have permission to use this command.")
+
     @app_commands.command(name="job", description="Look up a job or service request in Ops Hub.")
     @app_commands.describe(reference="Job reference, SR id, or other lookup token.")
     async def job(self, interaction: discord.Interaction, reference: str) -> None:
         """Job lookup command."""
-        request = JobLookupRequest(reference=reference, requested_by_user_id=interaction.user.id)
+        identity = self._resolve_identity(interaction)
+        request = JobLookupRequest(
+            reference=reference,
+            requested_by_user_id=interaction.user.id,
+            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            requester_is_admin=identity.is_admin,
+        )
         result = await self.bot.container.dispatch_service.lookup_job(request)
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -28,9 +41,24 @@ class OperationsCog(commands.Cog):
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
     async def part(self, interaction: discord.Interaction, reference: str) -> None:
         """Parts workflow command."""
-        request = PartLookupRequest(reference=reference, requested_by_user_id=interaction.user.id)
+        identity = self._resolve_identity(interaction)
+        request = PartLookupRequest(
+            reference=reference,
+            requested_by_user_id=interaction.user.id,
+            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            requester_is_admin=identity.is_admin,
+        )
         result = await self.bot.container.parts_cannon_service.lookup_part(request)
         await interaction.response.send_message(result.message, ephemeral=True)
+
+    def _resolve_identity(self, interaction: discord.Interaction):
+        """Resolve the invoking Discord user into an Ops Hub operator/admin identity."""
+        user_roles = getattr(interaction.user, "roles", None)
+        role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
+        return self.bot.container.operator_directory_service.resolve_identity(
+            user_id=interaction.user.id,
+            role_ids=role_ids,
+        )
 
 
 async def setup(bot: OpsHubBot) -> None:

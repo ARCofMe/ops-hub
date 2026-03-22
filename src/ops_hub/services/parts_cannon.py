@@ -28,9 +28,14 @@ class PartsCannonService:
             message=f"Parts lookup requested for {request.reference} with status {result.integration_status}.",
         )
         notification_status = await self.notifications.status()
-        return self._build_lookup_result(result, notification_status.mode)
+        return self._build_lookup_result(request, result, notification_status.mode)
 
-    def _build_lookup_result(self, summary: PartsWorkflowSummary, notification_mode: str) -> CommandResult:
+    def _build_lookup_result(
+        self,
+        request: PartLookupRequest,
+        summary: PartsWorkflowSummary,
+        notification_mode: str,
+    ) -> CommandResult:
         """Convert a typed parts summary into a user-facing command response."""
         return CommandResult(
             message="\n".join(
@@ -38,6 +43,8 @@ class PartsCannonService:
                     f"Part `{summary.reference}`",
                     f"Parts Cannon: `{summary.integration_status}`",
                     f"Details: {summary.message}",
+                    *([f"Requester mapping: BlueFolder user `{request.operator_bluefolder_user_id}`"] if request.operator_bluefolder_user_id is not None else []),
+                    *(["Requester mapping: admin access"] if request.requester_is_admin and request.operator_bluefolder_user_id is None else []),
                     f"Notifications: `{notification_mode}`",
                 ]
             )

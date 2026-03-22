@@ -22,6 +22,7 @@ class DispatchService:
         dispatch_result = await self.adapter.get_job(request.reference, bluefolder_result)
         return CommandResult(
             message=self._format_job_message(
+                request,
                 request.reference,
                 dispatch_result,
                 bluefolder_result,
@@ -30,6 +31,7 @@ class DispatchService:
 
     def _format_job_message(
         self,
+        request: JobLookupRequest,
         reference: str,
         dispatch_summary: DispatchJobSummary,
         summary: BlueFolderJobSummary,
@@ -64,6 +66,8 @@ class DispatchService:
                 lines.append(f"Dispatch window: `{dispatch_summary.stop_window}`")
             if dispatch_summary.stop_address:
                 lines.append(f"Dispatch stop address: {dispatch_summary.stop_address}")
+            if requestor_line := self._requestor_context_line(request):
+                lines.append(requestor_line)
             lines.append(f"Dispatch detail: {dispatch_summary.message}")
             return "\n".join(lines)
 
@@ -73,6 +77,15 @@ class DispatchService:
                 f"BlueFolder: `{summary.integration_status}`",
                 f"BlueFolder detail: {summary.message}",
                 f"Dispatch: `{dispatch_summary.integration_status}`",
+                *([self._requestor_context_line(request)] if self._requestor_context_line(request) else []),
                 f"Dispatch detail: {dispatch_summary.message}",
             ]
         )
+
+    def _requestor_context_line(self, request: JobLookupRequest) -> str | None:
+        """Render the resolved requestor context when available."""
+        if request.operator_bluefolder_user_id is not None:
+            return f"Requester mapping: BlueFolder user `{request.operator_bluefolder_user_id}`"
+        if request.requester_is_admin:
+            return "Requester mapping: admin access"
+        return None

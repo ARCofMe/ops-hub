@@ -12,6 +12,8 @@ class JobLookupRequest:
 
     reference: str
     requested_by_user_id: int
+    operator_bluefolder_user_id: int | None = None
+    requester_is_admin: bool = False
 
 
 @dataclass(slots=True)
@@ -20,6 +22,8 @@ class PartLookupRequest:
 
     reference: str
     requested_by_user_id: int
+    operator_bluefolder_user_id: int | None = None
+    requester_is_admin: bool = False
 
 
 @dataclass(slots=True)
@@ -47,6 +51,16 @@ class NotificationStatus:
     transport: str
     notice_count: int
     last_topic: str | None = None
+
+
+@dataclass(slots=True)
+class OperatorIdentity:
+    """Resolved operator/admin identity for a Discord user."""
+
+    discord_user_id: int
+    is_admin: bool
+    is_operator: bool
+    bluefolder_user_id: int | None = None
 
 
 @dataclass(slots=True)

@@ -12,6 +12,7 @@ from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 from ops_hub.services.notifications import NotificationService
+from ops_hub.services.operator_directory import OperatorDirectoryService
 from ops_hub.services.parts_cannon import PartsCannonService
 from ops_hub.services.photo_ingest import PhotoIngestService
 
@@ -22,6 +23,7 @@ class ServiceContainer:
 
     settings: Settings
     notification_service: NotificationService
+    operator_directory_service: OperatorDirectoryService
     bluefolder_service: BlueFolderService
     parts_cannon_service: PartsCannonService
     photo_ingest_service: PhotoIngestService
@@ -31,6 +33,7 @@ class ServiceContainer:
 def build_container(settings: Settings) -> ServiceContainer:
     """Build services and adapters for the app runtime."""
     notification_service = NotificationService()
+    operator_directory_service = OperatorDirectoryService(settings=settings)
 
     # TODO: Replace these placeholders with real wrappers around existing local projects.
     bluefolder_adapter = BlueFolderAdapter(
@@ -46,6 +49,7 @@ def build_container(settings: Settings) -> ServiceContainer:
     return ServiceContainer(
         settings=settings,
         notification_service=notification_service,
+        operator_directory_service=operator_directory_service,
         bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
         parts_cannon_service=PartsCannonService(adapter=parts_adapter, notifications=notification_service),
         photo_ingest_service=PhotoIngestService(settings=settings, adapter=photo_adapter),

@@ -9,6 +9,9 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": None,
         "admin_user_ids": [],
         "admin_role_ids": [],
+        "operator_user_ids": [],
+        "operator_role_ids": [],
+        "operator_bluefolder_user_map": {},
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -69,6 +72,38 @@ def test_validation_errors_reject_non_positive_admin_role_ids() -> None:
     errors = settings.validation_errors()
 
     assert "OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_operator_user_ids() -> None:
+    settings = _settings(operator_user_ids=[0])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_OPERATOR_USER_IDS must contain only positive Discord user IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_operator_role_ids() -> None:
+    settings = _settings(operator_role_ids=[-7])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_OPERATOR_ROLE_IDS must contain only positive Discord role IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_operator_map_keys() -> None:
+    settings = _settings(operator_bluefolder_user_map={0: 13051})
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP keys must contain only positive Discord user IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_operator_map_values() -> None:
+    settings = _settings(operator_bluefolder_user_map={42: 0})
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs." in errors
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

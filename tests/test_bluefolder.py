@@ -131,7 +131,13 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     )
 
     result = asyncio.run(
-        service.lookup_job(JobLookupRequest(reference="SR-100", requested_by_user_id=1))
+        service.lookup_job(
+            JobLookupRequest(
+                reference="SR-100",
+                requested_by_user_id=1,
+                operator_bluefolder_user_id=13051,
+            )
+        )
     )
 
     assert "Job `SR-100`" in result.message
@@ -144,6 +150,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Dispatch stop: `SR-100`" in result.message
     assert "Dispatch window: `ALL_DAY`" in result.message
     assert "Dispatch stop address: 123 Main St, Portland, ME 04101" in result.message
+    assert "Requester mapping: BlueFolder user `13051`" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 
 

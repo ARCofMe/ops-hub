@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     guild_id: int | None = None
     admin_user_ids: list[int] = []
     admin_role_ids: list[int] = []
+    operator_user_ids: list[int] = []
+    operator_role_ids: list[int] = []
+    operator_bluefolder_user_map: dict[int, int] = {}
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
@@ -50,6 +53,22 @@ class Settings(BaseSettings):
 
         if any(role_id <= 0 for role_id in self.admin_role_ids):
             errors.append("OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs.")
+
+        if any(user_id <= 0 for user_id in self.operator_user_ids):
+            errors.append("OPS_HUB_OPERATOR_USER_IDS must contain only positive Discord user IDs.")
+
+        if any(role_id <= 0 for role_id in self.operator_role_ids):
+            errors.append("OPS_HUB_OPERATOR_ROLE_IDS must contain only positive Discord role IDs.")
+
+        if any(user_id <= 0 for user_id in self.operator_bluefolder_user_map):
+            errors.append(
+                "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP keys must contain only positive Discord user IDs."
+            )
+
+        if any(bluefolder_user_id <= 0 for bluefolder_user_id in self.operator_bluefolder_user_map.values()):
+            errors.append(
+                "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs."
+            )
 
         bluefolder_key = (self.bluefolder_api_key or "").strip()
         bluefolder_account = (self.bluefolder_account_name or "").strip()

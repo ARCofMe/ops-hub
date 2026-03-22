@@ -55,6 +55,11 @@ def _settings(**overrides: object) -> Settings:
     defaults: dict[str, object] = {
         "discord_token": "token",
         "guild_id": None,
+        "admin_user_ids": [],
+        "admin_role_ids": [],
+        "operator_user_ids": [],
+        "operator_role_ids": [],
+        "operator_bluefolder_user_map": {},
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
