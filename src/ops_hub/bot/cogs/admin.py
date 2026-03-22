@@ -71,6 +71,7 @@ class AdminCog(commands.Cog):
         bluefolder = await self.bot.container.bluefolder_service.get_job_summary("SR-100")
         parts = await self.bot.container.parts_cannon_service.adapter.get_part_status("SR-100")
         photo = await self.bot.container.photo_ingest_service.status()
+        notifications = await self.bot.container.notification_service.status()
         lines = [
             "Ops Hub Service Status",
             f"BlueFolder: `{bluefolder.integration_status}`",
@@ -79,7 +80,9 @@ class AdminCog(commands.Cog):
             f"Parts Cannon detail: {parts.message}",
             f"Photo ingest: `{photo.get('status', 'unknown')}`",
             f"Photo ingest source: `{photo.get('source', 'unknown')}`",
-            "Notifications: `placeholder_ready`",
+            f"Notifications: `{notifications.mode}` via `{notifications.transport}`",
+            f"Notification notices sent: `{notifications.notice_count}`",
+            f"Last notification topic: `{notifications.last_topic or 'none'}`",
         ]
         return "\n".join(lines)
 

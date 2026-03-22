@@ -23,6 +23,10 @@ class PartsCannonService:
         """Return a placeholder parts wrapper response."""
         # TODO: Wrap existing parts workflow logic here instead of moving code prematurely.
         result = await self.adapter.get_part_status(request.reference)
+        await self.notifications.send_notice(
+            topic="parts.lookup",
+            message=f"Parts lookup requested for {request.reference} with status {result.integration_status}.",
+        )
         return self._build_lookup_result(result)
 
     def _build_lookup_result(self, summary: PartsWorkflowSummary) -> CommandResult:

@@ -30,6 +30,26 @@ class CommandResult:
 
 
 @dataclass(slots=True)
+class NotificationRecord:
+    """A single notification attempt captured by the notification service."""
+
+    topic: str
+    message: str
+    delivery: str
+
+
+@dataclass(slots=True)
+class NotificationStatus:
+    """Operational status for the notification service."""
+
+    configured: bool
+    mode: str
+    transport: str
+    notice_count: int
+    last_topic: str | None = None
+
+
+@dataclass(slots=True)
 class BlueFolderJobSummary:
     """Read-only job summary placeholder for future BlueFolder integration."""
 

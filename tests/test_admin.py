@@ -72,4 +72,5 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "BlueFolder: `unconfigured`" in result
     assert "Parts Cannon: `unconfigured`" in result
     assert "Photo ingest: `placeholder`" in result
-    assert "Notifications: `placeholder_ready`" in result
+    assert "Notifications: `dry_run` via `logger`" in result
+    assert "Notification notices sent: `0`" in result

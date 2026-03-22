@@ -29,9 +29,10 @@ def test_parts_adapter_reports_ready_status_for_existing_path(tmp_path: Path) ->
 
 
 def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> None:
+    notifications = NotificationService()
     service = PartsCannonService(
         adapter=PartsCannonAdapter(base_path=str(tmp_path)),
-        notifications=NotificationService(),
+        notifications=notifications,
     )
 
     result = asyncio.run(
@@ -41,3 +42,5 @@ def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> Non
     assert "Parts Cannon wrapper placeholder for `SR-200`." in result.message
     assert "Status: placeholder_ready." in result.message
     assert "Wrapper behavior is not implemented yet." in result.message
+    assert len(notifications.records) == 1
+    assert notifications.records[0].topic == "parts.lookup"
