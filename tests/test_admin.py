@@ -17,14 +17,14 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": 123456,
         "admin_user_ids": [],
         "admin_role_ids": [],
-        "operator_user_ids": [],
-        "operator_role_ids": [],
+        "technician_user_ids": [],
+        "technician_role_ids": [],
         "parts_user_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
-        "operator_bluefolder_user_map": {},
-        "operator_mapping_file": None,
+        "technician_bluefolder_user_map": {},
+        "technician_mapping_file": None,
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": 222,
@@ -124,12 +124,12 @@ def test_build_recent_notices_renders_latest_entries() -> None:
     assert "Parts lookup requested for SR-100." in result
 
 
-def test_build_operator_mappings_renders_current_map() -> None:
-    cog = _build_cog(operator_bluefolder_user_map={42: 13051})
+def test_build_technician_mappings_renders_current_map() -> None:
+    cog = _build_cog(technician_bluefolder_user_map={42: 13051})
 
-    result = cog._build_operator_mappings()
+    result = cog._build_technician_mappings()
 
-    assert "Operator Mappings" in result
+    assert "Technician Mappings" in result
     assert "Discord user `42` -> BlueFolder user `13051`" in result
 
 
@@ -138,6 +138,7 @@ def test_build_command_access_describes_current_scopes() -> None:
 
     result = cog._build_command_access()
 
+    assert "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`: admin only" in result
     assert "`/job`, `/assignments`: technicians, dispatchers, admins" in result
     assert "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins" in result
     assert "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins" in result

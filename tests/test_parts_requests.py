@@ -30,7 +30,7 @@ def test_create_parts_request_persists_record() -> None:
                 reference="SR-300",
                 description="Need heating element",
                 requested_by_user_id=42,
-                operator_bluefolder_user_id=13051,
+                technician_bluefolder_user_id=13051,
             )
         )
     )
@@ -176,7 +176,7 @@ def test_get_request_renders_detailed_view() -> None:
                 reference="SR-300",
                 description="Need heating element",
                 requested_by_user_id=42,
-                operator_bluefolder_user_id=13051,
+                technician_bluefolder_user_id=13051,
             )
         )
     )

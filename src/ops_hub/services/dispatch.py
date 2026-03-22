@@ -10,7 +10,7 @@ from ops_hub.models.requests import (
     CommandResult,
     DispatchJobSummary,
     JobLookupRequest,
-    OperatorMappingRecord,
+    TechnicianMappingRecord,
 )
 from ops_hub.services.bluefolder import BlueFolderService
 
@@ -37,7 +37,7 @@ class DispatchService:
         dispatch_result = await self.adapter.get_job(
             request.reference,
             bluefolder_result,
-            request.operator_bluefolder_user_id,
+            request.technician_bluefolder_user_id,
         )
         return CommandResult(
             message=self._format_job_message(
@@ -51,10 +51,10 @@ class DispatchService:
 
     async def lookup_assignments(self, request: JobLookupRequest) -> CommandResult:
         """Return current assignments for the mapped or explicitly requested BlueFolder user."""
-        target_user_id = request.target_bluefolder_user_id or request.operator_bluefolder_user_id
+        target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id
         if target_user_id is None:
             return CommandResult(
-                message="Current assignment lookup requires a mapped BlueFolder user. Add an operator mapping first."
+                message="Current assignment lookup requires a mapped BlueFolder user. Add a technician mapping first."
             )
 
         assignments = await self.adapter.get_assignments_for_user(target_user_id)
@@ -96,10 +96,10 @@ class DispatchService:
 
         return CommandResult(message="\n".join(lines))
 
-    async def lookup_dispatch_board(self, mappings: list[OperatorMappingRecord]) -> CommandResult:
+    async def lookup_dispatch_board(self, mappings: list[TechnicianMappingRecord]) -> CommandResult:
         """Return a dispatch board summary across all mapped technicians."""
         if not mappings:
-            return CommandResult(message="Dispatch board requires at least one operator mapping.")
+            return CommandResult(message="Dispatch board requires at least one technician mapping.")
 
         lines = ["Dispatch board"]
         active_techs = 0
@@ -194,8 +194,8 @@ class DispatchService:
 
     def _requestor_context_line(self, request: JobLookupRequest) -> str | None:
         """Render the resolved requestor context when available."""
-        if request.operator_bluefolder_user_id is not None:
-            return f"Requester mapping: BlueFolder user `{request.operator_bluefolder_user_id}`"
+        if request.technician_bluefolder_user_id is not None:
+            return f"Requester mapping: BlueFolder user `{request.technician_bluefolder_user_id}`"
         if request.requester_is_admin:
             return "Requester mapping: admin access"
         return None

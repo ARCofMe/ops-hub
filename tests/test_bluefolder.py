@@ -6,7 +6,7 @@ import textwrap
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import JobLookupRequest, OperatorMappingRecord
+from ops_hub.models.requests import JobLookupRequest, TechnicianMappingRecord
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 
@@ -14,8 +14,8 @@ from ops_hub.services.dispatch import DispatchService
 class DummyDispatchAdapter(DispatchAdapter):
     """Dispatch adapter test double."""
 
-    async def get_job(self, reference: str, bluefolder_summary=None, operator_bluefolder_user_id=None):
-        return await super().get_job(reference, bluefolder_summary, operator_bluefolder_user_id)
+    async def get_job(self, reference: str, bluefolder_summary=None, technician_bluefolder_user_id=None):
+        return await super().get_job(reference, bluefolder_summary, technician_bluefolder_user_id)
 
 
 def test_bluefolder_adapter_reports_unconfigured_status() -> None:
@@ -96,7 +96,7 @@ def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Pa
             JobLookupRequest(
                 reference=None,
                 requested_by_user_id=1,
-                operator_bluefolder_user_id=13051,
+                technician_bluefolder_user_id=13051,
             )
         )
     )
@@ -135,7 +135,7 @@ def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Pat
             JobLookupRequest(
                 reference=None,
                 requested_by_user_id=1,
-                operator_bluefolder_user_id=13051,
+                technician_bluefolder_user_id=13051,
             )
         )
     )
@@ -173,8 +173,8 @@ def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     result = asyncio.run(
         service.lookup_dispatch_board(
             [
-                OperatorMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
-                OperatorMappingRecord(discord_user_id=43, bluefolder_user_id=13052),
+                TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
+                TechnicianMappingRecord(discord_user_id=43, bluefolder_user_id=13052),
             ]
         )
     )
@@ -291,7 +291,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
             JobLookupRequest(
                 reference="SR-100",
                 requested_by_user_id=1,
-                operator_bluefolder_user_id=13051,
+                technician_bluefolder_user_id=13051,
             )
         )
     )

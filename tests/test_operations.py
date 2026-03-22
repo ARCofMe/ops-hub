@@ -35,14 +35,14 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": None,
         "admin_user_ids": [],
         "admin_role_ids": [],
-        "operator_user_ids": [],
-        "operator_role_ids": [],
+        "technician_user_ids": [],
+        "technician_role_ids": [],
         "parts_user_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
-        "operator_bluefolder_user_map": {},
-        "operator_mapping_file": None,
+        "technician_bluefolder_user_map": {},
+        "technician_mapping_file": None,
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -65,8 +65,8 @@ def _build_cog(**overrides: object) -> OperationsCog:
     return OperationsCog(bot)
 
 
-def test_operations_check_allows_configured_operator_user() -> None:
-    cog = _build_cog(operator_user_ids=[42])
+def test_operations_check_allows_configured_technician_user() -> None:
+    cog = _build_cog(technician_user_ids=[42])
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
 
     assert asyncio.run(cog.cog_app_command_check(interaction)) is True
@@ -80,7 +80,7 @@ def test_operations_check_allows_admin_user() -> None:
 
 
 def test_operations_check_rejects_unconfigured_user() -> None:
-    cog = _build_cog(operator_user_ids=[42], admin_user_ids=[99])
+    cog = _build_cog(technician_user_ids=[42], admin_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=7, roles=[]))
 
     try:
@@ -92,12 +92,12 @@ def test_operations_check_rejects_unconfigured_user() -> None:
 
 
 def test_resolve_identity_includes_bluefolder_mapping() -> None:
-    cog = _build_cog(operator_user_ids=[42], operator_bluefolder_user_map={42: 13051})
+    cog = _build_cog(technician_user_ids=[42], technician_bluefolder_user_map={42: 13051})
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
 
     identity = cog._resolve_identity(interaction)
 
-    assert identity.is_operator is True
+    assert identity.is_technician is True
     assert identity.is_admin is False
     assert identity.bluefolder_user_id == 13051
 
@@ -109,7 +109,7 @@ def test_resolve_identity_includes_dispatcher_access() -> None:
     identity = cog._resolve_identity(interaction)
 
     assert identity.is_dispatcher is True
-    assert identity.is_operator is False
+    assert identity.is_technician is False
 
 
 def test_resolve_identity_includes_parts_access() -> None:
@@ -119,7 +119,7 @@ def test_resolve_identity_includes_parts_access() -> None:
     identity = cog._resolve_identity(interaction)
 
     assert identity.is_parts is True
-    assert identity.is_operator is False
+    assert identity.is_technician is False
 
 
 def test_operations_check_allows_dispatcher_user() -> None:
@@ -141,7 +141,7 @@ def test_parts_commands_allow_parts_user() -> None:
 
 
 def test_technician_can_submit_parts_request_but_not_manage_queue() -> None:
-    cog = _build_cog(operator_user_ids=[42])
+    cog = _build_cog(technician_user_ids=[42])
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
 
     identity = cog._resolve_identity(interaction)
@@ -151,7 +151,7 @@ def test_technician_can_submit_parts_request_but_not_manage_queue() -> None:
 
 
 def test_technician_can_write_bluefolder_parts_issue() -> None:
-    cog = _build_cog(operator_user_ids=[42])
+    cog = _build_cog(technician_user_ids=[42])
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
 
     identity = cog._resolve_identity(interaction)

@@ -19,7 +19,7 @@ class OperationsCog(commands.Cog):
     async def cog_app_command_check(self, interaction: discord.Interaction) -> bool:
         """Restrict the operations surface to recognized technicians, parts, dispatchers, or admins."""
         identity = self._resolve_identity(interaction)
-        if identity.is_admin or identity.is_operator or identity.is_parts or identity.is_dispatcher:
+        if identity.is_admin or identity.is_technician or identity.is_parts or identity.is_dispatcher:
             return True
         raise app_commands.CheckFailure("You do not have permission to use this command.")
 
@@ -33,7 +33,7 @@ class OperationsCog(commands.Cog):
         request = JobLookupRequest(
             reference=reference,
             requested_by_user_id=interaction.user.id,
-            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.dispatch_service.lookup_job(request)
@@ -57,7 +57,7 @@ class OperationsCog(commands.Cog):
         request = JobLookupRequest(
             reference=None,
             requested_by_user_id=interaction.user.id,
-            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
             target_bluefolder_user_id=bluefolder_user_id,
             requester_is_admin=identity.is_admin,
         )
@@ -74,7 +74,7 @@ class OperationsCog(commands.Cog):
         request = PartLookupRequest(
             reference=reference,
             requested_by_user_id=interaction.user.id,
-            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.parts_cannon_service.lookup_part(request)
@@ -166,7 +166,7 @@ class OperationsCog(commands.Cog):
                 reference=reference,
                 description=description,
                 requested_by_user_id=interaction.user.id,
-                operator_bluefolder_user_id=identity.bluefolder_user_id,
+                technician_bluefolder_user_id=identity.bluefolder_user_id,
                 requester_is_admin=identity.is_admin,
             )
         )
@@ -292,10 +292,10 @@ class OperationsCog(commands.Cog):
         await interaction.response.send_message(result.message, ephemeral=True)
 
     def _resolve_identity(self, interaction: discord.Interaction):
-        """Resolve the invoking Discord user into an Ops Hub operator/admin identity."""
+        """Resolve the invoking Discord user into an Ops Hub technician/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)
         role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
-        return self.bot.container.operator_directory_service.resolve_identity(
+        return self.bot.container.technician_directory_service.resolve_identity(
             user_id=interaction.user.id,
             role_ids=role_ids,
         )
@@ -322,11 +322,11 @@ class OperationsCog(commands.Cog):
 
     def _can_use_job_commands(self, identity) -> bool:
         """Return whether the user can access job and assignments commands."""
-        return identity.is_admin or identity.is_operator or identity.is_dispatcher
+        return identity.is_admin or identity.is_technician or identity.is_dispatcher
 
     def _can_submit_parts_request(self, identity) -> bool:
         """Return whether the user can create and view their own parts requests."""
-        return identity.is_admin or identity.is_parts or identity.is_operator
+        return identity.is_admin or identity.is_parts or identity.is_technician
 
     def _can_use_parts_queue(self, identity) -> bool:
         """Return whether the user can access the managed parts queue."""
@@ -334,11 +334,11 @@ class OperationsCog(commands.Cog):
 
     def _can_view_parts_context(self, identity) -> bool:
         """Return whether the user can view BlueFolder-native parts context."""
-        return identity.is_admin or identity.is_parts or identity.is_dispatcher or identity.is_operator
+        return identity.is_admin or identity.is_parts or identity.is_dispatcher or identity.is_technician
 
     def _can_write_parts_issue(self, identity) -> bool:
         """Return whether the user can log BlueFolder parts issue comments."""
-        return identity.is_admin or identity.is_parts or identity.is_operator
+        return identity.is_admin or identity.is_parts or identity.is_technician
 
     def _can_write_parts_update(self, identity) -> bool:
         """Return whether the user can log BlueFolder parts status updates."""

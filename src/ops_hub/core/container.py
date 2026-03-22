@@ -13,7 +13,7 @@ from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 from ops_hub.services.notifications import NotificationService
-from ops_hub.services.operator_directory import OperatorDirectoryService
+from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
 from ops_hub.services.parts_cannon import PartsCannonService
 from ops_hub.services.parts_request_store import PartsRequestStore
@@ -26,7 +26,7 @@ class ServiceContainer:
 
     settings: Settings
     notification_service: NotificationService
-    operator_directory_service: OperatorDirectoryService
+    technician_directory_service: TechnicianDirectoryService
     bluefolder_service: BlueFolderService
     parts_cannon_service: PartsCannonService
     photo_ingest_service: PhotoIngestService
@@ -36,10 +36,10 @@ class ServiceContainer:
 def build_container(settings: Settings) -> ServiceContainer:
     """Build services and adapters for the app runtime."""
     notification_service = NotificationService(channel_id=settings.notification_channel_id)
-    operator_directory_service = OperatorDirectoryService(
+    technician_directory_service = TechnicianDirectoryService(
         settings=settings,
         store=OperatorMappingStore(
-            file_path=Path(settings.operator_mapping_file).expanduser() if settings.operator_mapping_file else None,
+            file_path=Path(settings.technician_mapping_file).expanduser() if settings.technician_mapping_file else None,
         ),
     )
 
@@ -60,7 +60,7 @@ def build_container(settings: Settings) -> ServiceContainer:
     return ServiceContainer(
         settings=settings,
         notification_service=notification_service,
-        operator_directory_service=operator_directory_service,
+        technician_directory_service=technician_directory_service,
         bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
         parts_cannon_service=PartsCannonService(
             adapter=parts_adapter,

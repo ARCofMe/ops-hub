@@ -31,7 +31,7 @@ class DispatchCog(commands.Cog):
         request = JobLookupRequest(
             reference=None,
             requested_by_user_id=interaction.user.id,
-            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
             target_bluefolder_user_id=bluefolder_user_id,
             requester_is_admin=identity.is_admin,
         )
@@ -54,7 +54,7 @@ class DispatchCog(commands.Cog):
         request = JobLookupRequest(
             reference=reference,
             requested_by_user_id=interaction.user.id,
-            operator_bluefolder_user_id=identity.bluefolder_user_id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
             target_bluefolder_user_id=bluefolder_user_id,
             requester_is_admin=identity.is_admin,
         )
@@ -63,8 +63,8 @@ class DispatchCog(commands.Cog):
 
     @app_commands.command(name="dispatch_board", description="Show a board summary across all mapped technicians.")
     async def dispatch_board(self, interaction: discord.Interaction) -> None:
-        """Dispatcher-focused board summary using current operator mappings."""
-        mappings = self.bot.container.operator_directory_service.mapping_records()
+        """Dispatcher-focused board summary using current technician mappings."""
+        mappings = self.bot.container.technician_directory_service.mapping_records()
         result = await self.bot.container.dispatch_service.lookup_dispatch_board(mappings)
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -72,7 +72,7 @@ class DispatchCog(commands.Cog):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)
         role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
-        return self.bot.container.operator_directory_service.resolve_identity(
+        return self.bot.container.technician_directory_service.resolve_identity(
             user_id=interaction.user.id,
             role_ids=role_ids,
         )

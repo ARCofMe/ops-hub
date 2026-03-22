@@ -9,7 +9,7 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
   - Architecture still moving
   - Commands and workflows may still shift materially
 - `V0.1.0`
-  - First coherent operator-facing beta
+  - First coherent technician-facing beta
   - Core command model and access model feel intentional
   - Photo ingest is explicitly outside the beta scope
 - `V0.5.0`
@@ -29,9 +29,9 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
 - [x] Dispatch stop preview exists
 - [x] Parts wrapper boundary exists
 - [x] Admin/debug commands exist
-- [x] Operator/admin/dispatcher access tiers exist
+- [x] Technician/admin/dispatcher access tiers exist
 - [x] Dedicated Parts access tier exists
-- [x] Operator mapping persistence exists
+- [x] Technician mapping persistence exists
 - [x] Dedicated dispatcher command surface exists
 - [ ] Photo ingest direction is redefined
 - [x] Primary workflows are considered stable
@@ -63,7 +63,7 @@ Treat this as the first real Ops Hub beta.
 - [x] `/part` behavior is stable enough for regular users
 - [x] parts request submission, queue handling, and ownership flow are stable enough for regular users
 - [x] Access tiers are settled enough that frequent changes are no longer expected
-- [x] Operator mapping workflow is usable without hand-editing env values
+- [x] Technician mapping workflow is usable without hand-editing env values
 - [x] Photo ingest is explicitly deferred from beta scope and documented
 
 ### Integration Shape
@@ -103,7 +103,7 @@ Treat this as the point where Ops Hub is clearly useful in daily work.
 - [ ] Access model is no longer experimental
 - [ ] Mapping workflow is stable and not frequently redesigned
 - [ ] Command output format is mostly stable
-- [ ] Error paths are predictable and operator-friendly
+- [ ] Error paths are predictable and technician-friendly
 
 ## Milestone: `V1.0.0`
 

@@ -60,7 +60,7 @@ class PartsCannonService:
             reference=request.reference,
             description=request.description,
             requested_by_user_id=request.requested_by_user_id,
-            operator_bluefolder_user_id=request.operator_bluefolder_user_id,
+            technician_bluefolder_user_id=request.technician_bluefolder_user_id,
             assigned_parts_user_id=None,
             status="requested",
             created_at=timestamp,
@@ -147,7 +147,7 @@ class PartsCannonService:
                 reference=record.reference,
                 description=record.description,
                 requested_by_user_id=record.requested_by_user_id,
-                operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                technician_bluefolder_user_id=record.technician_bluefolder_user_id,
                 assigned_parts_user_id=record.assigned_parts_user_id,
                 status=normalized_status,
                 created_at=record.created_at,
@@ -192,8 +192,8 @@ class PartsCannonService:
             f"Last reconciled: `{record.last_reconciled_at}`" if record.last_reconciled_at is not None else "Last reconciled: never",
             f"Description: {record.description}",
         ]
-        if record.operator_bluefolder_user_id is not None:
-            lines.append(f"Mapped BlueFolder user: `{record.operator_bluefolder_user_id}`")
+        if record.technician_bluefolder_user_id is not None:
+            lines.append(f"Mapped BlueFolder user: `{record.technician_bluefolder_user_id}`")
         if record.downstream_note:
             lines.append(f"Downstream note: {record.downstream_note}")
         return CommandResult(message="\n".join(lines))
@@ -210,7 +210,7 @@ class PartsCannonService:
                 reference=record.reference,
                 description=record.description,
                 requested_by_user_id=record.requested_by_user_id,
-                operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                technician_bluefolder_user_id=record.technician_bluefolder_user_id,
                 assigned_parts_user_id=request.parts_user_id,
                 status=record.status,
                 created_at=record.created_at,
@@ -256,7 +256,7 @@ class PartsCannonService:
                     reference=record.reference,
                     description=record.description,
                     requested_by_user_id=record.requested_by_user_id,
-                    operator_bluefolder_user_id=record.operator_bluefolder_user_id,
+                    technician_bluefolder_user_id=record.technician_bluefolder_user_id,
                     assigned_parts_user_id=record.assigned_parts_user_id,
                     status=record.status,
                     created_at=record.created_at,
@@ -309,7 +309,7 @@ class PartsCannonService:
                     reference=existing.reference,
                     description=existing.description,
                     requested_by_user_id=existing.requested_by_user_id,
-                    operator_bluefolder_user_id=existing.operator_bluefolder_user_id,
+                    technician_bluefolder_user_id=existing.technician_bluefolder_user_id,
                     assigned_parts_user_id=existing.assigned_parts_user_id,
                     status=normalized_status,
                     created_at=existing.created_at,
@@ -398,8 +398,8 @@ class PartsCannonService:
                     f"Part `{summary.reference}`",
                     f"Parts Cannon: `{summary.integration_status}`",
                     f"Details: {summary.message}",
-                    *([f"Requester mapping: BlueFolder user `{request.operator_bluefolder_user_id}`"] if request.operator_bluefolder_user_id is not None else []),
-                    *(["Requester mapping: admin access"] if request.requester_is_admin and request.operator_bluefolder_user_id is None else []),
+                    *([f"Requester mapping: BlueFolder user `{request.technician_bluefolder_user_id}`"] if request.technician_bluefolder_user_id is not None else []),
+                    *(["Requester mapping: admin access"] if request.requester_is_admin and request.technician_bluefolder_user_id is None else []),
                     f"Notifications: `{notification_mode}`",
                 ]
             )

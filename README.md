@@ -28,8 +28,7 @@ Business-facing role model:
 
 Current implementation note:
 
-- `operator` in code/config currently maps to the `Technician` role
-- `OPS_HUB_OPERATOR_*` settings are technician-facing
+- `OPS_HUB_TECHNICIAN_*` settings are technician-facing
 - `OPS_HUB_DISPATCHER_*` settings are dispatch-facing
 - `OPS_HUB_PARTS_*` settings are parts-facing
 
@@ -85,11 +84,11 @@ Admin only:
 - `/config_check`
 - `/service_status`
 - `/recent_notices`
-- `/operator_mappings`
-- `/export_operator_mappings`
-- `/reload_operator_mappings`
-- `/set_operator_mapping`
-- `/remove_operator_mapping`
+- `/technician_mappings`
+- `/export_technician_mappings`
+- `/reload_technician_mappings`
+- `/set_technician_mapping`
+- `/remove_technician_mapping`
 - `/command_access`
 
 ## Key Workflows

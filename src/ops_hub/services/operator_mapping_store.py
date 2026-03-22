@@ -1,4 +1,4 @@
-"""File-backed operator mapping store."""
+"""File-backed technician mapping store."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ops_hub.models.requests import OperatorMappingRecord
+from ops_hub.models.requests import TechnicianMappingRecord
 
 
 @dataclass(slots=True)
 class OperatorMappingStore:
-    """Load and persist operator-to-BlueFolder user mappings."""
+    """Load and persist technician-to-BlueFolder user mappings."""
 
     file_path: Path | None = None
     records: dict[int, int] = field(default_factory=dict)
@@ -38,9 +38,9 @@ class OperatorMappingStore:
         )
         return self.file_path
 
-    def current_records(self) -> list[OperatorMappingRecord]:
+    def current_records(self) -> list[TechnicianMappingRecord]:
         """Return typed records sorted by Discord user id."""
         return [
-            OperatorMappingRecord(discord_user_id=discord_user_id, bluefolder_user_id=bluefolder_user_id)
+            TechnicianMappingRecord(discord_user_id=discord_user_id, bluefolder_user_id=bluefolder_user_id)
             for discord_user_id, bluefolder_user_id in sorted(self.records.items())
         ]

@@ -35,14 +35,14 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": None,
         "admin_user_ids": [],
         "admin_role_ids": [],
-        "operator_user_ids": [],
-        "operator_role_ids": [],
+        "technician_user_ids": [],
+        "technician_role_ids": [],
         "parts_user_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
-        "operator_bluefolder_user_map": {},
-        "operator_mapping_file": None,
+        "technician_bluefolder_user_map": {},
+        "technician_mapping_file": None,
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -92,9 +92,9 @@ def test_dispatch_cog_rejects_non_dispatch_user() -> None:
 
 
 def test_dispatch_cog_board_uses_mapping_records() -> None:
-    cog = _build_cog(dispatcher_user_ids=[42], operator_bluefolder_user_map={42: 13051})
+    cog = _build_cog(dispatcher_user_ids=[42], technician_bluefolder_user_map={42: 13051})
 
-    records = cog.bot.container.operator_directory_service.mapping_records()
+    records = cog.bot.container.technician_directory_service.mapping_records()
 
     assert len(records) == 1
     assert records[0].discord_user_id == 42

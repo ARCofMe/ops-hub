@@ -12,7 +12,7 @@ class JobLookupRequest:
 
     reference: str | None
     requested_by_user_id: int
-    operator_bluefolder_user_id: int | None = None
+    technician_bluefolder_user_id: int | None = None
     target_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
 
@@ -23,7 +23,7 @@ class PartLookupRequest:
 
     reference: str
     requested_by_user_id: int
-    operator_bluefolder_user_id: int | None = None
+    technician_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
 
 
@@ -34,7 +34,7 @@ class PartRequestCreate:
     reference: str
     description: str
     requested_by_user_id: int
-    operator_bluefolder_user_id: int | None = None
+    technician_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
 
 
@@ -100,20 +100,25 @@ class PartsRequestQueueSummary:
 
 
 @dataclass(slots=True)
-class OperatorIdentity:
-    """Resolved operator/admin identity for a Discord user."""
+class TechnicianIdentity:
+    """Resolved technician/admin identity for a Discord user."""
 
     discord_user_id: int
     is_admin: bool
-    is_operator: bool
+    is_technician: bool
     is_parts: bool
     is_dispatcher: bool
     bluefolder_user_id: int | None = None
 
+    @property
+    def is_operator(self) -> bool:
+        """Backward-compatible alias for older operator wording."""
+        return self.is_technician
+
 
 @dataclass(slots=True)
-class OperatorMappingRecord:
-    """Persistent mapping record for a Discord operator."""
+class TechnicianMappingRecord:
+    """Persistent mapping record for a Discord technician."""
 
     discord_user_id: int
     bluefolder_user_id: int
@@ -252,7 +257,7 @@ class PartRequestRecord:
     reference: str
     description: str
     requested_by_user_id: int
-    operator_bluefolder_user_id: int | None
+    technician_bluefolder_user_id: int | None
     assigned_parts_user_id: int | None
     status: str
     created_at: str

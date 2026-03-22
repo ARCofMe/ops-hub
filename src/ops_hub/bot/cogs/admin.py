@@ -44,45 +44,45 @@ class AdminCog(commands.Cog):
         """Report recent dry-run notices captured by the notification service."""
         await interaction.response.send_message(await self._build_recent_notices(), ephemeral=True)
 
-    @app_commands.command(name="operator_mappings", description="Show current operator to BlueFolder mappings.")
-    async def operator_mappings(self, interaction: discord.Interaction) -> None:
-        """Show the merged operator mapping set."""
-        await interaction.response.send_message(self._build_operator_mappings(), ephemeral=True)
+    @app_commands.command(name="technician_mappings", description="Show current technician to BlueFolder mappings.")
+    async def technician_mappings(self, interaction: discord.Interaction) -> None:
+        """Show the merged technician mapping set."""
+        await interaction.response.send_message(self._build_technician_mappings(), ephemeral=True)
 
-    @app_commands.command(name="export_operator_mappings", description="Persist operator mappings to the configured file.")
-    async def export_operator_mappings(self, interaction: discord.Interaction) -> None:
-        """Write current operator mappings to disk."""
-        await interaction.response.send_message(self._build_export_operator_mappings(), ephemeral=True)
+    @app_commands.command(name="export_technician_mappings", description="Persist technician mappings to the configured file.")
+    async def export_technician_mappings(self, interaction: discord.Interaction) -> None:
+        """Write current technician mappings to disk."""
+        await interaction.response.send_message(self._build_export_technician_mappings(), ephemeral=True)
 
-    @app_commands.command(name="reload_operator_mappings", description="Reload operator mappings from the configured file.")
-    async def reload_operator_mappings(self, interaction: discord.Interaction) -> None:
-        """Reload file-backed operator mappings."""
-        await interaction.response.send_message(self._build_reload_operator_mappings(), ephemeral=True)
+    @app_commands.command(name="reload_technician_mappings", description="Reload technician mappings from the configured file.")
+    async def reload_technician_mappings(self, interaction: discord.Interaction) -> None:
+        """Reload file-backed technician mappings."""
+        await interaction.response.send_message(self._build_reload_technician_mappings(), ephemeral=True)
 
-    @app_commands.command(name="set_operator_mapping", description="Set a Discord user to BlueFolder user mapping.")
-    async def set_operator_mapping(
+    @app_commands.command(name="set_technician_mapping", description="Set a Discord user to BlueFolder user mapping.")
+    async def set_technician_mapping(
         self,
         interaction: discord.Interaction,
         discord_user_id: int,
         bluefolder_user_id: int,
     ) -> None:
-        """Create or update an operator mapping."""
+        """Create or update a technician mapping."""
         await interaction.response.send_message(
-            self._build_set_operator_mapping(discord_user_id, bluefolder_user_id),
+            self._build_set_technician_mapping(discord_user_id, bluefolder_user_id),
             ephemeral=True,
         )
 
-    @app_commands.command(name="remove_operator_mapping", description="Remove a Discord user to BlueFolder user mapping.")
-    async def remove_operator_mapping(self, interaction: discord.Interaction, discord_user_id: int) -> None:
-        """Remove an operator mapping."""
+    @app_commands.command(name="remove_technician_mapping", description="Remove a Discord user to BlueFolder user mapping.")
+    async def remove_technician_mapping(self, interaction: discord.Interaction, discord_user_id: int) -> None:
+        """Remove a technician mapping."""
         await interaction.response.send_message(
-            self._build_remove_operator_mapping(discord_user_id),
+            self._build_remove_technician_mapping(discord_user_id),
             ephemeral=True,
         )
 
     @app_commands.command(name="command_access", description="Show the current command access model.")
     async def command_access(self, interaction: discord.Interaction) -> None:
-        """Report command scope definitions for admins/operators/dispatchers."""
+        """Report command scope definitions for admins/technicians/dispatchers."""
         await interaction.response.send_message(self._build_command_access(), ephemeral=True)
 
     def _build_ops_status(self) -> str:
@@ -180,52 +180,52 @@ class AdminCog(commands.Cog):
             return "partial"
         return "not set"
 
-    def _build_operator_mappings(self) -> str:
-        """Render the current merged operator mapping set."""
-        records = self.bot.container.operator_directory_service.mapping_records()
+    def _build_technician_mappings(self) -> str:
+        """Render the current merged technician mapping set."""
+        records = self.bot.container.technician_directory_service.mapping_records()
         if not records:
-            return "Operator Mappings\nNo operator mappings are currently configured."
+            return "Technician Mappings\nNo technician mappings are currently configured."
 
-        lines = ["Operator Mappings"]
+        lines = ["Technician Mappings"]
         for record in records:
             lines.append(
                 f"Discord user `{record.discord_user_id}` -> BlueFolder user `{record.bluefolder_user_id}`"
             )
         return "\n".join(lines)
 
-    def _build_export_operator_mappings(self) -> str:
+    def _build_export_technician_mappings(self) -> str:
         """Persist current mappings to disk and report the result."""
-        path = self.bot.container.operator_directory_service.export_mappings()
+        path = self.bot.container.technician_directory_service.export_mappings()
         if path is None:
-            return "Operator mapping export is not configured. Set OPS_HUB_OPERATOR_MAPPING_FILE first."
-        return f"Exported operator mappings to `{path}`."
+            return "Technician mapping export is not configured. Set OPS_HUB_TECHNICIAN_MAPPING_FILE first."
+        return f"Exported technician mappings to `{path}`."
 
-    def _build_reload_operator_mappings(self) -> str:
+    def _build_reload_technician_mappings(self) -> str:
         """Reload file-backed mappings and report the result."""
-        mappings = self.bot.container.operator_directory_service.reload_mappings()
-        return f"Reloaded `{len(mappings)}` operator mappings."
+        mappings = self.bot.container.technician_directory_service.reload_mappings()
+        return f"Reloaded `{len(mappings)}` technician mappings."
 
-    def _build_set_operator_mapping(self, discord_user_id: int, bluefolder_user_id: int) -> str:
-        """Create or update an operator mapping."""
-        self.bot.container.operator_directory_service.set_mapping(
+    def _build_set_technician_mapping(self, discord_user_id: int, bluefolder_user_id: int) -> str:
+        """Create or update a technician mapping."""
+        self.bot.container.technician_directory_service.set_mapping(
             discord_user_id=discord_user_id,
             bluefolder_user_id=bluefolder_user_id,
         )
         return f"Mapped Discord user `{discord_user_id}` to BlueFolder user `{bluefolder_user_id}`."
 
-    def _build_remove_operator_mapping(self, discord_user_id: int) -> str:
-        """Remove an operator mapping."""
-        removed = self.bot.container.operator_directory_service.remove_mapping(discord_user_id=discord_user_id)
+    def _build_remove_technician_mapping(self, discord_user_id: int) -> str:
+        """Remove a technician mapping."""
+        removed = self.bot.container.technician_directory_service.remove_mapping(discord_user_id=discord_user_id)
         if removed:
-            return f"Removed operator mapping for Discord user `{discord_user_id}`."
-        return f"No operator mapping existed for Discord user `{discord_user_id}`."
+            return f"Removed technician mapping for Discord user `{discord_user_id}`."
+        return f"No technician mapping existed for Discord user `{discord_user_id}`."
 
     def _build_command_access(self) -> str:
         """Render the current command access model."""
         return "\n".join(
             [
                 "Command Access",
-                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/operator_mappings`, `/export_operator_mappings`, `/reload_operator_mappings`, `/set_operator_mapping`, `/remove_operator_mapping`, `/command_access`: admin only",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`: admin only",
                 "`/job`, `/assignments`: technicians, dispatchers, admins",
                 "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins",
                 "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins",
@@ -251,7 +251,7 @@ class AdminCog(commands.Cog):
         role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
         if user_id is None:
             return False
-        identity = self.bot.container.operator_directory_service.resolve_identity(
+        identity = self.bot.container.technician_directory_service.resolve_identity(
             user_id=user_id,
             role_ids=role_ids,
         )

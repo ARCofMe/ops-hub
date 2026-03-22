@@ -9,14 +9,14 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": None,
         "admin_user_ids": [],
         "admin_role_ids": [],
-        "operator_user_ids": [],
-        "operator_role_ids": [],
+        "technician_user_ids": [],
+        "technician_role_ids": [],
         "parts_user_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
-        "operator_bluefolder_user_map": {},
-        "operator_mapping_file": None,
+        "technician_bluefolder_user_map": {},
+        "technician_mapping_file": None,
         "parts_request_file": None,
         "notification_channel_id": None,
         "log_level": "INFO",
@@ -65,6 +65,20 @@ def test_validate_or_raise_passes_for_valid_settings() -> None:
     settings.validate_or_raise()
 
 
+def test_legacy_operator_settings_merge_into_technician_settings() -> None:
+    settings = _settings(
+        operator_user_ids=[42],
+        operator_role_ids=[7],
+        operator_bluefolder_user_map={42: 13051},
+        operator_mapping_file="legacy.json",
+    )
+
+    assert settings.technician_user_ids == [42]
+    assert settings.technician_role_ids == [7]
+    assert settings.technician_bluefolder_user_map == {42: 13051}
+    assert settings.technician_mapping_file == "legacy.json"
+
+
 def test_validation_errors_reject_non_positive_admin_user_ids() -> None:
     settings = _settings(admin_user_ids=[123, 0])
 
@@ -81,20 +95,20 @@ def test_validation_errors_reject_non_positive_admin_role_ids() -> None:
     assert "OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs." in errors
 
 
-def test_validation_errors_reject_non_positive_operator_user_ids() -> None:
-    settings = _settings(operator_user_ids=[0])
+def test_validation_errors_reject_non_positive_technician_user_ids() -> None:
+    settings = _settings(technician_user_ids=[0])
 
     errors = settings.validation_errors()
 
-    assert "OPS_HUB_OPERATOR_USER_IDS must contain only positive Discord user IDs." in errors
+    assert "OPS_HUB_TECHNICIAN_USER_IDS must contain only positive Discord user IDs." in errors
 
 
-def test_validation_errors_reject_non_positive_operator_role_ids() -> None:
-    settings = _settings(operator_role_ids=[-7])
+def test_validation_errors_reject_non_positive_technician_role_ids() -> None:
+    settings = _settings(technician_role_ids=[-7])
 
     errors = settings.validation_errors()
 
-    assert "OPS_HUB_OPERATOR_ROLE_IDS must contain only positive Discord role IDs." in errors
+    assert "OPS_HUB_TECHNICIAN_ROLE_IDS must contain only positive Discord role IDs." in errors
 
 
 def test_validation_errors_reject_non_positive_parts_user_ids() -> None:
@@ -129,20 +143,20 @@ def test_validation_errors_reject_non_positive_dispatcher_role_ids() -> None:
     assert "OPS_HUB_DISPATCHER_ROLE_IDS must contain only positive Discord role IDs." in errors
 
 
-def test_validation_errors_reject_non_positive_operator_map_keys() -> None:
-    settings = _settings(operator_bluefolder_user_map={0: 13051})
+def test_validation_errors_reject_non_positive_technician_map_keys() -> None:
+    settings = _settings(technician_bluefolder_user_map={0: 13051})
 
     errors = settings.validation_errors()
 
-    assert "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP keys must contain only positive Discord user IDs." in errors
+    assert "OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP keys must contain only positive Discord user IDs." in errors
 
 
-def test_validation_errors_reject_non_positive_operator_map_values() -> None:
-    settings = _settings(operator_bluefolder_user_map={42: 0})
+def test_validation_errors_reject_non_positive_technician_map_values() -> None:
+    settings = _settings(technician_bluefolder_user_map={42: 0})
 
     errors = settings.validation_errors()
 
-    assert "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs." in errors
+    assert "OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs." in errors
 
 
 def test_validation_errors_reject_non_positive_notification_channel_id() -> None:

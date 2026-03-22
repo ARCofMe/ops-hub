@@ -14,14 +14,14 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": None,
         "admin_user_ids": [],
         "admin_role_ids": [],
-        "operator_user_ids": [],
-        "operator_role_ids": [],
+        "technician_user_ids": [],
+        "technician_role_ids": [],
         "parts_user_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
         "dispatcher_role_ids": [],
-        "operator_bluefolder_user_map": {},
-        "operator_mapping_file": None,
+        "technician_bluefolder_user_map": {},
+        "technician_mapping_file": None,
         "parts_request_file": None,
         "log_level": "INFO",
         "environment": "dev",
@@ -52,3 +52,4 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
     assert "Dispatch: `/job`, `/assignments`, `/tech_assignments`, `/tech_job`, `/dispatch_board`, `/parts_brief`, `/parts_notes`" in result
     assert "/part_reconcile" in result
     assert "/part_tracking" in result
+    assert "/technician_mappings" in result
