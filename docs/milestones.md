@@ -48,7 +48,7 @@ Use patch tags while the app is still moving quickly but each increment is worth
 
 ### Current Recommendation
 
-- `V0.0.3` is the next reasonable tag point once the parts request workflow docs are current.
+- `V0.0.4` is a reasonable next tag point once the queue-ownership docs are current.
 
 ## Milestone: `V0.1.0`
 
@@ -60,7 +60,7 @@ Treat this as the first real Ops Hub beta.
 - [ ] `/job` behavior is stable enough for regular users
 - [ ] `/assignments` and dispatcher-focused assignment flows are stable enough for regular users
 - [ ] `/part` behavior is stable enough for regular users
-- [ ] parts request submission and queue handling are stable enough for regular users
+- [ ] parts request submission, queue handling, and ownership flow are stable enough for regular users
 - [ ] Access tiers are settled enough that frequent changes are no longer expected
 - [ ] Operator mapping workflow is usable without hand-editing env values
 - [ ] Photo ingest direction is decided, even if not fully complete
@@ -126,7 +126,7 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 ## Recommended Near-Term Sequence
 
 1. Expand mapped assignment workflows
-2. Connect the tracked parts request lifecycle to a real downstream process
+2. Connect the tracked parts request lifecycle and queue ownership flow to a real downstream process
 3. Revisit photo ingest after the revised concept is ready
 4. Introduce real notification delivery targets
 5. Decide what should qualify as `V0.1.0`
