@@ -5,21 +5,17 @@ from pathlib import Path
 import textwrap
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
+from ops_hub.integrations.dispatch_adapter import DispatchAdapter
 from ops_hub.models.requests import JobLookupRequest
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
-from ops_hub.integrations.dispatch_adapter import DispatchAdapter
 
 
 class DummyDispatchAdapter(DispatchAdapter):
     """Dispatch adapter test double."""
 
-    async def get_job(self, reference: str) -> dict[str, str]:
-        return {
-            "reference": reference,
-            "status": "placeholder",
-            "source": "dispatch_adapter",
-        }
+    async def get_job(self, reference: str):
+        return await super().get_job(reference)
 
 
 def test_bluefolder_adapter_reports_unconfigured_status() -> None:
@@ -52,8 +48,9 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
         service.lookup_job(JobLookupRequest(reference="SR-100", requested_by_user_id=1))
     )
 
-    assert "BlueFolder status: import_error." in result.message
+    assert "BlueFolder: `import_error`" in result.message
     assert "Failed to import bluefolder_api from configured path" in result.message
+    assert "Dispatch: `unconfigured`" in result.message
 
 
 def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:
@@ -102,9 +99,27 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Job `SR-100`" in result.message
     assert "BlueFolder SR: `100`" in result.message
     assert "Subject: SR description 100" in result.message
+    assert "Dispatch: `unconfigured`" in result.message
     assert "Customer ID: `42`" in result.message
     assert "Location ID: `9`" in result.message
-    assert "Dispatch source: dispatch_adapter" in result.message
+    assert "Dispatch detail: Dispatch project path is not configured yet." in result.message
+
+
+def test_dispatch_adapter_reports_wrapper_ready_for_existing_project(tmp_path: Path) -> None:
+    package_dir = tmp_path / "optimized_routing"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "bluefolder_integration.py").write_text(
+        "class BlueFolderIntegration:\n    pass\n",
+        encoding="utf-8",
+    )
+    adapter = DispatchAdapter(base_path=str(tmp_path))
+
+    result = asyncio.run(adapter.get_job("SR-100"))
+
+    assert result.integration_status == "wrapper_ready"
+    assert result.available is True
+    assert result.module_name == "optimized_routing.bluefolder_integration"
 
 
 def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) -> None:

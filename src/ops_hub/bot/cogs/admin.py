@@ -33,6 +33,11 @@ class AdminCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(await self._build_service_status(), ephemeral=True)
 
+    @app_commands.command(name="recent_notices", description="Show the most recent Ops Hub notices.")
+    async def recent_notices(self, interaction: discord.Interaction) -> None:
+        """Report recent dry-run notices captured by the notification service."""
+        await interaction.response.send_message(await self._build_recent_notices(), ephemeral=True)
+
     def _build_ops_status(self) -> str:
         """Render a concise runtime status summary."""
         settings = self.bot.settings
@@ -69,6 +74,7 @@ class AdminCog(commands.Cog):
     async def _build_service_status(self) -> str:
         """Render current service-level adapter results."""
         bluefolder = await self.bot.container.bluefolder_service.get_job_summary("SR-100")
+        dispatch = await self.bot.container.dispatch_service.adapter.get_job("SR-100")
         parts = await self.bot.container.parts_cannon_service.adapter.get_part_status("SR-100")
         photo = await self.bot.container.photo_ingest_service.status()
         notifications = await self.bot.container.notification_service.status()
@@ -76,6 +82,8 @@ class AdminCog(commands.Cog):
             "Ops Hub Service Status",
             f"BlueFolder: `{bluefolder.integration_status}`",
             f"BlueFolder detail: {bluefolder.message}",
+            f"Dispatch: `{dispatch.integration_status}`",
+            f"Dispatch detail: {dispatch.message}",
             f"Parts Cannon: `{parts.integration_status}`",
             f"Parts Cannon detail: {parts.message}",
             f"Photo ingest: `{photo.get('status', 'unknown')}`",
@@ -84,6 +92,18 @@ class AdminCog(commands.Cog):
             f"Notification notices sent: `{notifications.notice_count}`",
             f"Last notification topic: `{notifications.last_topic or 'none'}`",
         ]
+        return "\n".join(lines)
+
+    async def _build_recent_notices(self, limit: int = 5) -> str:
+        """Render the most recent notification attempts."""
+        notices = await self.bot.container.notification_service.recent_notices(limit=limit)
+        if not notices:
+            return "Recent Notices\nNo notices have been recorded yet."
+
+        lines = ["Recent Notices"]
+        for notice in notices:
+            lines.append(f"`{notice.topic}` via `{notice.delivery}`")
+            lines.append(notice.message)
         return "\n".join(lines)
 
     def _bluefolder_config_status(self) -> str:

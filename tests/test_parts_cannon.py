@@ -39,8 +39,9 @@ def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> Non
         service.lookup_part(PartLookupRequest(reference="SR-200", requested_by_user_id=1))
     )
 
-    assert "Parts Cannon wrapper placeholder for `SR-200`." in result.message
-    assert "Status: placeholder_ready." in result.message
-    assert "Wrapper behavior is not implemented yet." in result.message
+    assert "Part `SR-200`" in result.message
+    assert "Parts Cannon: `placeholder_ready`" in result.message
+    assert "Details: Parts workflow wrapper path is available. Wrapper behavior is not implemented yet." in result.message
+    assert "Notifications: `dry_run`" in result.message
     assert len(notifications.records) == 1
     assert notifications.records[0].topic == "parts.lookup"

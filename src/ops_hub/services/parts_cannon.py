@@ -27,14 +27,18 @@ class PartsCannonService:
             topic="parts.lookup",
             message=f"Parts lookup requested for {request.reference} with status {result.integration_status}.",
         )
-        return self._build_lookup_result(result)
+        notification_status = await self.notifications.status()
+        return self._build_lookup_result(result, notification_status.mode)
 
-    def _build_lookup_result(self, summary: PartsWorkflowSummary) -> CommandResult:
+    def _build_lookup_result(self, summary: PartsWorkflowSummary, notification_mode: str) -> CommandResult:
         """Convert a typed parts summary into a user-facing command response."""
         return CommandResult(
-            message=(
-                f"Parts Cannon wrapper placeholder for `{summary.reference}`. "
-                f"Status: {summary.integration_status}. "
-                f"{summary.message}"
+            message="\n".join(
+                [
+                    f"Part `{summary.reference}`",
+                    f"Parts Cannon: `{summary.integration_status}`",
+                    f"Details: {summary.message}",
+                    f"Notifications: `{notification_mode}`",
+                ]
             )
         )

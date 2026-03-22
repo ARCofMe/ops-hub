@@ -38,3 +38,9 @@ class NotificationService:
             notice_count=len(self.records),
             last_topic=last_topic,
         )
+
+    async def recent_notices(self, limit: int = 5) -> list[NotificationRecord]:
+        """Return the most recent notification attempts, newest first."""
+        if limit <= 0:
+            return []
+        return list(reversed(self.records[-limit:]))

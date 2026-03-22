@@ -70,7 +70,24 @@ def test_build_service_status_reports_adapter_states() -> None:
 
     assert "Ops Hub Service Status" in result
     assert "BlueFolder: `unconfigured`" in result
+    assert "Dispatch: `unconfigured`" in result
     assert "Parts Cannon: `unconfigured`" in result
     assert "Photo ingest: `placeholder`" in result
     assert "Notifications: `dry_run` via `logger`" in result
     assert "Notification notices sent: `0`" in result
+
+
+def test_build_recent_notices_renders_latest_entries() -> None:
+    cog = _build_cog()
+    asyncio.run(
+        cog.bot.container.notification_service.send_notice(
+            topic="parts.lookup",
+            message="Parts lookup requested for SR-100.",
+        )
+    )
+
+    result = asyncio.run(cog._build_recent_notices())
+
+    assert "Recent Notices" in result
+    assert "`parts.lookup` via `dry_run`" in result
+    assert "Parts lookup requested for SR-100." in result

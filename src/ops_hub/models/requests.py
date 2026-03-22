@@ -50,6 +50,18 @@ class NotificationStatus:
 
 
 @dataclass(slots=True)
+class DispatchJobSummary:
+    """Read-only summary of dispatch-wrapper availability and lookup state."""
+
+    reference: str
+    available: bool
+    integration_status: str
+    message: str
+    source_path: Path | None = None
+    module_name: str | None = None
+
+
+@dataclass(slots=True)
 class BlueFolderJobSummary:
     """Read-only job summary placeholder for future BlueFolder integration."""
 
