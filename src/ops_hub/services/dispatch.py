@@ -25,7 +25,7 @@ class DispatchService:
             message=(
                 f"Job lookup placeholder for `{request.reference}`. "
                 f"Dispatch source: {dispatch_result['source']}; "
-                f"BlueFolder source: {bluefolder_result['source']}."
+                f"BlueFolder status: {bluefolder_result.integration_status}. "
+                f"{bluefolder_result.message}"
             )
         )
-
