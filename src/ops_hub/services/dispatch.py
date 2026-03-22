@@ -28,6 +28,12 @@ class DispatchService:
             return await self.lookup_assignments(request)
 
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
+        parts_brief = None
+        if bluefolder_result.available and bluefolder_result.service_request_id:
+            try:
+                parts_brief = await self.bluefolder_service.get_parts_brief(int(bluefolder_result.service_request_id))
+            except ValueError:
+                parts_brief = None
         dispatch_result = await self.adapter.get_job(
             request.reference,
             bluefolder_result,
@@ -39,6 +45,7 @@ class DispatchService:
                 request.reference,
                 dispatch_result,
                 bluefolder_result,
+                parts_brief,
             )
         )
 
@@ -131,6 +138,7 @@ class DispatchService:
         reference: str,
         dispatch_summary: DispatchJobSummary,
         summary: BlueFolderJobSummary,
+        parts_brief: CommandResult | None = None,
     ) -> str:
         """Build a user-facing job response from the current adapter results."""
         if summary.available and summary.integration_status == "live_read":
@@ -166,6 +174,8 @@ class DispatchService:
                 lines.append(f"Technician assignment: `{dispatch_summary.technician_assignment_status}`")
             if dispatch_summary.technician_origin_address:
                 lines.append(f"Technician origin: {dispatch_summary.technician_origin_address}")
+            if parts_lines := self._parts_context_lines(parts_brief):
+                lines.extend(parts_lines)
             if requestor_line := self._requestor_context_line(request):
                 lines.append(requestor_line)
             lines.append(f"Dispatch detail: {dispatch_summary.message}")
@@ -189,3 +199,28 @@ class DispatchService:
         if request.requester_is_admin:
             return "Requester mapping: admin access"
         return None
+
+    def _parts_context_lines(self, parts_brief: CommandResult | None) -> list[str]:
+        """Extract a compact parts snapshot from the BlueFolder parts brief."""
+        if parts_brief is None:
+            return []
+
+        stage_line = None
+        status_line = None
+        issue_line = None
+        for line in parts_brief.message.splitlines():
+            if line.startswith("Parts stage:"):
+                stage_line = line.replace("Parts stage:", "Parts:")
+            elif line.startswith("Status detail:"):
+                status_line = line
+            elif line.startswith("Issue detail:"):
+                issue_line = line
+
+        result = []
+        if stage_line:
+            result.append(stage_line)
+        if status_line:
+            result.append(status_line)
+        elif issue_line:
+            result.append(issue_line)
+        return result

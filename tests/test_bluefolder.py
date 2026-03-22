@@ -218,11 +218,19 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
                     return root
 
 
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    return [
+                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part tracking update: UPS 123", "isVisibleToCustomer": False},
+                    ]
+
+
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
                     self.customers = _Customers()
+                    self.comments = _Comments()
             """
         ),
         encoding="utf-8",
@@ -300,6 +308,8 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Dispatch stop address: 123 Main St, Portland, ME 04101" in result.message
     assert "Technician assignment: `assigned_today`" in result.message
     assert "Technician origin: South Paris, ME" in result.message
+    assert "Parts: `Tracking Posted`" in result.message
+    assert "Status detail: Part tracking update: UPS 123" in result.message
     assert "Requester mapping: BlueFolder user `13051`" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 
