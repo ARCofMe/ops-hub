@@ -33,14 +33,21 @@ class OpsHubBot(commands.Bot):
         for extension in EXTENSIONS:
             await self.load_extension(extension)
 
-        if self.settings.guild_id is not None:
-            guild = discord.Object(id=self.settings.guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info("Synced commands to guild", extra={"guild_id": self.settings.guild_id})
-        else:
-            await self.tree.sync()
-            logger.info("Synced global commands")
+        try:
+            if self.settings.guild_id is not None:
+                guild = discord.Object(id=self.settings.guild_id)
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                logger.info("Synced commands to guild", extra={"guild_id": self.settings.guild_id})
+            else:
+                await self.tree.sync()
+                logger.info("Synced global commands")
+        except Exception:
+            logger.exception(
+                "Failed to sync application commands",
+                extra={"guild_id": self.settings.guild_id},
+            )
+            raise
 
     async def on_ready(self) -> None:
         """Log bot identity when ready."""
@@ -80,21 +87,28 @@ class OpsHubBot(commands.Bot):
         error: discord.app_commands.AppCommandError,
     ) -> None:
         """Return a minimal user-facing error and log the full context."""
-        logger.exception(
-            "Application command failed",
-            exc_info=error,
-            extra={
-                "command": getattr(getattr(interaction, "command", None), "name", None),
-                "user_id": getattr(getattr(interaction, "user", None), "id", None),
-                "guild_id": getattr(interaction, "guild_id", None),
-            },
-        )
+        logger.exception("Application command failed", exc_info=error, extra=self._interaction_context(interaction))
 
         message = "Ops Hub hit an unexpected error."
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except Exception:
+            logger.exception(
+                "Failed to send application command error response",
+                extra=self._interaction_context(interaction),
+            )
+
+    def _interaction_context(self, interaction: discord.Interaction) -> dict[str, int | str | None]:
+        """Build a consistent log context for Discord interaction handlers."""
+        return {
+            "command": getattr(getattr(interaction, "command", None), "name", None),
+            "user_id": getattr(getattr(interaction, "user", None), "id", None),
+            "guild_id": getattr(interaction, "guild_id", None),
+            "channel_id": getattr(interaction, "channel_id", None),
+        }
 
 
 def build_bot(*, settings: Settings, container: ServiceContainer) -> OpsHubBot:

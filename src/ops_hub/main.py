@@ -16,12 +16,15 @@ logger = logging.getLogger(__name__)
 def main() -> int:
     """Start the Discord bot."""
     settings = load_settings()
-    settings.validate_or_raise()
     configure_logging(settings.log_level)
+    settings.validate_or_raise()
 
     logger.info("Starting Ops Hub", extra={"environment": settings.environment})
     container = build_container(settings)
     bot = build_bot(settings=settings, container=container)
-    bot.run(settings.discord_token)
+    try:
+        bot.run(settings.discord_token)
+    except Exception:
+        logger.exception("Ops Hub failed during startup or runtime")
+        raise
     return 0
-
