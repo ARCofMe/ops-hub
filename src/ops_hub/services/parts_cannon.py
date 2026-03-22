@@ -12,6 +12,7 @@ from ops_hub.models.requests import (
     PartRequestClaim,
     PartRequestCreate,
     PartRequestRecord,
+    PartsRequestQueueSummary,
     PartRequestUpdate,
     PartsWorkflowSummary,
 )
@@ -226,6 +227,31 @@ class PartsCannonService:
     def supported_request_statuses(self) -> tuple[str, ...]:
         """Return the supported parts request statuses."""
         return PARTS_REQUEST_STATUSES
+
+    def queue_summary(self) -> PartsRequestQueueSummary:
+        """Return a concise summary of the tracked parts request queue."""
+        records = self.request_store.load()
+        counts = {status: 0 for status in PARTS_REQUEST_STATUSES}
+        assigned_requests = 0
+        open_requests = 0
+        for record in records:
+            counts[record.status] = counts.get(record.status, 0) + 1
+            if record.assigned_parts_user_id is not None:
+                assigned_requests += 1
+            if record.status not in {"resolved", "cancelled"}:
+                open_requests += 1
+
+        return PartsRequestQueueSummary(
+            total_requests=len(records),
+            open_requests=open_requests,
+            assigned_requests=assigned_requests,
+            unassigned_requests=max(len(records) - assigned_requests, 0),
+            requested_count=counts["requested"],
+            ordered_count=counts["ordered"],
+            received_count=counts["received"],
+            resolved_count=counts["resolved"],
+            cancelled_count=counts["cancelled"],
+        )
 
     def _normalize_status(self, status: str) -> str | None:
         """Normalize a requested parts status and reject unsupported values."""

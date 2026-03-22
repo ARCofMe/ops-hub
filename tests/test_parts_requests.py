@@ -222,3 +222,52 @@ def test_unclaim_parts_request_clears_assignment() -> None:
     assert "now unassigned" in result.message
     assert service.request_store.records[0].assigned_parts_user_id is None
     assert notifications.records[-1].topic == "parts.request.unclaimed"
+
+
+def test_parts_queue_summary_reports_counts() -> None:
+    service, _ = _build_service()
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-300",
+                description="Need heating element",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-301",
+                description="Need control board",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=2,
+                status="resolved",
+                updated_by_user_id=77,
+            )
+        )
+    )
+    asyncio.run(
+        service.claim_request(
+            PartRequestClaim(
+                request_id=1,
+                parts_user_id=77,
+                updated_by_user_id=77,
+            )
+        )
+    )
+
+    summary = service.queue_summary()
+
+    assert summary.total_requests == 2
+    assert summary.open_requests == 1
+    assert summary.assigned_requests == 1
+    assert summary.unassigned_requests == 1
+    assert summary.requested_count == 1
+    assert summary.resolved_count == 1

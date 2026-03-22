@@ -84,6 +84,21 @@ class NotificationStatus:
 
 
 @dataclass(slots=True)
+class PartsRequestQueueSummary:
+    """Operational summary of the tracked parts request queue."""
+
+    total_requests: int
+    open_requests: int
+    assigned_requests: int
+    unassigned_requests: int
+    requested_count: int
+    ordered_count: int
+    received_count: int
+    resolved_count: int
+    cancelled_count: int
+
+
+@dataclass(slots=True)
 class OperatorIdentity:
     """Resolved operator/admin identity for a Discord user."""
 

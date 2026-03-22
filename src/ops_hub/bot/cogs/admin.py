@@ -123,6 +123,7 @@ class AdminCog(commands.Cog):
         bluefolder = await self.bot.container.bluefolder_service.get_job_summary("SR-100")
         dispatch = await self.bot.container.dispatch_service.adapter.get_job("SR-100")
         parts = await self.bot.container.parts_cannon_service.adapter.get_part_status("SR-100")
+        parts_queue = self.bot.container.parts_cannon_service.queue_summary()
         photo = await self.bot.container.photo_ingest_service.status()
         notifications = await self.bot.container.notification_service.status()
         lines = [
@@ -133,6 +134,14 @@ class AdminCog(commands.Cog):
             f"Dispatch detail: {dispatch.message}",
             f"Parts Cannon: `{parts.integration_status}`",
             f"Parts Cannon detail: {parts.message}",
+            f"Parts queue open: `{parts_queue.open_requests}` of `{parts_queue.total_requests}` total",
+            f"Parts queue assigned/unassigned: `{parts_queue.assigned_requests}` / `{parts_queue.unassigned_requests}`",
+            "Parts queue status counts: "
+            f"requested `{parts_queue.requested_count}`, "
+            f"ordered `{parts_queue.ordered_count}`, "
+            f"received `{parts_queue.received_count}`, "
+            f"resolved `{parts_queue.resolved_count}`, "
+            f"cancelled `{parts_queue.cancelled_count}`",
             f"Photo ingest: `{photo.get('status', 'unknown')}`",
             f"Photo ingest source: `{photo.get('source', 'unknown')}`",
             f"Notifications: `{notifications.mode}` via `{notifications.transport}`",
