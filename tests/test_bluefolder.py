@@ -532,6 +532,53 @@ def test_bluefolder_service_logs_parts_issue_comment(tmp_path: Path) -> None:
     assert "BlueFolder note: Missing part reported" in result.message
 
 
+def test_bluefolder_service_logs_parts_update_comment(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def __init__(self):
+                    self.calls = []
+
+                def add_to_service_request(self, service_request_id: int, text: str, visible_to_customer: bool = False):
+                    self.calls.append((service_request_id, text, visible_to_customer))
+                    return {"ok": True}
+
+            _shared_comments = _Comments()
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _shared_comments
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(
+        service.log_parts_update(
+            100,
+            update_type="part_tracking",
+            details="UPS 1Z999 arrives tomorrow",
+            requested_by_user_id=42,
+        )
+    )
+
+    assert "Logged part-tracking update for `100`" in result.message
+    assert "UPS 1Z999 arrives tomorrow" in result.message
+    assert "BlueFolder note: Part tracking update" in result.message
+
+
 def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> None:
     adapter = BlueFolderAdapter(base_path=str(tmp_path), api_key="key", account_name="acme")
 

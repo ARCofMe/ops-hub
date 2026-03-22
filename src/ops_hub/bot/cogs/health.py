@@ -33,7 +33,7 @@ class HealthCog(commands.Cog):
                 "Open access: `/ping`, `/ops_help`",
                 "Technician: `/job`, `/assignments`, `/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`, `/parts_brief`, `/parts_notes`",
                 "Dispatch: `/job`, `/assignments`, `/tech_assignments`, `/tech_job`, `/dispatch_board`, `/parts_brief`, `/parts_notes`",
-                "Parts: `/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/parts_brief`, `/parts_notes`",
+                "Parts: `/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/parts_brief`, `/parts_notes`, `/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`",
                 "Admin: `/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/operator_mappings`, `/export_operator_mappings`, `/reload_operator_mappings`, `/set_operator_mapping`, `/remove_operator_mapping`, `/command_access`",
                 "Business term note: `operator` in config currently maps to Technician access.",
             ]

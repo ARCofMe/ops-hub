@@ -126,6 +126,31 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="part_ordered", description="Log that a part was ordered in BlueFolder for a service request.")
+    async def part_ordered(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a part-ordered BlueFolder comment."""
+        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_ordered")
+
+    @app_commands.command(name="part_eta", description="Log an ETA update in BlueFolder for a service request.")
+    async def part_eta(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a part-ETA BlueFolder comment."""
+        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_eta")
+
+    @app_commands.command(name="part_tracking", description="Log a tracking update in BlueFolder for a service request.")
+    async def part_tracking(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a part-tracking BlueFolder comment."""
+        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_tracking")
+
+    @app_commands.command(name="part_received", description="Log that a part was received in BlueFolder for a service request.")
+    async def part_received(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a part-received BlueFolder comment."""
+        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_received")
+
+    @app_commands.command(name="part_ready", description="Log that a service request is ready for scheduling after parts arrival.")
+    async def part_ready(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a part-ready BlueFolder comment."""
+        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_ready")
+
     @app_commands.command(name="part_request", description="Create a new tracked parts request.")
     @app_commands.describe(
         reference="Service request id, job reference, or other parts reference.",
@@ -275,6 +300,26 @@ class OperationsCog(commands.Cog):
             role_ids=role_ids,
         )
 
+    async def _send_parts_update(
+        self,
+        interaction: discord.Interaction,
+        *,
+        sr_id: int,
+        details: str,
+        update_type: str,
+    ) -> None:
+        """Log a standardized BlueFolder parts update after access checks."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_write_parts_update(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_parts_update(
+            sr_id,
+            update_type=update_type,
+            details=details,
+            requested_by_user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _can_use_job_commands(self, identity) -> bool:
         """Return whether the user can access job and assignments commands."""
         return identity.is_admin or identity.is_operator or identity.is_dispatcher
@@ -294,6 +339,10 @@ class OperationsCog(commands.Cog):
     def _can_write_parts_issue(self, identity) -> bool:
         """Return whether the user can log BlueFolder parts issue comments."""
         return identity.is_admin or identity.is_parts or identity.is_operator
+
+    def _can_write_parts_update(self, identity) -> bool:
+        """Return whether the user can log BlueFolder parts status updates."""
+        return identity.is_admin or identity.is_parts
 
 
 async def setup(bot: OpsHubBot) -> None:

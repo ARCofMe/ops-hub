@@ -51,3 +51,4 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
     assert "/missing_part" in result
     assert "Dispatch: `/job`, `/assignments`, `/tech_assignments`, `/tech_job`, `/dispatch_board`, `/parts_brief`, `/parts_notes`" in result
     assert "/part_reconcile" in result
+    assert "/part_tracking" in result

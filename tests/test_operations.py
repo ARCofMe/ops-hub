@@ -158,3 +158,13 @@ def test_technician_can_write_bluefolder_parts_issue() -> None:
 
     assert cog._can_write_parts_issue(identity) is True
     assert cog._can_view_parts_context(identity) is True
+    assert cog._can_write_parts_update(identity) is False
+
+
+def test_parts_can_write_bluefolder_parts_update() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_write_parts_update(identity) is True

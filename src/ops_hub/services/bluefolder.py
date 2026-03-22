@@ -93,6 +93,38 @@ class BlueFolderService:
             )
         )
 
+    async def log_parts_update(
+        self,
+        sr_id: int,
+        *,
+        update_type: str,
+        details: str,
+        requested_by_user_id: int,
+    ) -> CommandResult:
+        """Add a standardized BlueFolder parts-status update comment."""
+        result = await self.adapter.add_parts_update_comment(
+            sr_id,
+            update_type=update_type,
+            details=details,
+            requested_by_user_id=requested_by_user_id,
+        )
+        if not result.get("ok"):
+            return CommandResult(
+                message=(
+                    f"Could not log {update_type.replace('_', '-')} update for `{sr_id}`: "
+                    f"{result.get('error') or 'unknown error'}"
+                )
+            )
+        return CommandResult(
+            message="\n".join(
+                [
+                    f"Logged {update_type.replace('_', '-')} update for `{sr_id}`",
+                    f"Logged at: `{result.get('logged_at') or 'unknown'}`",
+                    f"BlueFolder note: {result.get('note_text') or ''}",
+                ]
+            )
+        )
+
     def _format_address(self, summary: BlueFolderJobSummary) -> str:
         """Format a readable address from the BlueFolder job summary."""
         return ", ".join(

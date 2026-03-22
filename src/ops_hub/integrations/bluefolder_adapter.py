@@ -256,6 +256,53 @@ class BlueFolderAdapter:
             "logged_at": timestamp.isoformat(timespec="minutes"),
         }
 
+    async def add_parts_update_comment(
+        self,
+        sr_id: int,
+        *,
+        update_type: str,
+        details: str,
+        requested_by_user_id: int,
+    ) -> dict[str, str | bool | None]:
+        """Add a standardized parts-status update comment to a service request."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
+
+        detail_text = " ".join(details.split()).strip()
+        if not detail_text:
+            return {"ok": False, "error": "Update details are required."}
+
+        timestamp = datetime.now().replace(second=0, microsecond=0)
+        prefixes = {
+            "part_ordered": "Part ordered",
+            "part_eta": "Part ETA update",
+            "part_tracking": "Part tracking update",
+            "part_received": "Part received",
+            "part_ready": "Part ready for scheduling",
+        }
+        prefix = prefixes.get(update_type, "Parts update")
+        comment_text = (
+            f"{prefix} at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
+            f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+        )
+
+        try:
+            client.comments.add_to_service_request(
+                sr_id,
+                comment_text,
+                visible_to_customer=False,
+            )
+        except Exception as exc:
+            logger.exception("BlueFolder update write failed for SR %s", sr_id)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "note_text": comment_text,
+            "logged_at": timestamp.isoformat(timespec="minutes"),
+        }
+
     def _extract_service_request_id(self, reference: str) -> str | None:
         """Extract a numeric SR id from a user-supplied lookup token."""
         match = re.search(r"(\d+)", reference)
