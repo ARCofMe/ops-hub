@@ -11,7 +11,9 @@ import re
 import sys
 from types import TracebackType
 
-from ops_hub.models.requests import BlueFolderJobSummary
+from datetime import datetime
+
+from ops_hub.models.requests import BlueFolderJobSummary, PartsCommentRecord
 
 
 logger = logging.getLogger(__name__)
@@ -25,10 +27,20 @@ class BlueFolderAdapter:
     api_key: str | None = None
     account_name: str | None = None
     base_url: str | None = None
+    parts_comment_keywords: tuple[str, ...] = (
+        "part",
+        "tracking",
+        "eta",
+        "ship",
+        "ordered",
+        "order",
+        "backorder",
+        "received",
+    )
 
     async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
         """Return a read-only BlueFolder lookup result when the local library is available."""
-        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        resolved_path = self._resolve_path()
         if resolved_path is None:
             return BlueFolderJobSummary(
                 reference=reference,
@@ -127,6 +139,7 @@ class BlueFolderAdapter:
             or sr.findtext(".//title")
             or "Unlabeled Service Request"
         )
+        customer_name = sr.findtext("customerName") or sr.findtext(".//customerName")
         customer_id = sr.findtext("customerId")
         customer_location_id = sr.findtext("customerLocationId")
         address: str | None = None
@@ -165,6 +178,7 @@ class BlueFolderAdapter:
             source_path=resolved_path,
             service_request_id=service_request_id,
             subject=subject,
+            customer_name=customer_name,
             customer_id=customer_id,
             customer_location_id=customer_location_id,
             address=address,
@@ -173,14 +187,118 @@ class BlueFolderAdapter:
             postal_code=postal_code,
         )
 
+    async def get_recent_parts_comments(self, sr_id: int, *, limit: int = 6) -> list[PartsCommentRecord]:
+        """Return recent service-request comments that look parts-related."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return []
+        try:
+            comments = client.comments.list_for_service_request(sr_id)
+        except Exception:
+            logger.exception("BlueFolder comment lookup failed for SR %s", sr_id)
+            return []
+
+        filtered = [
+            PartsCommentRecord(
+                author=comment.get("author"),
+                date_created=comment.get("dateCreated"),
+                text=str(comment.get("text") or ""),
+                is_visible_to_customer=bool(comment.get("isVisibleToCustomer")),
+            )
+            for comment in comments
+            if self._is_parts_comment(str(comment.get("text") or ""))
+        ]
+        filtered.sort(key=lambda item: item.date_created or "", reverse=True)
+        return filtered[:limit]
+
+    async def add_parts_comment(
+        self,
+        sr_id: int,
+        *,
+        issue_type: str,
+        details: str,
+        requested_by_user_id: int,
+    ) -> dict[str, str | bool | None]:
+        """Add a standardized parts-related comment to a service request."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
+
+        detail_text = " ".join(details.split()).strip()
+        if not detail_text:
+            return {"ok": False, "error": "Part details are required."}
+
+        timestamp = datetime.now().replace(second=0, microsecond=0)
+        if issue_type == "missing_part":
+            comment_text = (
+                f"Missing part reported at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
+                f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+            )
+        else:
+            comment_text = (
+                f"Damaged part reported at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
+                f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+            )
+
+        try:
+            client.comments.add_to_service_request(
+                sr_id,
+                comment_text,
+                visible_to_customer=False,
+            )
+        except Exception as exc:
+            logger.exception("BlueFolder comment write failed for SR %s", sr_id)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "note_text": comment_text,
+            "logged_at": timestamp.isoformat(timespec="minutes"),
+        }
+
     def _extract_service_request_id(self, reference: str) -> str | None:
         """Extract a numeric SR id from a user-supplied lookup token."""
         match = re.search(r"(\d+)", reference)
         return match.group(1) if match else None
 
+    def _resolve_path(self) -> Path | None:
+        """Resolve the configured BlueFolder library path."""
+        return Path(self.base_path).expanduser() if self.base_path else None
+
+    def _build_client(self) -> tuple[object | None, Path | None]:
+        """Construct a BlueFolder client when the local repo path and credentials are usable."""
+        resolved_path = self._resolve_path()
+        if resolved_path is None or not resolved_path.exists():
+            return None, resolved_path
+        try:
+            client_class = self._load_client_class(resolved_path)
+        except (ImportError, AttributeError, ModuleNotFoundError):
+            logger.exception("Failed to load bluefolder_api from %s", resolved_path)
+            return None, resolved_path
+        if not (self.api_key or "").strip():
+            return None, resolved_path
+        if not ((self.account_name or "").strip() or (self.base_url or "").strip()):
+            return None, resolved_path
+
+        with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+            api_key=self.api_key,
+            account_name=self.account_name,
+            base_url=self.base_url,
+        ):
+            client = client_class(base_url=(self.base_url or None))
+        return client, resolved_path
+
+    def _is_parts_comment(self, text: str) -> bool:
+        """Return whether a comment looks relevant to the parts workflow."""
+        candidate = text.casefold()
+        return any(keyword in candidate for keyword in self.parts_comment_keywords)
+
     def _load_client_class(self, resolved_path: Path) -> type[object]:
         """Load the shared BlueFolder client from a local repo path."""
         with _temporary_sys_path(resolved_path):
+            importlib.invalidate_caches()
+            sys.modules.pop("bluefolder_api", None)
+            sys.modules.pop("bluefolder_api.client", None)
             module = importlib.import_module("bluefolder_api.client")
         return getattr(module, "BlueFolderClient")
 

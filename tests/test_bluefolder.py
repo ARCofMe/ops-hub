@@ -378,7 +378,158 @@ def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) 
     assert result.city == "Portland"
     assert result.state == "ME"
     assert result.postal_code == "04101"
-    assert "BlueFolder SR `100`: SR description 100" == result.message
+
+
+def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerName").text = "Jane Customer"
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: str, location_id: str):
+                    root = ET.Element("response")
+                    location = ET.SubElement(root, "customerLocation")
+                    ET.SubElement(location, "addressStreet").text = "123 Main St"
+                    ET.SubElement(location, "addressCity").text = "Portland"
+                    ET.SubElement(location, "addressState").text = "ME"
+                    ET.SubElement(location, "addressPostalCode").text = "04101"
+                    return root
+
+
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    return [
+                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Tracking update: UPS 123", "isVisibleToCustomer": False},
+                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "General note", "isVisibleToCustomer": False},
+                    ]
+
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(service.get_parts_brief(100))
+
+    assert "SR `100`" in result.message
+    assert "Subject: SR description 100" in result.message
+    assert "Customer: Jane Customer" in result.message
+    assert "Latest parts note:" in result.message
+    assert "Tracking update: UPS 123" in result.message
+
+
+def test_bluefolder_service_lists_parts_notes_from_bluefolder_comments(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    return [
+                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Tracking update: UPS 123", "isVisibleToCustomer": False},
+                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "Missing part reported at 9:00 AM. Details: belt.", "isVisibleToCustomer": False},
+                        {"author": "Tech", "dateCreated": "2026-03-22 08:00", "text": "Unrelated note", "isVisibleToCustomer": False},
+                    ]
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(service.get_parts_notes(100))
+
+    assert "Parts notes" in result.message
+    assert "Tracking update: UPS 123" in result.message
+    assert "Missing part reported" in result.message
+    assert "Unrelated note" not in result.message
+
+
+def test_bluefolder_service_logs_parts_issue_comment(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def __init__(self):
+                    self.calls = []
+
+                def add_to_service_request(self, service_request_id: int, text: str, visible_to_customer: bool = False):
+                    self.calls.append((service_request_id, text, visible_to_customer))
+                    return {"ok": True}
+
+            _shared_comments = _Comments()
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _shared_comments
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(
+        service.log_parts_issue(
+            100,
+            issue_type="missing_part",
+            details="Need control board",
+            requested_by_user_id=42,
+        )
+    )
+
+    assert "Logged missing-part issue for `100`" in result.message
+    assert "Need control board" in result.message
+    assert "BlueFolder note: Missing part reported" in result.message
 
 
 def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> None:

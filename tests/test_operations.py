@@ -148,3 +148,13 @@ def test_technician_can_submit_parts_request_but_not_manage_queue() -> None:
 
     assert cog._can_submit_parts_request(identity) is True
     assert cog._can_use_parts_queue(identity) is False
+
+
+def test_technician_can_write_bluefolder_parts_issue() -> None:
+    cog = _build_cog(operator_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_write_parts_issue(identity) is True
+    assert cog._can_view_parts_context(identity) is True

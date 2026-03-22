@@ -80,6 +80,52 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.parts_cannon_service.lookup_part(request)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="parts_brief", description="Show a BlueFolder-native parts summary for a service request.")
+    async def parts_brief(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show a compact parts summary based on BlueFolder comments and SR context."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.get_parts_brief(sr_id)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="parts_notes", description="Show recent parts-related BlueFolder comments for a service request.")
+    async def parts_notes(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show recent parts-related BlueFolder comments."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.get_parts_notes(sr_id)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="missing_part", description="Log a missing-part issue to BlueFolder for a service request.")
+    async def missing_part(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a missing-part BlueFolder comment."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_write_parts_issue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_parts_issue(
+            sr_id,
+            issue_type="missing_part",
+            details=details,
+            requested_by_user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="damaged_part", description="Log a damaged-part issue to BlueFolder for a service request.")
+    async def damaged_part(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a damaged-part BlueFolder comment."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_write_parts_issue(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_parts_issue(
+            sr_id,
+            issue_type="damaged_part",
+            details=details,
+            requested_by_user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part_request", description="Create a new tracked parts request.")
     @app_commands.describe(
         reference="Service request id, job reference, or other parts reference.",
@@ -240,6 +286,14 @@ class OperationsCog(commands.Cog):
     def _can_use_parts_queue(self, identity) -> bool:
         """Return whether the user can access the managed parts queue."""
         return identity.is_admin or identity.is_parts
+
+    def _can_view_parts_context(self, identity) -> bool:
+        """Return whether the user can view BlueFolder-native parts context."""
+        return identity.is_admin or identity.is_parts or identity.is_dispatcher or identity.is_operator
+
+    def _can_write_parts_issue(self, identity) -> bool:
+        """Return whether the user can log BlueFolder parts issue comments."""
+        return identity.is_admin or identity.is_parts or identity.is_operator
 
 
 async def setup(bot: OpsHubBot) -> None:

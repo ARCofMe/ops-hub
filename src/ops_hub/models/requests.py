@@ -147,12 +147,23 @@ class BlueFolderJobSummary:
     source_path: Path | None = None
     service_request_id: str | None = None
     subject: str | None = None
+    customer_name: str | None = None
     customer_id: str | None = None
     customer_location_id: str | None = None
     address: str | None = None
     city: str | None = None
     state: str | None = None
     postal_code: str | None = None
+
+
+@dataclass(slots=True)
+class PartsCommentRecord:
+    """A BlueFolder comment relevant to the parts workflow."""
+
+    author: str | None
+    date_created: str | None
+    text: str
+    is_visible_to_customer: bool
 
 
 @dataclass(slots=True)
