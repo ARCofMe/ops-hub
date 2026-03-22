@@ -135,5 +135,16 @@ def test_parts_commands_allow_parts_user() -> None:
 
     identity = cog._resolve_identity(interaction)
 
-    assert cog._can_use_parts_commands(identity) is True
+    assert cog._can_use_parts_queue(identity) is True
+    assert cog._can_submit_parts_request(identity) is True
     assert cog._can_use_job_commands(identity) is False
+
+
+def test_technician_can_submit_parts_request_but_not_manage_queue() -> None:
+    cog = _build_cog(operator_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_submit_parts_request(identity) is True
+    assert cog._can_use_parts_queue(identity) is False

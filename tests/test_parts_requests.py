@@ -56,7 +56,8 @@ def test_list_parts_requests_returns_saved_records() -> None:
     result = asyncio.run(service.list_requests())
 
     assert "Parts requests" in result.message
-    assert "`1` `requested` `SR-300` Need heating element" in result.message
+    assert "`1` `requested` `SR-300` requested by `42`" in result.message
+    assert "Description: Need heating element" in result.message
 
 
 def test_update_parts_request_changes_status() -> None:
@@ -110,3 +111,30 @@ def test_update_parts_request_rejects_invalid_status() -> None:
     )
 
     assert "Invalid parts request status." in result.message
+
+
+def test_list_parts_requests_can_filter_by_requester() -> None:
+    service, _ = _build_service()
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-300",
+                description="Need heating element",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-301",
+                description="Need control board",
+                requested_by_user_id=99,
+            )
+        )
+    )
+
+    result = asyncio.run(service.list_requests(requested_by_user_id=42))
+
+    assert "`SR-300`" in result.message
+    assert "`SR-301`" not in result.message

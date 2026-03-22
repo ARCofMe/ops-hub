@@ -69,7 +69,7 @@ class OperationsCog(commands.Cog):
     async def part(self, interaction: discord.Interaction, reference: str) -> None:
         """Parts workflow command."""
         identity = self._resolve_identity(interaction)
-        if not self._can_use_parts_commands(identity):
+        if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         request = PartLookupRequest(
             reference=reference,
@@ -88,7 +88,7 @@ class OperationsCog(commands.Cog):
     async def part_request(self, interaction: discord.Interaction, reference: str, description: str) -> None:
         """Create a tracked parts request."""
         identity = self._resolve_identity(interaction)
-        if not self._can_use_parts_commands(identity):
+        if not self._can_submit_parts_request(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.create_request(
             PartRequestCreate(
@@ -101,12 +101,25 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="my_part_requests", description="List your tracked parts requests.")
+    @app_commands.describe(status="Optional status filter: requested, ordered, received, resolved, cancelled.")
+    async def my_part_requests(self, interaction: discord.Interaction, status: str | None = None) -> None:
+        """List the caller's own tracked parts requests."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_submit_parts_request(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.parts_cannon_service.list_requests(
+            status=status,
+            requested_by_user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part_requests", description="List tracked parts requests.")
     @app_commands.describe(status="Optional status filter: requested, ordered, received, resolved, cancelled.")
     async def part_requests(self, interaction: discord.Interaction, status: str | None = None) -> None:
         """List tracked parts requests, optionally filtered by status."""
         identity = self._resolve_identity(interaction)
-        if not self._can_use_parts_commands(identity):
+        if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.list_requests(status=status)
         await interaction.response.send_message(result.message, ephemeral=True)
@@ -119,7 +132,7 @@ class OperationsCog(commands.Cog):
     async def part_update(self, interaction: discord.Interaction, request_id: int, status: str) -> None:
         """Update a tracked parts request status."""
         identity = self._resolve_identity(interaction)
-        if not self._can_use_parts_commands(identity):
+        if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.update_request(
             PartRequestUpdate(
@@ -143,8 +156,12 @@ class OperationsCog(commands.Cog):
         """Return whether the user can access job and assignments commands."""
         return identity.is_admin or identity.is_operator or identity.is_dispatcher
 
-    def _can_use_parts_commands(self, identity) -> bool:
-        """Return whether the user can access parts workflow commands."""
+    def _can_submit_parts_request(self, identity) -> bool:
+        """Return whether the user can create and view their own parts requests."""
+        return identity.is_admin or identity.is_parts or identity.is_operator
+
+    def _can_use_parts_queue(self, identity) -> bool:
+        """Return whether the user can access the managed parts queue."""
         return identity.is_admin or identity.is_parts
 
 

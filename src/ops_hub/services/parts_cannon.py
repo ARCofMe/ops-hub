@@ -80,8 +80,13 @@ class PartsCannonService:
             )
         )
 
-    async def list_requests(self, *, status: str | None = None) -> CommandResult:
-        """List current parts requests, optionally filtered by status."""
+    async def list_requests(
+        self,
+        *,
+        status: str | None = None,
+        requested_by_user_id: int | None = None,
+    ) -> CommandResult:
+        """List current parts requests, optionally filtered by status or requester."""
         normalized_status = None if status is None else self._normalize_status(status)
         if status is not None and normalized_status is None:
             return CommandResult(
@@ -94,15 +99,16 @@ class PartsCannonService:
         records = self.request_store.load()
         if normalized_status is not None:
             records = [record for record in records if record.status == normalized_status]
+        if requested_by_user_id is not None:
+            records = [record for record in records if record.requested_by_user_id == requested_by_user_id]
 
         if not records:
             return CommandResult(message="No parts requests found.")
 
         lines = ["Parts requests"]
         for record in records[:15]:
-            lines.append(
-                f"`{record.request_id}` `{record.status}` `{record.reference}` {record.description}"
-            )
+            lines.append(f"`{record.request_id}` `{record.status}` `{record.reference}` requested by `{record.requested_by_user_id}`")
+            lines.append(f"Description: {record.description}")
         if len(records) > 15:
             lines.append(f"...and {len(records) - 15} more request(s)")
         return CommandResult(message="\n".join(lines))
