@@ -53,6 +53,7 @@ class OpsHubBot(commands.Bot):
         """Log bot identity when ready."""
         if self.user is None:
             return
+        self.container.notification_service.configure_sender(self._send_notice_to_channel)
         logger.info("Ops Hub bot ready", extra={"bot_user": str(self.user), "bot_id": self.user.id})
 
     async def on_message(self, message: discord.Message) -> None:
@@ -109,6 +110,16 @@ class OpsHubBot(commands.Bot):
             "guild_id": getattr(interaction, "guild_id", None),
             "channel_id": getattr(interaction, "channel_id", None),
         }
+
+    async def _send_notice_to_channel(self, channel_id: int, topic: str, message: str) -> None:
+        """Route Ops Hub notices into a configured Discord channel."""
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            fetched_channel = await self.fetch_channel(channel_id)
+            channel = fetched_channel
+        if not isinstance(channel, discord.abc.Messageable):
+            raise RuntimeError(f"Configured notification channel `{channel_id}` is not messageable.")
+        await channel.send(f"[{topic}] {message}")
 
 
 def build_bot(*, settings: Settings, container: ServiceContainer) -> OpsHubBot:

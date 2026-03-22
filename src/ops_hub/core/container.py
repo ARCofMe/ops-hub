@@ -35,7 +35,7 @@ class ServiceContainer:
 
 def build_container(settings: Settings) -> ServiceContainer:
     """Build services and adapters for the app runtime."""
-    notification_service = NotificationService()
+    notification_service = NotificationService(channel_id=settings.notification_channel_id)
     operator_directory_service = OperatorDirectoryService(
         settings=settings,
         store=OperatorMappingStore(

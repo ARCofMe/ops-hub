@@ -17,6 +17,8 @@ def _settings(**overrides: object) -> Settings:
         "dispatcher_role_ids": [],
         "operator_bluefolder_user_map": {},
         "operator_mapping_file": None,
+        "parts_request_file": None,
+        "notification_channel_id": None,
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -141,6 +143,14 @@ def test_validation_errors_reject_non_positive_operator_map_values() -> None:
     errors = settings.validation_errors()
 
     assert "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs." in errors
+
+
+def test_validation_errors_reject_non_positive_notification_channel_id() -> None:
+    settings = _settings(notification_channel_id=0)
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_NOTIFICATION_CHANNEL_ID must be a positive Discord channel ID." in errors
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

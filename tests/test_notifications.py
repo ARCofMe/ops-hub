@@ -28,3 +28,30 @@ def test_notification_service_tracks_sent_notices() -> None:
     assert status.notice_count == 1
     assert status.last_topic == "parts.lookup"
     assert service.records[0].delivery == "dry_run"
+
+
+def test_notification_service_routes_to_discord_sender_when_configured() -> None:
+    sent: list[tuple[int, str, str]] = []
+
+    async def _sender(channel_id: int, topic: str, message: str) -> None:
+        sent.append((channel_id, topic, message))
+
+    service = NotificationService(channel_id=123)
+    service.configure_sender(_sender)
+
+    asyncio.run(service.send_notice(topic="parts.lookup", message="lookup happened"))
+    status = asyncio.run(service.status())
+
+    assert sent == [(123, "parts.lookup", "lookup happened")]
+    assert status.mode == "discord"
+    assert status.transport == "discord_channel:123"
+    assert service.records[0].delivery == "discord"
+
+
+def test_notification_service_reports_pending_discord_mode_before_sender_attached() -> None:
+    service = NotificationService(channel_id=123)
+
+    status = asyncio.run(service.status())
+
+    assert status.mode == "discord_pending"
+    assert status.transport == "discord_channel:123"

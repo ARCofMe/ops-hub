@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     operator_bluefolder_user_map: dict[int, int] = {}
     operator_mapping_file: str | None = None
     parts_request_file: str | None = None
+    notification_channel_id: int | None = None
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
@@ -87,6 +88,9 @@ class Settings(BaseSettings):
             errors.append(
                 "OPS_HUB_OPERATOR_BLUEFOLDER_USER_MAP values must contain only positive BlueFolder user IDs."
             )
+
+        if self.notification_channel_id is not None and self.notification_channel_id <= 0:
+            errors.append("OPS_HUB_NOTIFICATION_CHANNEL_ID must be a positive Discord channel ID.")
 
         bluefolder_key = (self.bluefolder_api_key or "").strip()
         bluefolder_account = (self.bluefolder_account_name or "").strip()
