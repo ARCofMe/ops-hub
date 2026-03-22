@@ -85,3 +85,28 @@ def test_update_parts_request_changes_status() -> None:
     assert "Status: `ordered`" in result.message
     assert service.request_store.records[0].status == "ordered"
     assert notifications.records[-1].topic == "parts.request.updated"
+
+
+def test_list_parts_requests_rejects_invalid_status_filter() -> None:
+    service, _ = _build_service()
+
+    result = asyncio.run(service.list_requests(status="bad-status"))
+
+    assert "Invalid parts request status." in result.message
+    assert "`requested`" in result.message
+
+
+def test_update_parts_request_rejects_invalid_status() -> None:
+    service, _ = _build_service()
+
+    result = asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=1,
+                status="bad-status",
+                updated_by_user_id=99,
+            )
+        )
+    )
+
+    assert "Invalid parts request status." in result.message

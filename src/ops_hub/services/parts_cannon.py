@@ -17,6 +17,14 @@ from ops_hub.models.requests import (
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.parts_request_store import PartsRequestStore
 
+PARTS_REQUEST_STATUSES: tuple[str, ...] = (
+    "requested",
+    "ordered",
+    "received",
+    "resolved",
+    "cancelled",
+)
+
 
 @dataclass(slots=True)
 class PartsCannonService:
@@ -74,9 +82,18 @@ class PartsCannonService:
 
     async def list_requests(self, *, status: str | None = None) -> CommandResult:
         """List current parts requests, optionally filtered by status."""
+        normalized_status = None if status is None else self._normalize_status(status)
+        if status is not None and normalized_status is None:
+            return CommandResult(
+                message=(
+                    "Invalid parts request status. "
+                    f"Allowed values: {', '.join(f'`{value}`' for value in PARTS_REQUEST_STATUSES)}."
+                )
+            )
+
         records = self.request_store.load()
-        if status is not None:
-            records = [record for record in records if record.status == status]
+        if normalized_status is not None:
+            records = [record for record in records if record.status == normalized_status]
 
         if not records:
             return CommandResult(message="No parts requests found.")
@@ -92,6 +109,15 @@ class PartsCannonService:
 
     async def update_request(self, request: PartRequestUpdate) -> CommandResult:
         """Update the status of an existing parts request."""
+        normalized_status = self._normalize_status(request.status)
+        if normalized_status is None:
+            return CommandResult(
+                message=(
+                    "Invalid parts request status. "
+                    f"Allowed values: {', '.join(f'`{value}`' for value in PARTS_REQUEST_STATUSES)}."
+                )
+            )
+
         records = self.request_store.load()
         for index, record in enumerate(records):
             if record.request_id != request.request_id:
@@ -103,7 +129,7 @@ class PartsCannonService:
                 description=record.description,
                 requested_by_user_id=record.requested_by_user_id,
                 operator_bluefolder_user_id=record.operator_bluefolder_user_id,
-                status=request.status,
+                status=normalized_status,
                 created_at=record.created_at,
                 updated_at=datetime.now(UTC).isoformat(timespec="seconds"),
             )
@@ -124,6 +150,17 @@ class PartsCannonService:
             )
 
         return CommandResult(message=f"Parts request `{request.request_id}` was not found.")
+
+    def supported_request_statuses(self) -> tuple[str, ...]:
+        """Return the supported parts request statuses."""
+        return PARTS_REQUEST_STATUSES
+
+    def _normalize_status(self, status: str) -> str | None:
+        """Normalize a requested parts status and reject unsupported values."""
+        candidate = status.strip().lower()
+        if candidate in PARTS_REQUEST_STATUSES:
+            return candidate
+        return None
 
     def _build_lookup_result(
         self,

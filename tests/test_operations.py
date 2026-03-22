@@ -127,3 +127,13 @@ def test_operations_check_allows_dispatcher_user() -> None:
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
 
     assert asyncio.run(cog.cog_app_command_check(interaction)) is True
+
+
+def test_parts_commands_allow_parts_user() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_use_parts_commands(identity) is True
+    assert cog._can_use_job_commands(identity) is False

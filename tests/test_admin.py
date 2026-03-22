@@ -135,7 +135,7 @@ def test_build_command_access_describes_current_scopes() -> None:
     result = cog._build_command_access()
 
     assert "`/job`, `/assignments`: technicians, dispatchers, admins" in result
-    assert "`/part`: parts, admins" in result
+    assert "`/part`, `/part_request`, `/part_requests`, `/part_update`: parts, admins" in result
 
 
 def test_is_admin_allows_configured_user_id() -> None:
