@@ -61,6 +61,13 @@ class DispatchCog(commands.Cog):
         result = await self.bot.container.dispatch_service.lookup_job(request)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="dispatch_board", description="Show a board summary across all mapped technicians.")
+    async def dispatch_board(self, interaction: discord.Interaction) -> None:
+        """Dispatcher-focused board summary using current operator mappings."""
+        mappings = self.bot.container.operator_directory_service.mapping_records()
+        result = await self.bot.container.dispatch_service.lookup_dispatch_board(mappings)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)

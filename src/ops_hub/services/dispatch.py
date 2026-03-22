@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import BlueFolderJobSummary, CommandResult, DispatchJobSummary, JobLookupRequest
+from ops_hub.models.requests import (
+    BlueFolderJobSummary,
+    CommandResult,
+    DispatchJobSummary,
+    JobLookupRequest,
+    OperatorMappingRecord,
+)
 from ops_hub.services.bluefolder import BlueFolderService
 
 
@@ -81,6 +87,42 @@ class DispatchService:
         if len(assignments) > 10:
             lines.append(f"...and {len(assignments) - 10} more assignment(s)")
 
+        return CommandResult(message="\n".join(lines))
+
+    async def lookup_dispatch_board(self, mappings: list[OperatorMappingRecord]) -> CommandResult:
+        """Return a dispatch board summary across all mapped technicians."""
+        if not mappings:
+            return CommandResult(message="Dispatch board requires at least one operator mapping.")
+
+        lines = ["Dispatch board"]
+        active_techs = 0
+        total_assignments = 0
+        for record in mappings:
+            assignments = await self.adapter.get_assignments_for_user(record.bluefolder_user_id)
+            origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
+            assignment_count = len(assignments)
+            total_assignments += assignment_count
+            if assignment_count > 0:
+                active_techs += 1
+
+            summary = (
+                f"Discord `{record.discord_user_id}` -> BlueFolder `{record.bluefolder_user_id}`: "
+                f"`{assignment_count}` assignment(s)"
+            )
+            lines.append(summary)
+            if origin_address:
+                lines.append(f"Origin: {origin_address}")
+            if assignments:
+                first_assignment = assignments[0]
+                sr_id = first_assignment.get("serviceRequestId") or "unknown"
+                subject = first_assignment.get("subject") or "Unlabeled Service Request"
+                lines.append(f"Next job: `SR-{sr_id}` {subject}")
+            else:
+                lines.append("Next job: none")
+
+        lines.insert(1, f"Mapped techs: `{len(mappings)}`")
+        lines.insert(2, f"Active techs: `{active_techs}`")
+        lines.insert(3, f"Total visible assignments: `{total_assignments}`")
         return CommandResult(message="\n".join(lines))
 
     def _format_job_message(

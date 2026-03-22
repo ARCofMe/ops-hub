@@ -89,3 +89,13 @@ def test_dispatch_cog_rejects_non_dispatch_user() -> None:
         assert str(exc) == "You do not have permission to use this command."
     else:
         raise AssertionError("Expected dispatch command check to reject unconfigured user")
+
+
+def test_dispatch_cog_board_uses_mapping_records() -> None:
+    cog = _build_cog(dispatcher_user_ids=[42], operator_bluefolder_user_map={42: 13051})
+
+    records = cog.bot.container.operator_directory_service.mapping_records()
+
+    assert len(records) == 1
+    assert records[0].discord_user_id == 42
+    assert records[0].bluefolder_user_id == 13051

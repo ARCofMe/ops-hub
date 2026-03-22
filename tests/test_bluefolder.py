@@ -6,7 +6,7 @@ import textwrap
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import JobLookupRequest
+from ops_hub.models.requests import JobLookupRequest, OperatorMappingRecord
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 
@@ -142,6 +142,50 @@ def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Pat
 
     assert "No current assignments were found for mapped BlueFolder user `13051`." in result.message
     assert "Origin: South Paris, ME" in result.message
+
+
+def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
+    dispatch_package = tmp_path / "optimized_routing"
+    dispatch_package.mkdir()
+    (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    if user_id == 13051:
+                        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+                    return []
+
+                def get_user_origin_address(self, user_id: int):
+                    if user_id == 13051:
+                        return "South Paris, ME"
+                    return "Lewiston, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(tmp_path)),
+        bluefolder_service=BlueFolderService(adapter=BlueFolderAdapter(base_path=None)),
+    )
+
+    result = asyncio.run(
+        service.lookup_dispatch_board(
+            [
+                OperatorMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
+                OperatorMappingRecord(discord_user_id=43, bluefolder_user_id=13052),
+            ]
+        )
+    )
+
+    assert "Dispatch board" in result.message
+    assert "Mapped techs: `2`" in result.message
+    assert "Active techs: `1`" in result.message
+    assert "Total visible assignments: `1`" in result.message
+    assert "Discord `42` -> BlueFolder `13051`: `1` assignment(s)" in result.message
+    assert "Next job: `SR-100` Dryer repair" in result.message
+    assert "Discord `43` -> BlueFolder `13052`: `0` assignment(s)" in result.message
 
 
 def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:
