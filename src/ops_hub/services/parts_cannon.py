@@ -89,6 +89,7 @@ class PartsCannonService:
         *,
         status: str | None = None,
         requested_by_user_id: int | None = None,
+        only_unsynced: bool = False,
     ) -> CommandResult:
         """List current parts requests, optionally filtered by status or requester."""
         normalized_status = None if status is None else self._normalize_status(status)
@@ -105,6 +106,8 @@ class PartsCannonService:
             records = [record for record in records if record.status == normalized_status]
         if requested_by_user_id is not None:
             records = [record for record in records if record.requested_by_user_id == requested_by_user_id]
+        if only_unsynced:
+            records = [record for record in records if record.last_synced_at is None and record.status not in {"resolved", "cancelled"}]
 
         if not records:
             return CommandResult(message="No parts requests found.")

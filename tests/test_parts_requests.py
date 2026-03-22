@@ -273,3 +273,54 @@ def test_parts_queue_summary_reports_counts() -> None:
     assert summary.synced_requests == 0
     assert summary.requested_count == 1
     assert summary.resolved_count == 1
+
+
+def test_list_requests_can_filter_to_unsynced_open_requests(tmp_path) -> None:
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=str(tmp_path)),
+        notifications=NotificationService(),
+        request_store=PartsRequestStore(file_path=None),
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-300",
+                description="Need heating element",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-301",
+                description="Need control board",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=2,
+                status="resolved",
+                updated_by_user_id=77,
+            )
+        )
+    )
+    asyncio.run(service.sync_requests_to_parts_system())
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-302",
+                description="Need new belt",
+                requested_by_user_id=42,
+            )
+        )
+    )
+
+    result = asyncio.run(service.list_requests(only_unsynced=True))
+
+    assert "`SR-302`" in result.message
+    assert "`SR-300`" not in result.message
+    assert "`SR-301`" not in result.message

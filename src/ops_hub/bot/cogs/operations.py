@@ -102,8 +102,16 @@ class OperationsCog(commands.Cog):
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="my_part_requests", description="List your tracked parts requests.")
-    @app_commands.describe(status="Optional status filter: requested, ordered, received, resolved, cancelled.")
-    async def my_part_requests(self, interaction: discord.Interaction, status: str | None = None) -> None:
+    @app_commands.describe(
+        status="Optional status filter: requested, ordered, received, resolved, cancelled.",
+        unsynced_only="Only show requests that still need to be handed off downstream.",
+    )
+    async def my_part_requests(
+        self,
+        interaction: discord.Interaction,
+        status: str | None = None,
+        unsynced_only: bool = False,
+    ) -> None:
         """List the caller's own tracked parts requests."""
         identity = self._resolve_identity(interaction)
         if not self._can_submit_parts_request(identity):
@@ -111,17 +119,29 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.parts_cannon_service.list_requests(
             status=status,
             requested_by_user_id=interaction.user.id,
+            only_unsynced=unsynced_only,
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="part_requests", description="List tracked parts requests.")
-    @app_commands.describe(status="Optional status filter: requested, ordered, received, resolved, cancelled.")
-    async def part_requests(self, interaction: discord.Interaction, status: str | None = None) -> None:
+    @app_commands.describe(
+        status="Optional status filter: requested, ordered, received, resolved, cancelled.",
+        unsynced_only="Only show requests that still need to be handed off downstream.",
+    )
+    async def part_requests(
+        self,
+        interaction: discord.Interaction,
+        status: str | None = None,
+        unsynced_only: bool = False,
+    ) -> None:
         """List tracked parts requests, optionally filtered by status."""
         identity = self._resolve_identity(interaction)
         if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
-        result = await self.bot.container.parts_cannon_service.list_requests(status=status)
+        result = await self.bot.container.parts_cannon_service.list_requests(
+            status=status,
+            only_unsynced=unsynced_only,
+        )
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="part_request_detail", description="Show full detail for a tracked parts request.")
