@@ -14,8 +14,8 @@ from ops_hub.services.dispatch import DispatchService
 class DummyDispatchAdapter(DispatchAdapter):
     """Dispatch adapter test double."""
 
-    async def get_job(self, reference: str, bluefolder_summary=None):
-        return await super().get_job(reference, bluefolder_summary)
+    async def get_job(self, reference: str, bluefolder_summary=None, operator_bluefolder_user_id=None):
+        return await super().get_job(reference, bluefolder_summary, operator_bluefolder_user_id)
 
 
 def test_bluefolder_adapter_reports_unconfigured_status() -> None:
@@ -118,6 +118,19 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
         ),
         encoding="utf-8",
     )
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    return [{"serviceRequestId": "100"}]
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
     bluefolder_service = BlueFolderService(
         adapter=BlueFolderAdapter(
             base_path=str(tmp_path),
@@ -150,6 +163,8 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Dispatch stop: `SR-100`" in result.message
     assert "Dispatch window: `ALL_DAY`" in result.message
     assert "Dispatch stop address: 123 Main St, Portland, ME 04101" in result.message
+    assert "Technician assignment: `assigned_today`" in result.message
+    assert "Technician origin: South Paris, ME" in result.message
     assert "Requester mapping: BlueFolder user `13051`" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 

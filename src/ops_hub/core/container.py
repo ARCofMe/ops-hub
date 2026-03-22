@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ops_hub.core.config import Settings
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
@@ -13,6 +14,7 @@ from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import OperatorDirectoryService
+from ops_hub.services.operator_mapping_store import OperatorMappingStore
 from ops_hub.services.parts_cannon import PartsCannonService
 from ops_hub.services.photo_ingest import PhotoIngestService
 
@@ -33,7 +35,12 @@ class ServiceContainer:
 def build_container(settings: Settings) -> ServiceContainer:
     """Build services and adapters for the app runtime."""
     notification_service = NotificationService()
-    operator_directory_service = OperatorDirectoryService(settings=settings)
+    operator_directory_service = OperatorDirectoryService(
+        settings=settings,
+        store=OperatorMappingStore(
+            file_path=Path(settings.operator_mapping_file).expanduser() if settings.operator_mapping_file else None,
+        ),
+    )
 
     # TODO: Replace these placeholders with real wrappers around existing local projects.
     bluefolder_adapter = BlueFolderAdapter(

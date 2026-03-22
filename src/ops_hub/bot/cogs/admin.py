@@ -44,6 +44,21 @@ class AdminCog(commands.Cog):
         """Report recent dry-run notices captured by the notification service."""
         await interaction.response.send_message(await self._build_recent_notices(), ephemeral=True)
 
+    @app_commands.command(name="operator_mappings", description="Show current operator to BlueFolder mappings.")
+    async def operator_mappings(self, interaction: discord.Interaction) -> None:
+        """Show the merged operator mapping set."""
+        await interaction.response.send_message(self._build_operator_mappings(), ephemeral=True)
+
+    @app_commands.command(name="export_operator_mappings", description="Persist operator mappings to the configured file.")
+    async def export_operator_mappings(self, interaction: discord.Interaction) -> None:
+        """Write current operator mappings to disk."""
+        await interaction.response.send_message(self._build_export_operator_mappings(), ephemeral=True)
+
+    @app_commands.command(name="reload_operator_mappings", description="Reload operator mappings from the configured file.")
+    async def reload_operator_mappings(self, interaction: discord.Interaction) -> None:
+        """Reload file-backed operator mappings."""
+        await interaction.response.send_message(self._build_reload_operator_mappings(), ephemeral=True)
+
     def _build_ops_status(self) -> str:
         """Render a concise runtime status summary."""
         settings = self.bot.settings
@@ -123,6 +138,31 @@ class AdminCog(commands.Cog):
         if has_key or has_account or has_base_url:
             return "partial"
         return "not set"
+
+    def _build_operator_mappings(self) -> str:
+        """Render the current merged operator mapping set."""
+        records = self.bot.container.operator_directory_service.mapping_records()
+        if not records:
+            return "Operator Mappings\nNo operator mappings are currently configured."
+
+        lines = ["Operator Mappings"]
+        for record in records:
+            lines.append(
+                f"Discord user `{record.discord_user_id}` -> BlueFolder user `{record.bluefolder_user_id}`"
+            )
+        return "\n".join(lines)
+
+    def _build_export_operator_mappings(self) -> str:
+        """Persist current mappings to disk and report the result."""
+        path = self.bot.container.operator_directory_service.export_mappings()
+        if path is None:
+            return "Operator mapping export is not configured. Set OPS_HUB_OPERATOR_MAPPING_FILE first."
+        return f"Exported operator mappings to `{path}`."
+
+    def _build_reload_operator_mappings(self) -> str:
+        """Reload file-backed mappings and report the result."""
+        mappings = self.bot.container.operator_directory_service.reload_mappings()
+        return f"Reloaded `{len(mappings)}` operator mappings."
 
     def _path_line(self, label: str, path_value: str | None) -> str:
         """Render a filesystem path status line."""

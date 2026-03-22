@@ -17,6 +17,10 @@ def _settings(**overrides: object) -> Settings:
         "guild_id": 123456,
         "admin_user_ids": [],
         "admin_role_ids": [],
+        "operator_user_ids": [],
+        "operator_role_ids": [],
+        "operator_bluefolder_user_map": {},
+        "operator_mapping_file": None,
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": 222,
@@ -110,6 +114,15 @@ def test_build_recent_notices_renders_latest_entries() -> None:
     assert "Recent Notices" in result
     assert "`parts.lookup` via `dry_run`" in result
     assert "Parts lookup requested for SR-100." in result
+
+
+def test_build_operator_mappings_renders_current_map() -> None:
+    cog = _build_cog(operator_bluefolder_user_map={42: 13051})
+
+    result = cog._build_operator_mappings()
+
+    assert "Operator Mappings" in result
+    assert "Discord user `42` -> BlueFolder user `13051`" in result
 
 
 def test_is_admin_allows_configured_user_id() -> None:

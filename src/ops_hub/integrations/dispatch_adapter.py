@@ -20,7 +20,12 @@ class DispatchAdapter:
 
     base_path: str | None = None
 
-    async def get_job(self, reference: str, bluefolder_summary: BlueFolderJobSummary | None = None) -> DispatchJobSummary:
+    async def get_job(
+        self,
+        reference: str,
+        bluefolder_summary: BlueFolderJobSummary | None = None,
+        operator_bluefolder_user_id: int | None = None,
+    ) -> DispatchJobSummary:
         """Return dispatch wrapper status and a stop preview when enough data is available."""
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None:
@@ -110,6 +115,29 @@ class DispatchAdapter:
             )
 
         stop = stops[0]
+        technician_assignment_status = None
+        technician_origin_address = None
+        if operator_bluefolder_user_id is not None:
+            try:
+                with _temporary_sys_path(resolved_path):
+                    integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                    integration_class = getattr(integration_module, "BlueFolderIntegration")
+                    integration = integration_class()
+                    assignments = integration.get_user_assignments_today(operator_bluefolder_user_id) or []
+                    sr_id = str(bluefolder_summary.service_request_id or reference)
+                    technician_assignment_status = (
+                        "assigned_today"
+                        if any(str(a.get("serviceRequestId")) == sr_id for a in assignments)
+                        else "not_assigned_today"
+                    )
+                    technician_origin_address = integration.get_user_origin_address(operator_bluefolder_user_id)
+            except Exception as exc:
+                logger.exception(
+                    "Failed to build technician dispatch context for user %s",
+                    operator_bluefolder_user_id,
+                )
+                technician_assignment_status = f"context_failed: {exc}"
+
         return DispatchJobSummary(
             reference=reference,
             available=True,
@@ -120,6 +148,8 @@ class DispatchAdapter:
             stop_label=getattr(stop, "label", None),
             stop_address=getattr(stop, "address", None),
             stop_window=getattr(getattr(stop, "window", None), "name", None),
+            technician_assignment_status=technician_assignment_status,
+            technician_origin_address=technician_origin_address,
         )
 
 

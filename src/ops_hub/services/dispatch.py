@@ -19,7 +19,11 @@ class DispatchService:
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
         bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
-        dispatch_result = await self.adapter.get_job(request.reference, bluefolder_result)
+        dispatch_result = await self.adapter.get_job(
+            request.reference,
+            bluefolder_result,
+            request.operator_bluefolder_user_id,
+        )
         return CommandResult(
             message=self._format_job_message(
                 request,
@@ -66,6 +70,10 @@ class DispatchService:
                 lines.append(f"Dispatch window: `{dispatch_summary.stop_window}`")
             if dispatch_summary.stop_address:
                 lines.append(f"Dispatch stop address: {dispatch_summary.stop_address}")
+            if dispatch_summary.technician_assignment_status:
+                lines.append(f"Technician assignment: `{dispatch_summary.technician_assignment_status}`")
+            if dispatch_summary.technician_origin_address:
+                lines.append(f"Technician origin: {dispatch_summary.technician_origin_address}")
             if requestor_line := self._requestor_context_line(request):
                 lines.append(requestor_line)
             lines.append(f"Dispatch detail: {dispatch_summary.message}")

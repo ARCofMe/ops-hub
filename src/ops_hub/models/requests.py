@@ -64,6 +64,14 @@ class OperatorIdentity:
 
 
 @dataclass(slots=True)
+class OperatorMappingRecord:
+    """Persistent mapping record for a Discord operator."""
+
+    discord_user_id: int
+    bluefolder_user_id: int
+
+
+@dataclass(slots=True)
 class DispatchJobSummary:
     """Read-only summary of dispatch-wrapper availability and lookup state."""
 
@@ -76,6 +84,8 @@ class DispatchJobSummary:
     stop_label: str | None = None
     stop_address: str | None = None
     stop_window: str | None = None
+    technician_assignment_status: str | None = None
+    technician_origin_address: str | None = None
 
 
 @dataclass(slots=True)

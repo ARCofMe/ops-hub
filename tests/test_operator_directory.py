@@ -1,0 +1,61 @@
+"""Operator mapping store and directory tests for Ops Hub."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from ops_hub.core.config import Settings
+from ops_hub.services.operator_directory import OperatorDirectoryService
+from ops_hub.services.operator_mapping_store import OperatorMappingStore
+
+
+def _settings(**overrides: object) -> Settings:
+    defaults: dict[str, object] = {
+        "discord_token": "token",
+        "guild_id": None,
+        "admin_user_ids": [],
+        "admin_role_ids": [],
+        "operator_user_ids": [],
+        "operator_role_ids": [],
+        "operator_bluefolder_user_map": {},
+        "operator_mapping_file": None,
+        "log_level": "INFO",
+        "environment": "dev",
+        "photo_ingest_channel_id": None,
+        "bluefolder_api_path": None,
+        "bluefolder_api_key": None,
+        "bluefolder_account_name": None,
+        "bluefolder_base_url": None,
+        "bluebot_discord_extension_path": None,
+        "photo_ingest_project_path": None,
+        "parts_cannon_project_path": None,
+        "dispatch_project_path": None,
+    }
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def test_operator_directory_merges_env_and_file_mappings(tmp_path: Path) -> None:
+    file_path = tmp_path / "operator-mappings.json"
+    file_path.write_text('{"42": 13051}', encoding="utf-8")
+    service = OperatorDirectoryService(
+        settings=_settings(operator_bluefolder_user_map={99: 22222}),
+        store=OperatorMappingStore(file_path=file_path),
+    )
+
+    mappings = service.mappings()
+
+    assert mappings == {99: 22222, 42: 13051}
+
+
+def test_operator_directory_exports_mappings(tmp_path: Path) -> None:
+    file_path = tmp_path / "operator-mappings.json"
+    service = OperatorDirectoryService(
+        settings=_settings(operator_bluefolder_user_map={42: 13051}),
+        store=OperatorMappingStore(file_path=file_path),
+    )
+
+    exported = service.export_mappings()
+
+    assert exported == file_path
+    assert file_path.read_text(encoding="utf-8").strip() == '{\n  "42": 13051\n}'
