@@ -74,3 +74,14 @@ def test_technician_directory_set_mapping_updates_runtime_without_file() -> None
     service.set_mapping(discord_user_id=42, bluefolder_user_id=13051)
 
     assert service.mappings() == {42: 13051}
+
+
+def test_technician_directory_formats_technician_label_from_mapping() -> None:
+    service = TechnicianDirectoryService(
+        settings=_settings(technician_bluefolder_user_map={42: 13051}),
+        store=OperatorMappingStore(file_path=None),
+    )
+
+    label = service.technician_label(bluefolder_user_id=13051)
+
+    assert label == "<@42> (BlueFolder `13051`)"

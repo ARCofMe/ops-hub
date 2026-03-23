@@ -143,7 +143,7 @@ def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Pat
         )
     )
 
-    assert "No current assignments were found for mapped BlueFolder user `13051`." in result.message
+    assert "No current assignments were found for BlueFolder user `13051`." in result.message
     assert "Origin: South Paris, ME" in result.message
 
 
@@ -186,9 +186,9 @@ def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     assert "Mapped techs: `2`" in result.message
     assert "Active techs: `1`" in result.message
     assert "Total visible assignments: `1`" in result.message
-    assert "Discord `42` -> BlueFolder `13051`: `1` assignment(s)" in result.message
+    assert "Technician: <@42> (BlueFolder `13051`) | `1` assignment(s)" in result.message
     assert "Next job: `SR-100` Dryer repair" in result.message
-    assert "Discord `43` -> BlueFolder `13052`: `0` assignment(s)" in result.message
+    assert "Technician: <@43> (BlueFolder `13052`) | `0` assignment(s)" in result.message
 
 
 def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> None:
@@ -262,7 +262,7 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     assert "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`" in result.message
     assert "1. `SR-100` Dryer repair" in result.message
     assert "Stage: `Ready for Scheduling`" in result.message
-    assert "Technician: Discord `42` | BlueFolder `13051`" in result.message
+    assert "Technician: <@42> (BlueFolder `13051`)" in result.message
     assert "Location: Portland ME" in result.message
     assert "Window: `AM`" in result.message
     assert "`SR-101`" not in result.message
@@ -332,7 +332,7 @@ def test_dispatch_service_filters_dispatch_attention_by_stage_and_technician(tmp
     )
 
     assert "Stage filter: `Ready for Scheduling`" in result.message
-    assert "Technician filter: BlueFolder `13051`" in result.message
+    assert "Technician filter: BlueFolder user `13051`" in result.message
     assert "`SR-100` Dryer repair" in result.message
     assert "`SR-200`" not in result.message
 
@@ -460,7 +460,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Parts: `Tracking Posted`" in result.message
     assert "Status detail: Part tracking update: UPS 123" in result.message
     assert "Recommended next action: Track shipment progress and prepare dispatch for receipt or scheduling follow-up." in result.message
-    assert "Requester mapping: BlueFolder user `13051`" in result.message
+    assert "Requester: <@1> (BlueFolder `13051`)" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 
 

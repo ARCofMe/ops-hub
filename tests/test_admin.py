@@ -130,7 +130,7 @@ def test_build_technician_mappings_renders_current_map() -> None:
     result = cog._build_technician_mappings()
 
     assert "Technician Mappings" in result
-    assert "Discord user `42` -> BlueFolder user `13051`" in result
+    assert "<@42> (BlueFolder `13051`)" in result
 
 
 def test_build_command_access_describes_current_scopes() -> None:

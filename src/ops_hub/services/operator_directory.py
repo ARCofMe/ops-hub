@@ -55,6 +55,33 @@ class TechnicianDirectoryService:
         self.store.records = self.mappings()
         return self.store.current_records()
 
+    def reverse_mappings(self) -> dict[int, int]:
+        """Return BlueFolder-to-Discord technician mappings."""
+        return {bluefolder_user_id: discord_user_id for discord_user_id, bluefolder_user_id in self.mappings().items()}
+
+    def discord_mention(self, discord_user_id: int) -> str:
+        """Return a Discord mention string for a user id."""
+        return f"<@{discord_user_id}>"
+
+    def technician_label(
+        self,
+        *,
+        discord_user_id: int | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> str:
+        """Render the best available technician label for Discord-facing messages."""
+        resolved_discord_user_id = discord_user_id
+        if resolved_discord_user_id is None and bluefolder_user_id is not None:
+            resolved_discord_user_id = self.reverse_mappings().get(bluefolder_user_id)
+
+        if resolved_discord_user_id is not None and bluefolder_user_id is not None:
+            return f"{self.discord_mention(resolved_discord_user_id)} (BlueFolder `{bluefolder_user_id}`)"
+        if resolved_discord_user_id is not None:
+            return self.discord_mention(resolved_discord_user_id)
+        if bluefolder_user_id is not None:
+            return f"BlueFolder user `{bluefolder_user_id}`"
+        return "Unknown technician"
+
     def export_mappings(self) -> Path | None:
         """Persist the current merged mappings to disk."""
         return self.store.export(self.mappings())

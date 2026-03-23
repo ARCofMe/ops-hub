@@ -189,7 +189,10 @@ class AdminCog(commands.Cog):
         lines = ["Technician Mappings"]
         for record in records:
             lines.append(
-                f"Discord user `{record.discord_user_id}` -> BlueFolder user `{record.bluefolder_user_id}`"
+                self.bot.container.technician_directory_service.technician_label(
+                    discord_user_id=record.discord_user_id,
+                    bluefolder_user_id=record.bluefolder_user_id,
+                )
             )
         return "\n".join(lines)
 
@@ -211,14 +214,24 @@ class AdminCog(commands.Cog):
             discord_user_id=discord_user_id,
             bluefolder_user_id=bluefolder_user_id,
         )
-        return f"Mapped Discord user `{discord_user_id}` to BlueFolder user `{bluefolder_user_id}`."
+        label = self.bot.container.technician_directory_service.technician_label(
+            discord_user_id=discord_user_id,
+            bluefolder_user_id=bluefolder_user_id,
+        )
+        return f"Mapped {label}."
 
     def _build_remove_technician_mapping(self, discord_user_id: int) -> str:
         """Remove a technician mapping."""
         removed = self.bot.container.technician_directory_service.remove_mapping(discord_user_id=discord_user_id)
         if removed:
-            return f"Removed technician mapping for Discord user `{discord_user_id}`."
-        return f"No technician mapping existed for Discord user `{discord_user_id}`."
+            return (
+                "Removed technician mapping for "
+                f"{self.bot.container.technician_directory_service.discord_mention(discord_user_id)}."
+            )
+        return (
+            "No technician mapping existed for "
+            f"{self.bot.container.technician_directory_service.discord_mention(discord_user_id)}."
+        )
 
     def _build_command_access(self) -> str:
         """Render the current command access model."""

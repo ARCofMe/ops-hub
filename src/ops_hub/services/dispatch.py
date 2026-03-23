@@ -13,6 +13,7 @@ from ops_hub.models.requests import (
     TechnicianMappingRecord,
 )
 from ops_hub.services.bluefolder import BlueFolderService
+from ops_hub.services.operator_directory import TechnicianDirectoryService
 
 
 @dataclass(slots=True)
@@ -21,6 +22,7 @@ class DispatchService:
 
     adapter: DispatchAdapter
     bluefolder_service: BlueFolderService
+    technician_directory_service: TechnicianDirectoryService | None = None
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
@@ -59,14 +61,15 @@ class DispatchService:
 
         assignments = await self.adapter.get_assignments_for_user(target_user_id)
         origin_address = await self.adapter.get_origin_for_user(target_user_id)
+        technician_label = self._technician_label(bluefolder_user_id=target_user_id)
         if not assignments:
-            lines = [f"No current assignments were found for mapped BlueFolder user `{target_user_id}`."]
+            lines = [f"No current assignments were found for {technician_label}."]
             if origin_address:
                 lines.append(f"Origin: {origin_address}")
             return CommandResult(message="\n".join(lines))
 
         lines = [
-            f"Current assignments for BlueFolder user `{target_user_id}`",
+            f"Current assignments for {technician_label}",
             f"Assignment count: `{len(assignments)}`",
         ]
         if origin_address:
@@ -112,10 +115,7 @@ class DispatchService:
             if assignment_count > 0:
                 active_techs += 1
 
-            summary = (
-                f"Discord `{record.discord_user_id}` -> BlueFolder `{record.bluefolder_user_id}`: "
-                f"`{assignment_count}` assignment(s)"
-            )
+            summary = f"Technician: {self._technician_label_for_record(record)} | `{assignment_count}` assignment(s)"
             lines.extend(["", summary])
             if origin_address:
                 lines.append(f"Origin: {origin_address}")
@@ -162,7 +162,7 @@ class DispatchService:
                 return CommandResult(
                     message=(
                         "Dispatch attention view could not find a technician mapping for "
-                        f"BlueFolder user `{technician_bluefolder_user_id}`."
+                        f"{self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}."
                     )
                 )
 
@@ -194,7 +194,7 @@ class DispatchService:
                 item_lines = [
                     f"`SR-{sr_id}` {subject}",
                     f"Stage: `{snapshot.stage_label}`",
-                    f"Technician: Discord `{record.discord_user_id}` | BlueFolder `{record.bluefolder_user_id}`",
+                    f"Technician: {self._technician_label_for_record(record)}",
                 ]
                 if location:
                     item_lines.append(f"Location: {location}")
@@ -214,7 +214,7 @@ class DispatchService:
                             else []
                         ),
                         *(
-                            [f"Technician filter: BlueFolder `{technician_bluefolder_user_id}`"]
+                            [f"Technician filter: {self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"]
                             if technician_bluefolder_user_id is not None
                             else []
                         ),
@@ -234,7 +234,7 @@ class DispatchService:
                 else []
             ),
             *(
-                [f"Technician filter: BlueFolder `{technician_bluefolder_user_id}`"]
+                [f"Technician filter: {self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"]
                 if technician_bluefolder_user_id is not None
                 else []
             ),
@@ -323,10 +323,40 @@ class DispatchService:
     def _requestor_context_line(self, request: JobLookupRequest) -> str | None:
         """Render the resolved requestor context when available."""
         if request.technician_bluefolder_user_id is not None:
-            return f"Requester mapping: BlueFolder user `{request.technician_bluefolder_user_id}`"
+            return (
+                "Requester: "
+                f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
+            )
         if request.requester_is_admin:
-            return "Requester mapping: admin access"
+            return f"Requester: <@{request.requested_by_user_id}> (admin)"
         return None
+
+    def _technician_label_for_record(self, record: TechnicianMappingRecord) -> str:
+        """Render a technician label from a mapping record."""
+        return self._technician_label(
+            discord_user_id=record.discord_user_id,
+            bluefolder_user_id=record.bluefolder_user_id,
+        )
+
+    def _technician_label(
+        self,
+        *,
+        discord_user_id: int | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> str:
+        """Render the best available technician label for dispatch messages."""
+        if self.technician_directory_service is not None:
+            return self.technician_directory_service.technician_label(
+                discord_user_id=discord_user_id,
+                bluefolder_user_id=bluefolder_user_id,
+            )
+        if discord_user_id is not None and bluefolder_user_id is not None:
+            return f"<@{discord_user_id}> (BlueFolder `{bluefolder_user_id}`)"
+        if discord_user_id is not None:
+            return f"<@{discord_user_id}>"
+        if bluefolder_user_id is not None:
+            return f"BlueFolder user `{bluefolder_user_id}`"
+        return "Unknown technician"
 
     def _parts_context_lines(self, parts_brief: CommandResult | None) -> list[str]:
         """Extract a compact parts snapshot from the BlueFolder parts brief."""

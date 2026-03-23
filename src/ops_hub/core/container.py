@@ -77,5 +77,6 @@ def build_container(settings: Settings) -> ServiceContainer:
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
+            technician_directory_service=technician_directory_service,
         ),
     )
