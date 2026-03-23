@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     technician_mapping_file: str | None = None
     parts_request_file: str | None = None
     notification_channel_id: int | None = None
+    notification_channel_map: dict[str, int] = {}
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
@@ -113,6 +114,9 @@ class Settings(BaseSettings):
 
         if self.notification_channel_id is not None and self.notification_channel_id <= 0:
             errors.append("OPS_HUB_NOTIFICATION_CHANNEL_ID must be a positive Discord channel ID.")
+
+        if any(channel_id <= 0 for channel_id in self.notification_channel_map.values()):
+            errors.append("OPS_HUB_NOTIFICATION_CHANNEL_MAP values must contain only positive Discord channel IDs.")
 
         bluefolder_key = (self.bluefolder_api_key or "").strip()
         bluefolder_account = (self.bluefolder_account_name or "").strip()

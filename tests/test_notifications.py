@@ -45,7 +45,7 @@ def test_notification_service_routes_to_discord_sender_when_configured() -> None
     assert sent == [(123, "parts.lookup", "lookup happened")]
     assert status.mode == "discord"
     assert status.transport == "discord_channel:123"
-    assert service.records[0].delivery == "discord"
+    assert service.records[0].delivery == "discord:123"
 
 
 def test_notification_service_reports_pending_discord_mode_before_sender_attached() -> None:
@@ -55,3 +55,29 @@ def test_notification_service_reports_pending_discord_mode_before_sender_attache
 
     assert status.mode == "discord_pending"
     assert status.transport == "discord_channel:123"
+
+
+def test_notification_service_routes_by_topic_prefix_when_channel_map_is_configured() -> None:
+    sent: list[tuple[int, str, str]] = []
+
+    async def _sender(channel_id: int, topic: str, message: str) -> None:
+        sent.append((channel_id, topic, message))
+
+    service = NotificationService(channel_id=123, channel_map={"parts": 200, "dispatch": 300})
+    service.configure_sender(_sender)
+
+    asyncio.run(service.send_notice(topic="parts.request.created", message="created"))
+    asyncio.run(service.send_notice(topic="dispatch.board", message="board"))
+    asyncio.run(service.send_notice(topic="misc.notice", message="fallback"))
+    status = asyncio.run(service.status())
+
+    assert sent == [
+        (200, "parts.request.created", "created"),
+        (300, "dispatch.board", "board"),
+        (123, "misc.notice", "fallback"),
+    ]
+    assert status.mode == "discord_routed"
+    assert status.transport == "discord_routes:2"
+    assert service.records[0].delivery == "discord:200"
+    assert service.records[1].delivery == "discord:300"
+    assert service.records[2].delivery == "discord:123"

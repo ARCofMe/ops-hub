@@ -19,6 +19,7 @@ def _settings(**overrides: object) -> Settings:
         "technician_mapping_file": None,
         "parts_request_file": None,
         "notification_channel_id": None,
+        "notification_channel_map": {},
         "log_level": "INFO",
         "environment": "dev",
         "photo_ingest_channel_id": None,
@@ -165,6 +166,14 @@ def test_validation_errors_reject_non_positive_notification_channel_id() -> None
     errors = settings.validation_errors()
 
     assert "OPS_HUB_NOTIFICATION_CHANNEL_ID must be a positive Discord channel ID." in errors
+
+
+def test_validation_errors_reject_non_positive_notification_channel_map_values() -> None:
+    settings = _settings(notification_channel_map={"parts": 0})
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_NOTIFICATION_CHANNEL_MAP values must contain only positive Discord channel IDs." in errors
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

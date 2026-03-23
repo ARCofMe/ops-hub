@@ -23,6 +23,7 @@ class NotificationService:
 
     records: list[NotificationRecord] = field(default_factory=list)
     channel_id: int | None = None
+    channel_map: dict[str, int] = field(default_factory=dict)
     sender: NoticeSender | None = None
 
     def configure_sender(self, sender: NoticeSender) -> None:
@@ -32,17 +33,18 @@ class NotificationService:
     async def send_notice(self, *, topic: str, message: str) -> None:
         """Record and deliver a notice, using Discord routing when configured."""
         delivery = "dry_run"
-        if self.channel_id is not None and self.sender is not None:
+        target_channel_id = self._resolve_channel_id(topic)
+        if target_channel_id is not None and self.sender is not None:
             try:
-                await self.sender(self.channel_id, topic, message)
+                await self.sender(target_channel_id, topic, message)
             except Exception:
                 logger.exception(
                     "Failed to route notification to Discord channel",
-                    extra={"channel_id": self.channel_id, "topic": topic},
+                    extra={"channel_id": target_channel_id, "topic": topic},
                 )
                 delivery = "fallback_logger"
             else:
-                delivery = "discord"
+                delivery = f"discord:{target_channel_id}"
 
         record = NotificationRecord(topic=topic, message=message, delivery=delivery)
         self.records.append(record)
@@ -51,7 +53,14 @@ class NotificationService:
     async def status(self) -> NotificationStatus:
         """Return the current notification-service state."""
         last_topic = self.records[-1].topic if self.records else None
-        if self.channel_id is not None and self.sender is not None:
+        if self.channel_map:
+            route_count = len(self.channel_map)
+            if self.sender is not None:
+                mode = "discord_routed"
+            else:
+                mode = "discord_routes_pending"
+            transport = f"discord_routes:{route_count}"
+        elif self.channel_id is not None and self.sender is not None:
             mode = "discord"
             transport = f"discord_channel:{self.channel_id}"
         elif self.channel_id is not None:
@@ -73,3 +82,19 @@ class NotificationService:
         if limit <= 0:
             return []
         return list(reversed(self.records[-limit:]))
+
+    def _resolve_channel_id(self, topic: str) -> int | None:
+        """Resolve the best notification channel for a topic."""
+        best_match = None
+        best_channel_id = None
+        for prefix, channel_id in self.channel_map.items():
+            normalized_prefix = prefix.strip()
+            if not normalized_prefix:
+                continue
+            if topic == normalized_prefix or topic.startswith(f"{normalized_prefix}."):
+                if best_match is None or len(normalized_prefix) > len(best_match):
+                    best_match = normalized_prefix
+                    best_channel_id = channel_id
+        if best_channel_id is not None:
+            return best_channel_id
+        return self.channel_id
