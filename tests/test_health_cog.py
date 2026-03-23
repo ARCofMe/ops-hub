@@ -46,10 +46,14 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
 
     result = cog._build_help_text()
 
-    assert "Ops Hub Command Guide" in result
-    assert "Open access: `/ping`, `/ops_help`" in result
+    assert "**Ops Hub Command Guide**" in result
+    assert "**Open**" in result
+    assert "`/ping`, `/help`" in result
+    assert "**Technician**" in result
     assert "/missing_part" in result
-    assert "Dispatch: `/job`, `/assignments`, `/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/parts_brief`, `/parts_notes`" in result
+    assert "**Dispatch**" in result
+    assert "/dispatch_attention" in result
+    assert "/dispatch_next" in result
     assert "/part_reconcile" in result
     assert "/part_tracking" in result
     assert "/technician_mappings" in result

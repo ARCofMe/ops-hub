@@ -20,8 +20,8 @@ class HealthCog(commands.Cog):
         """Simple liveness command."""
         await interaction.response.send_message("pong", ephemeral=True)
 
-    @app_commands.command(name="ops_help", description="Show the current Ops Hub command guide.")
-    async def ops_help(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="help", description="Show the current Ops Hub command guide.")
+    async def help(self, interaction: discord.Interaction) -> None:
         """Render a concise command guide grouped by business role."""
         await interaction.response.send_message(self._build_help_text(), ephemeral=True)
 
@@ -29,12 +29,33 @@ class HealthCog(commands.Cog):
         """Return the current public command guide."""
         return "\n".join(
             [
-                "Ops Hub Command Guide",
-                "Open access: `/ping`, `/ops_help`",
-                "Technician: `/job`, `/assignments`, `/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`, `/parts_brief`, `/parts_notes`",
-                "Dispatch: `/job`, `/assignments`, `/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/parts_brief`, `/parts_notes`",
-                "Parts: `/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/parts_brief`, `/parts_notes`, `/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`",
-                "Admin: `/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`",
+                "**Ops Hub Command Guide**",
+                "",
+                "**Open**",
+                "`/ping`, `/help`",
+                "",
+                "**Technician**",
+                "`/job`, `/assignments`",
+                "`/part_request`, `/my_part_requests`",
+                "`/missing_part`, `/damaged_part`",
+                "`/parts_brief`, `/parts_notes`",
+                "",
+                "**Dispatch**",
+                "`/job`, `/assignments`",
+                "`/tech_assignments`, `/tech_job`",
+                "`/dispatch_board`, `/dispatch_attention`, `/dispatch_next`",
+                "`/parts_brief`, `/parts_notes`",
+                "",
+                "**Parts**",
+                "`/part`, `/part_requests`, `/part_request_detail`, `/part_update`",
+                "`/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`",
+                "`/parts_brief`, `/parts_notes`",
+                "`/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`",
+                "",
+                "**Admin**",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`",
+                "`/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`",
+                "`/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`",
             ]
         )
 

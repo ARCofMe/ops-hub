@@ -37,7 +37,7 @@ Current implementation note:
 Open utility commands:
 
 - `/ping`
-- `/ops_help`
+- `/help`
 
 Technician / dispatch / admin:
 
