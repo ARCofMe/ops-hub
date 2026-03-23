@@ -452,6 +452,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Technician origin: South Paris, ME" in result.message
     assert "Parts: `Tracking Posted`" in result.message
     assert "Status detail: Part tracking update: UPS 123" in result.message
+    assert "Recommended next action: Track shipment progress and prepare dispatch for receipt or scheduling follow-up." in result.message
     assert "Requester mapping: BlueFolder user `13051`" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 
@@ -646,6 +647,53 @@ def test_bluefolder_service_returns_issue_stage_when_only_issue_comments_exist(t
     assert "Parts stage: `Issue Reported`" in result.message
     assert "Latest issue: `missing-part`" in result.message
     assert "Issue detail: Missing part reported" in result.message
+    assert "Recommended next action: Parts should review the issue note, confirm the part path, and post an ordered or ETA update." in result.message
+
+
+def test_bluefolder_service_returns_dispatch_next_action(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    return [
+                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False},
+                    ]
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = BlueFolderService(
+        adapter=BlueFolderAdapter(
+            base_path=str(tmp_path),
+            api_key="key",
+            account_name="acme",
+        )
+    )
+
+    result = asyncio.run(service.get_parts_next_action(100))
+
+    assert "Dispatch next `100`" in result.message
+    assert "Parts stage: `Ready for Scheduling`" in result.message
+    assert "Recommended next action: Dispatch should contact the customer and move the SR toward scheduling." in result.message
 
 
 def test_bluefolder_service_lists_parts_notes_from_bluefolder_comments(tmp_path: Path) -> None:

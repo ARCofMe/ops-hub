@@ -288,6 +288,11 @@ class DispatchService:
                 lines.append(f"Technician origin: {dispatch_summary.technician_origin_address}")
             if parts_lines := self._parts_context_lines(parts_brief):
                 lines.extend(parts_lines)
+            if parts_brief is not None:
+                for line in parts_brief.message.splitlines():
+                    if line.startswith("Recommended next action:"):
+                        lines.append(line)
+                        break
             if requestor_line := self._requestor_context_line(request):
                 lines.append(requestor_line)
             lines.append(f"Dispatch detail: {dispatch_summary.message}")

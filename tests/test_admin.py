@@ -142,7 +142,7 @@ def test_build_command_access_describes_current_scopes() -> None:
     assert "`/job`, `/assignments`: technicians, dispatchers, admins" in result
     assert "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins" in result
     assert "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins" in result
-    assert "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`: dispatchers, admins" in result
+    assert "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`: dispatchers, admins" in result
     assert "`/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`: parts, admins" in result
 
 

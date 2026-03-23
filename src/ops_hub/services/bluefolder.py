@@ -59,6 +59,7 @@ class BlueFolderService:
             )
         if snapshot.latest_issue_text:
             lines.append(f"Issue detail: {snapshot.latest_issue_text[:220]}")
+        lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
         return CommandResult(message="\n".join(lines))
 
     async def get_parts_notes(self, sr_id: int) -> CommandResult:
@@ -79,6 +80,32 @@ class BlueFolderService:
         if not comments:
             return None
         return self._build_parts_lifecycle_snapshot(comments)
+
+    async def get_parts_next_action(self, sr_id: int) -> CommandResult:
+        """Return a dispatcher-friendly next-action recommendation for an SR."""
+        summary = await self.adapter.get_job_summary(f"SR-{sr_id}")
+        snapshot = await self.get_parts_snapshot(sr_id)
+
+        lines = [f"Dispatch next `{sr_id}`"]
+        if summary.available:
+            lines.append(f"Subject: {summary.subject or 'Unlabeled Service Request'}")
+        else:
+            lines.append(f"BlueFolder: `{summary.integration_status}`")
+            lines.append(f"Detail: {summary.message}")
+            return CommandResult(message="\n".join(lines))
+
+        if snapshot is None:
+            lines.append("Parts stage: `No Recent Parts Context`")
+            lines.append("Recommended next action: Review the SR in BlueFolder and confirm whether parts work is pending.")
+            return CommandResult(message="\n".join(lines))
+
+        lines.append(f"Parts stage: `{snapshot.stage_label}`")
+        if snapshot.latest_status_text:
+            lines.append(f"Latest status detail: {snapshot.latest_status_text[:220]}")
+        elif snapshot.latest_issue_text:
+            lines.append(f"Latest issue detail: {snapshot.latest_issue_text[:220]}")
+        lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
+        return CommandResult(message="\n".join(lines))
 
     async def log_parts_issue(
         self,
@@ -158,6 +185,22 @@ class BlueFolderService:
             ]
             if part
         )
+
+    def recommend_next_action(self, snapshot: PartsLifecycleSnapshot) -> str:
+        """Return a plain-language recommended next action for the current parts stage."""
+        if snapshot.stage == "issue_reported":
+            return "Parts should review the issue note, confirm the part path, and post an ordered or ETA update."
+        if snapshot.stage == "part_ordered":
+            return "Monitor vendor progress and post ETA or tracking information when available."
+        if snapshot.stage == "part_eta":
+            return "Keep dispatch aware of the ETA and follow up if the arrival window changes."
+        if snapshot.stage == "part_tracking":
+            return "Track shipment progress and prepare dispatch for receipt or scheduling follow-up."
+        if snapshot.stage == "part_received":
+            return "Confirm install readiness with the tech and prepare customer scheduling follow-up."
+        if snapshot.stage == "part_ready":
+            return "Dispatch should contact the customer and move the SR toward scheduling."
+        return "Review the latest BlueFolder parts notes and determine the next update needed."
 
     def _build_parts_lifecycle_snapshot(self, comments: list[PartsCommentRecord]) -> PartsLifecycleSnapshot:
         """Derive a normalized parts stage and relevant details from recent comments."""

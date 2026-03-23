@@ -89,6 +89,13 @@ class DispatchCog(commands.Cog):
         )
         await interaction.followup.send(result.message, ephemeral=True)
 
+    @app_commands.command(name="dispatch_next", description="Show the recommended next dispatch action for a specific SR.")
+    async def dispatch_next(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Dispatcher-focused next-action summary for a service request."""
+        await interaction.response.defer(ephemeral=True)
+        result = await self.bot.container.bluefolder_service.get_parts_next_action(sr_id)
+        await interaction.followup.send(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)
