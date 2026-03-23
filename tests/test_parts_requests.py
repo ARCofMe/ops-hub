@@ -35,8 +35,9 @@ def test_create_parts_request_persists_record() -> None:
         )
     )
 
-    assert "Parts request `1` created" in result.message
+    assert "**Parts Request 1 Created**" in result.message
     assert "Status: `requested`" in result.message
+    assert "Requested by: <@42>" in result.message
     assert len(service.request_store.records) == 1
     assert service.request_store.records[0].assigned_parts_user_id is None
     assert notifications.records[-1].topic == "parts.request.created"
@@ -56,8 +57,9 @@ def test_list_parts_requests_returns_saved_records() -> None:
 
     result = asyncio.run(service.list_requests())
 
-    assert "Parts requests" in result.message
-    assert "`1` `requested` `SR-300` requested by `42`" in result.message
+    assert "**Parts Requests**" in result.message
+    assert "`1` `requested` `SR-300`" in result.message
+    assert "Requested by: <@42>" in result.message
     assert "Description: Need heating element" in result.message
 
 
@@ -83,7 +85,7 @@ def test_update_parts_request_changes_status() -> None:
         )
     )
 
-    assert "Parts request `1` updated" in result.message
+    assert "**Parts Request 1 Updated**" in result.message
     assert "Status: `ordered`" in result.message
     assert service.request_store.records[0].status == "ordered"
     assert notifications.records[-1].topic == "parts.request.updated"
@@ -163,7 +165,8 @@ def test_claim_parts_request_assigns_parts_user() -> None:
         )
     )
 
-    assert "assigned to parts user `77`" in result.message
+    assert "**Parts Request 1**" in result.message
+    assert "Assigned to: <@77>" in result.message
     assert service.request_store.records[0].assigned_parts_user_id == 77
     assert notifications.records[-1].topic == "parts.request.claimed"
 
@@ -183,11 +186,11 @@ def test_get_request_renders_detailed_view() -> None:
 
     result = asyncio.run(service.get_request(1))
 
-    assert "Parts request `1`" in result.message
-    assert "Assigned parts user: unassigned" in result.message
+    assert "**Parts Request 1**" in result.message
+    assert "Assigned to: unassigned" in result.message
     assert "Last synced: never" in result.message
     assert "Last reconciled: never" in result.message
-    assert "Mapped BlueFolder user: `13051`" in result.message
+    assert "Technician mapping: <@42> (BlueFolder `13051`)" in result.message
 
 
 def test_unclaim_parts_request_clears_assignment() -> None:
@@ -221,7 +224,7 @@ def test_unclaim_parts_request_clears_assignment() -> None:
         )
     )
 
-    assert "now unassigned" in result.message
+    assert "Assignment cleared." in result.message
     assert service.request_store.records[0].assigned_parts_user_id is None
     assert notifications.records[-1].topic == "parts.request.unclaimed"
 

@@ -17,6 +17,7 @@ from ops_hub.models.requests import (
     PartsWorkflowSummary,
 )
 from ops_hub.services.notifications import NotificationService
+from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_request_store import PartsRequestStore
 
 PARTS_REQUEST_STATUSES: tuple[str, ...] = (
@@ -38,6 +39,7 @@ class PartsCannonService:
     adapter: PartsCannonAdapter
     notifications: NotificationService
     request_store: PartsRequestStore
+    technician_directory_service: TechnicianDirectoryService | None = None
 
     async def lookup_part(self, request: PartLookupRequest) -> CommandResult:
         """Return a placeholder parts wrapper response."""
@@ -78,9 +80,10 @@ class PartsCannonService:
         return CommandResult(
             message="\n".join(
                 [
-                    f"Parts request `{request_id}` created",
+                    f"**Parts Request {request_id} Created**",
                     f"Reference: `{record.reference}`",
                     f"Status: `{record.status}`",
+                    f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
                     f"Description: {record.description}",
                 ]
             )
@@ -114,16 +117,22 @@ class PartsCannonService:
         if not records:
             return CommandResult(message="No parts requests found.")
 
-        lines = ["Parts requests"]
+        lines = ["**Parts Requests**"]
         for record in records[:15]:
-            lines.append(f"`{record.request_id}` `{record.status}` `{record.reference}` requested by `{record.requested_by_user_id}`")
+            lines.extend(
+                [
+                    "",
+                    f"`{record.request_id}` `{record.status}` `{record.reference}`",
+                    f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
+                ]
+            )
             if record.assigned_parts_user_id is not None:
-                lines.append(f"Assigned parts user: `{record.assigned_parts_user_id}`")
+                lines.append(f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}")
             if record.last_synced_at is not None:
                 lines.append(f"Last synced: `{record.last_synced_at}`")
             lines.append(f"Description: {record.description}")
         if len(records) > 15:
-            lines.append(f"...and {len(records) - 15} more request(s)")
+            lines.extend(["", f"...and {len(records) - 15} more request(s)"])
         return CommandResult(message="\n".join(lines))
 
     async def update_request(self, request: PartRequestUpdate) -> CommandResult:
@@ -165,7 +174,7 @@ class PartsCannonService:
             return CommandResult(
                 message="\n".join(
                     [
-                        f"Parts request `{updated.request_id}` updated",
+                        f"**Parts Request {updated.request_id} Updated**",
                         f"Reference: `{updated.reference}`",
                         f"Status: `{updated.status}`",
                     ]
@@ -181,20 +190,31 @@ class PartsCannonService:
             return CommandResult(message=f"Parts request `{request_id}` was not found.")
 
         lines = [
-            f"Parts request `{record.request_id}`",
+            f"**Parts Request {record.request_id}**",
             f"Reference: `{record.reference}`",
             f"Status: `{record.status}`",
-            f"Requested by Discord user: `{record.requested_by_user_id}`",
-            f"Assigned parts user: `{record.assigned_parts_user_id}`" if record.assigned_parts_user_id is not None else "Assigned parts user: unassigned",
+            "",
+            "**People**",
+            f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
+            (
+                f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}"
+                if record.assigned_parts_user_id is not None
+                else "Assigned to: unassigned"
+            ),
+            "",
+            "**Tracking**",
             f"Created at: `{record.created_at}`",
             f"Updated at: `{record.updated_at}`",
             f"Last synced: `{record.last_synced_at}`" if record.last_synced_at is not None else "Last synced: never",
             f"Last reconciled: `{record.last_reconciled_at}`" if record.last_reconciled_at is not None else "Last reconciled: never",
+            "",
+            "**Request**",
             f"Description: {record.description}",
         ]
         if record.technician_bluefolder_user_id is not None:
-            lines.append(f"Mapped BlueFolder user: `{record.technician_bluefolder_user_id}`")
+            lines.append(f"Technician mapping: {self._technician_mapping_label(record)}")
         if record.downstream_note:
+            lines.append("")
             lines.append(f"Downstream note: {record.downstream_note}")
         return CommandResult(message="\n".join(lines))
 
@@ -224,11 +244,14 @@ class PartsCannonService:
             if request.parts_user_id is None:
                 topic = "parts.request.unclaimed"
                 message = f"Unassigned parts request {request.request_id}."
-                response = f"Parts request `{updated.request_id}` is now unassigned."
+                response = f"**Parts Request {updated.request_id}**\nAssignment cleared."
             else:
                 topic = "parts.request.claimed"
                 message = f"Assigned parts request {request.request_id} to parts user {request.parts_user_id}."
-                response = f"Parts request `{updated.request_id}` assigned to parts user `{request.parts_user_id}`."
+                response = (
+                    f"**Parts Request {updated.request_id}**\n"
+                    f"Assigned to: {self._discord_user_label(request.parts_user_id)}"
+                )
             await self.notifications.send_notice(topic=topic, message=message)
             return CommandResult(
                 message="\n".join(
@@ -273,7 +296,7 @@ class PartsCannonService:
             message=f"Parts queue sync finished with status {export_result.integration_status}.",
         )
         lines = [
-            "Parts queue sync",
+            "**Parts Queue Sync**",
             f"Status: `{export_result.integration_status}`",
             f"Details: {export_result.message}",
             f"Exported requests: `{export_result.exported_count}`",
@@ -328,7 +351,7 @@ class PartsCannonService:
             message=f"Parts queue reconcile finished with status {import_result.integration_status}.",
         )
         lines = [
-            "Parts queue reconcile",
+            "**Parts Queue Reconcile**",
             f"Status: `{import_result.integration_status}`",
             f"Details: {import_result.message}",
             f"Applied receipts: `{applied}`",
@@ -395,12 +418,51 @@ class PartsCannonService:
         return CommandResult(
             message="\n".join(
                 [
-                    f"Part `{summary.reference}`",
-                    f"Parts Cannon: `{summary.integration_status}`",
+                    f"**Part Lookup {summary.reference}**",
+                    "",
+                    "**Parts System**",
+                    f"Status: `{summary.integration_status}`",
                     f"Details: {summary.message}",
-                    *([f"Requester mapping: BlueFolder user `{request.technician_bluefolder_user_id}`"] if request.technician_bluefolder_user_id is not None else []),
-                    *(["Requester mapping: admin access"] if request.requester_is_admin and request.technician_bluefolder_user_id is None else []),
+                    "",
+                    "**Context**",
+                    *(
+                        [
+                            "Requester: "
+                            f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
+                        ]
+                        if request.technician_bluefolder_user_id is not None
+                        else []
+                    ),
+                    *([f"Requester: {self._discord_user_label(request.requested_by_user_id)} (admin)"] if request.requester_is_admin and request.technician_bluefolder_user_id is None else []),
                     f"Notifications: `{notification_mode}`",
                 ]
             )
+        )
+
+    def _discord_user_label(self, user_id: int) -> str:
+        """Render a Discord-facing user label."""
+        if self.technician_directory_service is not None:
+            return self.technician_directory_service.discord_mention(user_id)
+        return f"<@{user_id}>"
+
+    def _technician_label(self, *, discord_user_id: int | None = None, bluefolder_user_id: int | None = None) -> str:
+        """Render the best available technician label."""
+        if self.technician_directory_service is not None:
+            return self.technician_directory_service.technician_label(
+                discord_user_id=discord_user_id,
+                bluefolder_user_id=bluefolder_user_id,
+            )
+        if discord_user_id is not None and bluefolder_user_id is not None:
+            return f"<@{discord_user_id}> (BlueFolder `{bluefolder_user_id}`)"
+        if discord_user_id is not None:
+            return f"<@{discord_user_id}>"
+        if bluefolder_user_id is not None:
+            return f"BlueFolder user `{bluefolder_user_id}`"
+        return "Unknown technician"
+
+    def _technician_mapping_label(self, record: PartRequestRecord) -> str:
+        """Render the technician mapping associated with a parts request."""
+        return self._technician_label(
+            discord_user_id=record.requested_by_user_id,
+            bluefolder_user_id=record.technician_bluefolder_user_id,
         )

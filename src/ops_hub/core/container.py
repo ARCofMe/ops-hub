@@ -72,6 +72,7 @@ def build_container(settings: Settings) -> ServiceContainer:
             adapter=parts_adapter,
             notifications=notification_service,
             request_store=parts_request_store,
+            technician_directory_service=technician_directory_service,
         ),
         photo_ingest_service=PhotoIngestService(settings=settings, adapter=photo_adapter),
         dispatch_service=DispatchService(
