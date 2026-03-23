@@ -48,9 +48,12 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
         service.lookup_job(JobLookupRequest(reference="SR-100", requested_by_user_id=1))
     )
 
-    assert "BlueFolder: `import_error`" in result.message
+    assert "**Job SR-100**" in result.message
+    assert "**BlueFolder**" in result.message
+    assert "Status: `import_error`" in result.message
     assert "Failed to import bluefolder_api from configured path" in result.message
-    assert "Dispatch: `unconfigured`" in result.message
+    assert "**Dispatch**" in result.message
+    assert "Status: `unconfigured`" in result.message
 
 
 def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Path) -> None:
@@ -179,7 +182,7 @@ def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
         )
     )
 
-    assert "Dispatch board" in result.message
+    assert "**Dispatch Board**" in result.message
     assert "Mapped techs: `2`" in result.message
     assert "Active techs: `1`" in result.message
     assert "Total visible assignments: `1`" in result.message
@@ -253,11 +256,15 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
         )
     )
 
-    assert "Dispatch attention" in result.message
+    assert "**Dispatch Attention**" in result.message
     assert "Scanned jobs: `2`" in result.message
     assert "Attention jobs: `1`" in result.message
     assert "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`" in result.message
-    assert "`SR-100` Dryer repair [Discord `42` / BlueFolder `13051` | Ready for Scheduling | Portland ME | AM]" in result.message
+    assert "1. `SR-100` Dryer repair" in result.message
+    assert "Stage: `Ready for Scheduling`" in result.message
+    assert "Technician: Discord `42` | BlueFolder `13051`" in result.message
+    assert "Location: Portland ME" in result.message
+    assert "Window: `AM`" in result.message
     assert "`SR-101`" not in result.message
 
 
@@ -438,7 +445,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
         )
     )
 
-    assert "Job `SR-100`" in result.message
+    assert "**Job SR-100**" in result.message
     assert "BlueFolder SR: `100`" in result.message
     assert "Subject: SR description 100" in result.message
     assert "Dispatch: `stop_preview`" in result.message
@@ -592,7 +599,8 @@ def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) ->
 
     result = asyncio.run(service.get_parts_brief(100))
 
-    assert "SR `100`" in result.message
+    assert "**Parts Brief SR-100**" in result.message
+    assert "SR: `100`" in result.message
     assert "Subject: SR description 100" in result.message
     assert "Customer: Jane Customer" in result.message
     assert "Parts stage: `Tracking Posted`" in result.message

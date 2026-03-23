@@ -101,7 +101,7 @@ class DispatchService:
         if not mappings:
             return CommandResult(message="Dispatch board requires at least one technician mapping.")
 
-        lines = ["Dispatch board"]
+        lines = ["**Dispatch Board**"]
         active_techs = 0
         total_assignments = 0
         for record in mappings:
@@ -116,7 +116,7 @@ class DispatchService:
                 f"Discord `{record.discord_user_id}` -> BlueFolder `{record.bluefolder_user_id}`: "
                 f"`{assignment_count}` assignment(s)"
             )
-            lines.append(summary)
+            lines.extend(["", summary])
             if origin_address:
                 lines.append(f"Origin: {origin_address}")
             if assignments:
@@ -191,22 +191,22 @@ class DispatchService:
                 location = " ".join(
                     part for part in [assignment.get("city"), assignment.get("state")] if part
                 ).strip()
-                details = [snapshot.stage_label]
+                item_lines = [
+                    f"`SR-{sr_id}` {subject}",
+                    f"Stage: `{snapshot.stage_label}`",
+                    f"Technician: Discord `{record.discord_user_id}` | BlueFolder `{record.bluefolder_user_id}`",
+                ]
                 if location:
-                    details.append(location)
+                    item_lines.append(f"Location: {location}")
                 if route_label:
-                    details.append(str(route_label))
-                line = (
-                    f"`SR-{sr_id}` {subject} "
-                    f"[Discord `{record.discord_user_id}` / BlueFolder `{record.bluefolder_user_id}` | {' | '.join(details)}]"
-                )
-                attention_items.append(line)
+                    item_lines.append(f"Window: `{route_label}`")
+                attention_items.append("\n".join(item_lines))
 
         if not attention_items:
             return CommandResult(
                 message="\n".join(
                     [
-                        "Dispatch attention",
+                        "**Dispatch Attention**",
                         f"Scanned jobs: `{scanned_jobs}`",
                         *(
                             [f"Stage filter: `{allowed_stages[normalized_stage_filter]}`"]
@@ -224,7 +224,7 @@ class DispatchService:
             )
 
         lines = [
-            "Dispatch attention",
+            "**Dispatch Attention**",
             f"Scanned jobs: `{scanned_jobs}`",
             f"Attention jobs: `{len(attention_items)}`",
             "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`",
@@ -238,10 +238,11 @@ class DispatchService:
                 if technician_bluefolder_user_id is not None
                 else []
             ),
-            *attention_items[:20],
         ]
+        for index, item in enumerate(attention_items[:20], start=1):
+            lines.extend(["", f"{index}. {item}"])
         if len(attention_items) > 20:
-            lines.append(f"...and {len(attention_items) - 20} more attention job(s)")
+            lines.extend(["", f"...and {len(attention_items) - 20} more attention job(s)"])
         return CommandResult(message="\n".join(lines))
 
     def _format_job_message(
@@ -255,10 +256,11 @@ class DispatchService:
         """Build a user-facing job response from the current adapter results."""
         if summary.available and summary.integration_status == "live_read":
             lines = [
-                f"Job `{reference}`",
-                f"BlueFolder SR: `{summary.service_request_id or reference}`",
+                f"**Job {reference}**",
                 f"Subject: {summary.subject or 'Unlabeled Service Request'}",
-                f"Dispatch: `{dispatch_summary.integration_status}`",
+                "",
+                "**BlueFolder**",
+                f"BlueFolder SR: `{summary.service_request_id or reference}`",
             ]
             if summary.customer_id:
                 lines.append(f"Customer ID: `{summary.customer_id}`")
@@ -276,6 +278,7 @@ class DispatchService:
                         if part
                     )
                 lines.append(f"Address: {location}")
+            lines.extend(["", "**Dispatch**", f"Dispatch: `{dispatch_summary.integration_status}`"])
             if dispatch_summary.stop_label:
                 lines.append(f"Dispatch stop: `{dispatch_summary.stop_label}`")
             if dispatch_summary.stop_window:
@@ -287,23 +290,31 @@ class DispatchService:
             if dispatch_summary.technician_origin_address:
                 lines.append(f"Technician origin: {dispatch_summary.technician_origin_address}")
             if parts_lines := self._parts_context_lines(parts_brief):
+                lines.extend(["", "**Parts**"])
                 lines.extend(parts_lines)
             if parts_brief is not None:
                 for line in parts_brief.message.splitlines():
                     if line.startswith("Recommended next action:"):
+                        lines.append("")
                         lines.append(line)
                         break
             if requestor_line := self._requestor_context_line(request):
+                lines.extend(["", "**Context**"])
                 lines.append(requestor_line)
+            lines.append("")
             lines.append(f"Dispatch detail: {dispatch_summary.message}")
             return "\n".join(lines)
 
         return "\n".join(
             [
-                f"Job `{reference}`",
-                f"BlueFolder: `{summary.integration_status}`",
+                f"**Job {reference}**",
+                "",
+                "**BlueFolder**",
+                f"Status: `{summary.integration_status}`",
                 f"BlueFolder detail: {summary.message}",
-                f"Dispatch: `{dispatch_summary.integration_status}`",
+                "",
+                "**Dispatch**",
+                f"Status: `{dispatch_summary.integration_status}`",
                 *([self._requestor_context_line(request)] if self._requestor_context_line(request) else []),
                 f"Dispatch detail: {dispatch_summary.message}",
             ]

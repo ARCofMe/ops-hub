@@ -25,25 +25,42 @@ class BlueFolderService:
             return CommandResult(
                 message="\n".join(
                     [
-                        f"Parts brief `{sr_id}`",
-                        f"BlueFolder: `{summary.integration_status}`",
+                        f"**Parts Brief SR-{sr_id}**",
+                        "",
+                        "**BlueFolder**",
+                        f"Status: `{summary.integration_status}`",
                         f"Detail: {summary.message}",
                     ]
                 )
             )
 
         lines = [
-            f"SR `{summary.service_request_id or sr_id}`",
+            f"**Parts Brief SR-{summary.service_request_id or sr_id}**",
+            f"SR: `{summary.service_request_id or sr_id}`",
+            "",
+            "**Service Request**",
             f"Subject: {summary.subject or 'Unlabeled Service Request'}",
             f"Customer: {summary.customer_name or 'n/a'}",
             f"Address: {self._format_address(summary) or 'n/a'}",
         ]
         snapshot = await self.get_parts_snapshot(sr_id)
         if snapshot is None:
-            lines.append("No recent parts-related comments found.")
+            lines.extend(
+                [
+                    "",
+                    "**Parts Status**",
+                    "No recent parts-related comments found.",
+                ]
+            )
             return CommandResult(message="\n".join(lines))
 
-        lines.append(f"Parts stage: `{snapshot.stage_label}`")
+        lines.extend(
+            [
+                "",
+                "**Parts Status**",
+                f"Parts stage: `{snapshot.stage_label}`",
+            ]
+        )
         if snapshot.latest_status_at or snapshot.latest_status_author:
             lines.append(
                 "Latest status note: "
@@ -59,6 +76,7 @@ class BlueFolderService:
             )
         if snapshot.latest_issue_text:
             lines.append(f"Issue detail: {snapshot.latest_issue_text[:220]}")
+        lines.append("")
         lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
         return CommandResult(message="\n".join(lines))
 
@@ -90,20 +108,39 @@ class BlueFolderService:
         if summary.available:
             lines.append(f"Subject: {summary.subject or 'Unlabeled Service Request'}")
         else:
-            lines.append(f"BlueFolder: `{summary.integration_status}`")
+            lines.extend(
+                [
+                    "",
+                    "**BlueFolder**",
+                    f"Status: `{summary.integration_status}`",
+                ]
+            )
             lines.append(f"Detail: {summary.message}")
             return CommandResult(message="\n".join(lines))
 
         if snapshot is None:
-            lines.append("Parts stage: `No Recent Parts Context`")
+            lines.extend(
+                [
+                    "",
+                    "**Parts Status**",
+                    "Parts stage: `No Recent Parts Context`",
+                ]
+            )
             lines.append("Recommended next action: Review the SR in BlueFolder and confirm whether parts work is pending.")
             return CommandResult(message="\n".join(lines))
 
-        lines.append(f"Parts stage: `{snapshot.stage_label}`")
+        lines.extend(
+            [
+                "",
+                "**Parts Status**",
+                f"Parts stage: `{snapshot.stage_label}`",
+            ]
+        )
         if snapshot.latest_status_text:
             lines.append(f"Latest status detail: {snapshot.latest_status_text[:220]}")
         elif snapshot.latest_issue_text:
             lines.append(f"Latest issue detail: {snapshot.latest_issue_text[:220]}")
+        lines.append("")
         lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
         return CommandResult(message="\n".join(lines))
 
