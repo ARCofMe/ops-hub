@@ -128,7 +128,7 @@ class DispatchCog(commands.Cog):
         technician_role_ids = set(self.bot.settings.technician_role_ids)
         technician_user_ids = set(self.bot.settings.technician_user_ids)
         mappings = directory.mappings()
-        records: list[TechnicianMappingRecord] = []
+        technician_member_ids: set[int] = set()
         for member in members:
             role_ids = {
                 getattr(role, "id", None)
@@ -138,12 +138,23 @@ class DispatchCog(commands.Cog):
             is_technician = member.id in technician_user_ids or bool(role_ids & technician_role_ids)
             if not is_technician:
                 continue
-            bluefolder_user_id = mappings.get(member.id)
-            if bluefolder_user_id is None:
+            technician_member_ids.add(member.id)
+
+        bluefolder_to_discord: dict[int, list[int]] = {}
+        for discord_user_id, bluefolder_user_id in mappings.items():
+            bluefolder_to_discord.setdefault(bluefolder_user_id, []).append(discord_user_id)
+
+        records: list[TechnicianMappingRecord] = []
+        for bluefolder_user_id, discord_user_ids in sorted(bluefolder_to_discord.items()):
+            chosen_discord_user_id = next(
+                (discord_user_id for discord_user_id in sorted(discord_user_ids) if discord_user_id in technician_member_ids),
+                None,
+            )
+            if chosen_discord_user_id is None:
                 continue
             records.append(
                 TechnicianMappingRecord(
-                    discord_user_id=member.id,
+                    discord_user_id=chosen_discord_user_id,
                     bluefolder_user_id=bluefolder_user_id,
                 )
             )

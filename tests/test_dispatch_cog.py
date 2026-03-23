@@ -101,13 +101,14 @@ def test_dispatch_cog_board_uses_only_current_technician_members() -> None:
     cog = _build_cog(
         dispatcher_user_ids=[99],
         technician_role_ids=[7],
-        technician_bluefolder_user_map={42: 13051, 99: 99999},
+        technician_bluefolder_user_map={42: 13051, 50: 13051, 99: 99999},
     )
     interaction = _DummyInteraction(
         user=_DummyUser(id=99, roles=[]),
         guild=_DummyGuild(
             members=[
                 _DummyUser(id=42, roles=[_DummyRole(id=7)]),
+                _DummyUser(id=50, roles=[]),
                 _DummyUser(id=99, roles=[]),
             ]
         ),
