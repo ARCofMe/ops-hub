@@ -61,7 +61,11 @@ class DispatchService:
 
         assignments = await self.adapter.get_assignments_for_user(target_user_id)
         origin_address = await self.adapter.get_origin_for_user(target_user_id)
-        technician_label = self._technician_label(bluefolder_user_id=target_user_id)
+        bluefolder_user_names = await self.bluefolder_service.get_active_user_directory()
+        technician_label = await self._technician_label(
+            bluefolder_user_id=target_user_id,
+            bluefolder_user_names=bluefolder_user_names,
+        )
         if not assignments:
             lines = [f"No current assignments were found for {technician_label}."]
             if origin_address:
@@ -104,6 +108,7 @@ class DispatchService:
         if not mappings:
             return CommandResult(message="Dispatch board requires at least one technician mapping.")
 
+        bluefolder_user_names = await self.bluefolder_service.get_active_user_directory()
         lines = ["**Dispatch Board**"]
         active_techs = 0
         total_assignments = 0
@@ -115,7 +120,11 @@ class DispatchService:
             if assignment_count > 0:
                 active_techs += 1
 
-            summary = f"Technician: {self._technician_label_for_record(record)} | `{assignment_count}` assignment(s)"
+            summary = (
+                "Technician: "
+                f"{await self._technician_label_for_record(record, bluefolder_user_names=bluefolder_user_names)} "
+                f"| `{assignment_count}` assignment(s)"
+            )
             lines.extend(["", summary])
             if origin_address:
                 lines.append(f"Origin: {origin_address}")
@@ -168,6 +177,7 @@ class DispatchService:
 
         attention_items: list[str] = []
         scanned_jobs = 0
+        bluefolder_user_names = await self.bluefolder_service.get_active_user_directory()
         for record in mappings:
             assignments = await self.adapter.get_assignments_for_user(record.bluefolder_user_id)
             for assignment in assignments[:10]:
@@ -194,7 +204,8 @@ class DispatchService:
                 item_lines = [
                     f"`SR-{sr_id}` {subject}",
                     f"Stage: `{snapshot.stage_label}`",
-                    f"Technician: {self._technician_label_for_record(record)}",
+                    "Technician: "
+                    f"{await self._technician_label_for_record(record, bluefolder_user_names=bluefolder_user_names)}",
                 ]
                 if location:
                     item_lines.append(f"Location: {location}")
@@ -214,7 +225,10 @@ class DispatchService:
                             else []
                         ),
                         *(
-                            [f"Technician filter: {self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"]
+                            [
+                                "Technician filter: "
+                                f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id, bluefolder_user_names=bluefolder_user_names)}"
+                            ]
                             if technician_bluefolder_user_id is not None
                             else []
                         ),
@@ -234,7 +248,10 @@ class DispatchService:
                 else []
             ),
             *(
-                [f"Technician filter: {self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"]
+                [
+                    "Technician filter: "
+                    f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id, bluefolder_user_names=bluefolder_user_names)}"
+                ]
                 if technician_bluefolder_user_id is not None
                 else []
             ),
@@ -323,38 +340,42 @@ class DispatchService:
     def _requestor_context_line(self, request: JobLookupRequest) -> str | None:
         """Render the resolved requestor context when available."""
         if request.technician_bluefolder_user_id is not None:
-            return (
-                "Requester: "
-                f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
-            )
+            return f"Requester: <@{request.requested_by_user_id}>"
         if request.requester_is_admin:
             return f"Requester: <@{request.requested_by_user_id}> (admin)"
         return None
 
-    def _technician_label_for_record(self, record: TechnicianMappingRecord) -> str:
+    async def _technician_label_for_record(
+        self,
+        record: TechnicianMappingRecord,
+        *,
+        bluefolder_user_names: dict[int, str] | None = None,
+    ) -> str:
         """Render a technician label from a mapping record."""
-        return self._technician_label(
+        return await self._technician_label(
             discord_user_id=record.discord_user_id,
             bluefolder_user_id=record.bluefolder_user_id,
+            bluefolder_user_names=bluefolder_user_names,
         )
 
-    def _technician_label(
+    async def _technician_label(
         self,
         *,
         discord_user_id: int | None = None,
         bluefolder_user_id: int | None = None,
+        bluefolder_user_names: dict[int, str] | None = None,
     ) -> str:
         """Render the best available technician label for dispatch messages."""
-        if self.technician_directory_service is not None:
-            return self.technician_directory_service.technician_label(
-                discord_user_id=discord_user_id,
-                bluefolder_user_id=bluefolder_user_id,
-            )
-        if discord_user_id is not None and bluefolder_user_id is not None:
-            return f"<@{discord_user_id}> (BlueFolder `{bluefolder_user_id}`)"
+        if discord_user_id is not None and self.technician_directory_service is not None:
+            return self.technician_directory_service.discord_mention(discord_user_id)
         if discord_user_id is not None:
             return f"<@{discord_user_id}>"
         if bluefolder_user_id is not None:
+            if bluefolder_user_names and bluefolder_user_id in bluefolder_user_names:
+                return bluefolder_user_names[bluefolder_user_id]
+            user_name = await self.bluefolder_service.get_user_name(bluefolder_user_id)
+            if user_name:
+                return user_name
             return f"BlueFolder user `{bluefolder_user_id}`"
         return "Unknown technician"
 

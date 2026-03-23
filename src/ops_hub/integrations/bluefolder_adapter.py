@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import importlib
 import logging
 import os
@@ -40,6 +40,7 @@ class BlueFolderAdapter:
         "backorder",
         "received",
     )
+    _active_user_directory_cache: dict[int, str] = field(default_factory=dict)
 
     async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
         """Return a read-only BlueFolder lookup result when the local library is available."""
@@ -314,6 +315,55 @@ class BlueFolderAdapter:
             "logged_at": timestamp.isoformat(timespec="minutes"),
         }
 
+    async def get_active_user_directory(self) -> dict[int, str]:
+        """Return a BlueFolder active-user directory keyed by user id."""
+        if self._active_user_directory_cache:
+            return dict(self._active_user_directory_cache)
+
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {}
+
+        try:
+            users = client.users.list_active()
+        except Exception:
+            logger.exception("BlueFolder active-user lookup failed")
+            return {}
+
+        directory: dict[int, str] = {}
+        for row in users or []:
+            parsed = self._parse_user_row(row)
+            if parsed is None:
+                continue
+            user_id, name = parsed
+            directory[user_id] = name
+
+        self._active_user_directory_cache = dict(directory)
+        return directory
+
+    async def get_user_name(self, user_id: int) -> str | None:
+        """Return a readable BlueFolder user name when available."""
+        directory = await self.get_active_user_directory()
+        if user_id in directory:
+            return directory[user_id]
+
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return None
+
+        try:
+            row = client.users.get_by_id(user_id)
+        except Exception:
+            logger.exception("BlueFolder user lookup failed for user %s", user_id)
+            return None
+
+        parsed = self._parse_user_row(row)
+        if parsed is None:
+            return None
+        parsed_user_id, name = parsed
+        self._active_user_directory_cache[parsed_user_id] = name
+        return name
+
     def _build_parts_update_detail_text(
         self,
         update_type: str,
@@ -353,6 +403,20 @@ class BlueFolderAdapter:
         """Extract a numeric SR id from a user-supplied lookup token."""
         match = re.search(r"(\d+)", reference)
         return match.group(1) if match else None
+
+    def _parse_user_row(self, row: object) -> tuple[int, str] | None:
+        """Extract a stable id/name pair from a BlueFolder user row."""
+        if not isinstance(row, dict):
+            return None
+        raw_id = row.get("id") or row.get("userId")
+        try:
+            user_id = int(str(raw_id))
+        except (TypeError, ValueError):
+            return None
+        first_name = str(row.get("firstName") or "").strip()
+        last_name = str(row.get("lastName") or "").strip()
+        name = " ".join(part for part in [first_name, last_name] if part).strip() or f"Tech {user_id}"
+        return user_id, name
 
     def _resolve_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

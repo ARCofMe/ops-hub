@@ -25,8 +25,14 @@ class _DummyUser:
 
 
 @dataclass(slots=True)
+class _DummyGuild:
+    members: list[_DummyUser]
+
+
+@dataclass(slots=True)
 class _DummyInteraction:
     user: _DummyUser
+    guild: _DummyGuild | None = None
 
 
 def _settings(**overrides: object) -> Settings:
@@ -91,10 +97,23 @@ def test_dispatch_cog_rejects_non_dispatch_user() -> None:
         raise AssertionError("Expected dispatch command check to reject unconfigured user")
 
 
-def test_dispatch_cog_board_uses_mapping_records() -> None:
-    cog = _build_cog(dispatcher_user_ids=[42], technician_bluefolder_user_map={42: 13051})
+def test_dispatch_cog_board_uses_only_current_technician_members() -> None:
+    cog = _build_cog(
+        dispatcher_user_ids=[99],
+        technician_role_ids=[7],
+        technician_bluefolder_user_map={42: 13051, 99: 99999},
+    )
+    interaction = _DummyInteraction(
+        user=_DummyUser(id=99, roles=[]),
+        guild=_DummyGuild(
+            members=[
+                _DummyUser(id=42, roles=[_DummyRole(id=7)]),
+                _DummyUser(id=99, roles=[]),
+            ]
+        ),
+    )
 
-    records = cog.bot.container.technician_directory_service.mapping_records()
+    records = asyncio.run(cog._technician_dispatch_mappings(interaction))
 
     assert len(records) == 1
     assert records[0].discord_user_id == 42

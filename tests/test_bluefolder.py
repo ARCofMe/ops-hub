@@ -147,6 +147,67 @@ def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Pat
     assert "Origin: South Paris, ME" in result.message
 
 
+def test_dispatch_service_uses_bluefolder_name_for_unmapped_user(tmp_path: Path) -> None:
+    dispatch_package = tmp_path / "optimized_routing"
+    dispatch_package.mkdir()
+    (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    return []
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Users:
+                def list_active(self):
+                    return [
+                        {"id": "13051", "firstName": "Mike", "lastName": "Smith", "inactive": False},
+                    ]
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.users = _Users()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(tmp_path)),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_job(
+            JobLookupRequest(
+                reference=None,
+                requested_by_user_id=1,
+                technician_bluefolder_user_id=13051,
+            )
+        )
+    )
+
+    assert "No current assignments were found for Mike Smith." in result.message
+
+
 def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()
@@ -186,9 +247,9 @@ def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     assert "Mapped techs: `2`" in result.message
     assert "Active techs: `1`" in result.message
     assert "Total visible assignments: `1`" in result.message
-    assert "Technician: <@42> (BlueFolder `13051`) | `1` assignment(s)" in result.message
+    assert "Technician: <@42> | `1` assignment(s)" in result.message
     assert "Next job: `SR-100` Dryer repair" in result.message
-    assert "Technician: <@43> (BlueFolder `13052`) | `0` assignment(s)" in result.message
+    assert "Technician: <@43> | `0` assignment(s)" in result.message
 
 
 def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> None:
@@ -262,7 +323,7 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     assert "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`" in result.message
     assert "1. `SR-100` Dryer repair" in result.message
     assert "Stage: `Ready for Scheduling`" in result.message
-    assert "Technician: <@42> (BlueFolder `13051`)" in result.message
+    assert "Technician: <@42>" in result.message
     assert "Location: Portland ME" in result.message
     assert "Window: `AM`" in result.message
     assert "`SR-101`" not in result.message
@@ -460,7 +521,7 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Parts: `Tracking Posted`" in result.message
     assert "Status detail: Part tracking update: UPS 123" in result.message
     assert "Recommended next action: Track shipment progress and prepare dispatch for receipt or scheduling follow-up." in result.message
-    assert "Requester: <@1> (BlueFolder `13051`)" in result.message
+    assert "Requester: <@1>" in result.message
     assert "Dispatch detail: Dispatch stop preview built from the existing routing wrapper." in result.message
 
 

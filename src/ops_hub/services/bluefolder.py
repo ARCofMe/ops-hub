@@ -18,6 +18,14 @@ class BlueFolderService:
         """Delegate job-summary lookup to the adapter layer."""
         return await self.adapter.get_job_summary(reference)
 
+    async def get_active_user_directory(self) -> dict[int, str]:
+        """Return active BlueFolder users keyed by user id."""
+        return await self.adapter.get_active_user_directory()
+
+    async def get_user_name(self, user_id: int) -> str | None:
+        """Return a readable BlueFolder user name when available."""
+        return await self.adapter.get_user_name(user_id)
+
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""
         summary = await self.adapter.get_job_summary(f"SR-{sr_id}")
