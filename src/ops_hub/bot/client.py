@@ -24,6 +24,7 @@ class OpsHubBot(commands.Bot):
         intents.guilds = True
         intents.members = True
         intents.messages = True
+        intents.message_content = settings.enable_message_content_intent
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
         self.container = container
@@ -54,7 +55,14 @@ class OpsHubBot(commands.Bot):
         if self.user is None:
             return
         self.container.notification_service.configure_sender(self._send_notice_to_channel)
-        logger.info("Ops Hub bot ready", extra={"bot_user": str(self.user), "bot_id": self.user.id})
+        logger.info(
+            "Ops Hub bot ready",
+            extra={
+                "bot_user": str(self.user),
+                "bot_id": self.user.id,
+                "message_content_intent": self.settings.enable_message_content_intent,
+            },
+        )
 
     async def on_message(self, message: discord.Message) -> None:
         """Route message events into placeholder listeners without affecting existing projects."""

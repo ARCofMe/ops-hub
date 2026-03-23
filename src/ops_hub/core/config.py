@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     parts_request_file: str | None = None
     notification_channel_id: int | None = None
     notification_channel_map: dict[str, int] = {}
+    enable_message_content_intent: bool = True
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
