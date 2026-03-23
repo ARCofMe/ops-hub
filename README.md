@@ -209,6 +209,7 @@ Longer-form project and planning docs live in `docs/`:
 
 - `docs/milestones.md`
 - `docs/photo-ingest-scope.md`
+- `docs/cutover-checklist.md`
 
 ## Project Direction
 
