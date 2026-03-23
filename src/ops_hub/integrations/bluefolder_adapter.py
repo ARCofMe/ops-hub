@@ -41,6 +41,7 @@ class BlueFolderAdapter:
         "received",
     )
     _active_user_directory_cache: dict[int, str] = field(default_factory=dict)
+    _active_user_directory_unavailable: bool = False
 
     async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
         """Return a read-only BlueFolder lookup result when the local library is available."""
@@ -319,6 +320,8 @@ class BlueFolderAdapter:
         """Return a BlueFolder active-user directory keyed by user id."""
         if self._active_user_directory_cache:
             return dict(self._active_user_directory_cache)
+        if self._active_user_directory_unavailable:
+            return {}
 
         client, _resolved_path = self._build_client()
         if client is None:
@@ -326,8 +329,9 @@ class BlueFolderAdapter:
 
         try:
             users = client.users.list_active()
-        except Exception:
-            logger.exception("BlueFolder active-user lookup failed")
+        except Exception as exc:
+            self._active_user_directory_unavailable = True
+            logger.warning("BlueFolder active-user lookup unavailable: %s", exc)
             return {}
 
         directory: dict[int, str] = {}
@@ -346,6 +350,8 @@ class BlueFolderAdapter:
         directory = await self.get_active_user_directory()
         if user_id in directory:
             return directory[user_id]
+        if self._active_user_directory_unavailable:
+            return None
 
         client, _resolved_path = self._build_client()
         if client is None:
@@ -353,8 +359,8 @@ class BlueFolderAdapter:
 
         try:
             row = client.users.get_by_id(user_id)
-        except Exception:
-            logger.exception("BlueFolder user lookup failed for user %s", user_id)
+        except Exception as exc:
+            logger.warning("BlueFolder user lookup unavailable for user %s: %s", user_id, exc)
             return None
 
         parsed = self._parse_user_row(row)

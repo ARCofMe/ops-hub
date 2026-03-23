@@ -208,6 +208,41 @@ def test_dispatch_service_uses_bluefolder_name_for_unmapped_user(tmp_path: Path)
     assert "No current assignments were found for Mike Smith." in result.message
 
 
+def test_bluefolder_adapter_marks_user_directory_unavailable_after_failure(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Users:
+                def list_active(self):
+                    raise RuntimeError("Invalid XML response")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.users = _Users()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    first = asyncio.run(adapter.get_active_user_directory())
+    second = asyncio.run(adapter.get_active_user_directory())
+    user_name = asyncio.run(adapter.get_user_name(13051))
+
+    assert first == {}
+    assert second == {}
+    assert user_name is None
+    assert adapter._active_user_directory_unavailable is True
+
+
 def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()
