@@ -261,6 +261,75 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     assert "`SR-101`" not in result.message
 
 
+def test_dispatch_service_filters_dispatch_attention_by_stage_and_technician(tmp_path: Path) -> None:
+    dispatch_package = tmp_path / "optimized_routing"
+    dispatch_package.mkdir()
+    (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
+    (dispatch_package / "bluefolder_integration.py").write_text(
+        textwrap.dedent(
+            """
+            class BlueFolderIntegration:
+                def get_user_assignments_today(self, user_id: int):
+                    if user_id == 13051:
+                        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+                    if user_id == 13052:
+                        return [{"serviceRequestId": "200", "subject": "Washer repair"}]
+                    return []
+
+                def get_user_origin_address(self, user_id: int):
+                    return "South Paris, ME"
+            """
+        ),
+        encoding="utf-8",
+    )
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    if service_request_id == 100:
+                        return [{"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False}]
+                    return [{"author": "Parts", "dateCreated": "2026-03-22 09:00", "text": "Part received at 9:00 AM. Details: received at shop.", "isVisibleToCustomer": False}]
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(tmp_path)),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_dispatch_attention(
+            [
+                TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
+                TechnicianMappingRecord(discord_user_id=43, bluefolder_user_id=13052),
+            ],
+            stage_filter="part_ready",
+            technician_bluefolder_user_id=13051,
+        )
+    )
+
+    assert "Stage filter: `Ready for Scheduling`" in result.message
+    assert "Technician filter: BlueFolder `13051`" in result.message
+    assert "`SR-100` Dryer repair" in result.message
+    assert "`SR-200`" not in result.message
+
+
 def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> None:
     bluefolder_package = tmp_path / "bluefolder_api"
     bluefolder_package.mkdir()
@@ -702,13 +771,20 @@ def test_bluefolder_service_logs_parts_update_comment(tmp_path: Path) -> None:
         service.log_parts_update(
             100,
             update_type="part_tracking",
-            details="UPS 1Z999 arrives tomorrow",
+            details="Label created and moving.",
             requested_by_user_id=42,
+            metadata={
+                "tracking_number": "1Z999",
+                "carrier": "UPS",
+                "eta": "tomorrow",
+            },
         )
     )
 
     assert "Logged part-tracking update for `100`" in result.message
-    assert "UPS 1Z999 arrives tomorrow" in result.message
+    assert "Tracking #: 1Z999." in result.message
+    assert "Carrier: UPS." in result.message
+    assert "ETA: tomorrow." in result.message
     assert "BlueFolder note: Part tracking update" in result.message
 
 

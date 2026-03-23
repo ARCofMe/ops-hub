@@ -263,6 +263,7 @@ class BlueFolderAdapter:
         update_type: str,
         details: str,
         requested_by_user_id: int,
+        metadata: dict[str, str] | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized parts-status update comment to a service request."""
         client, _resolved_path = self._build_client()
@@ -282,9 +283,10 @@ class BlueFolderAdapter:
             "part_ready": "Part ready for scheduling",
         }
         prefix = prefixes.get(update_type, "Parts update")
+        structured_details = self._build_parts_update_detail_text(update_type, detail_text, metadata or {})
         comment_text = (
             f"{prefix} at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
-            f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+            f"{structured_details} Reported by Discord user {requested_by_user_id}."
         )
 
         try:
@@ -302,6 +304,41 @@ class BlueFolderAdapter:
             "note_text": comment_text,
             "logged_at": timestamp.isoformat(timespec="minutes"),
         }
+
+    def _build_parts_update_detail_text(
+        self,
+        update_type: str,
+        detail_text: str,
+        metadata: dict[str, str],
+    ) -> str:
+        """Render a more structured details block for standardized parts updates."""
+        fields: list[str] = []
+        if update_type == "part_ordered":
+            if vendor := metadata.get("vendor"):
+                fields.append(f"Vendor: {vendor}.")
+            if eta := metadata.get("eta"):
+                fields.append(f"ETA: {eta}.")
+        elif update_type == "part_eta":
+            if eta := metadata.get("eta"):
+                fields.append(f"ETA: {eta}.")
+            if carrier := metadata.get("carrier"):
+                fields.append(f"Carrier: {carrier}.")
+        elif update_type == "part_tracking":
+            if carrier := metadata.get("carrier"):
+                fields.append(f"Carrier: {carrier}.")
+            if tracking_number := metadata.get("tracking_number"):
+                fields.append(f"Tracking #: {tracking_number}.")
+            if eta := metadata.get("eta"):
+                fields.append(f"ETA: {eta}.")
+        elif update_type == "part_received":
+            if received_from := metadata.get("received_from"):
+                fields.append(f"Received from: {received_from}.")
+        elif update_type == "part_ready":
+            if ready_note := metadata.get("ready_note"):
+                fields.append(f"Scheduling note: {ready_note}.")
+
+        fields.append(f"Details: {detail_text}.")
+        return " ".join(fields)
 
     def _extract_service_request_id(self, reference: str) -> str | None:
         """Extract a numeric SR id from a user-supplied lookup token."""

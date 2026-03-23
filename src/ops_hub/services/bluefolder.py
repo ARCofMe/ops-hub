@@ -119,6 +119,7 @@ class BlueFolderService:
         update_type: str,
         details: str,
         requested_by_user_id: int,
+        metadata: dict[str, str] | None = None,
     ) -> CommandResult:
         """Add a standardized BlueFolder parts-status update comment."""
         result = await self.adapter.add_parts_update_comment(
@@ -126,6 +127,7 @@ class BlueFolderService:
             update_type=update_type,
             details=details,
             requested_by_user_id=requested_by_user_id,
+            metadata=metadata,
         )
         if not result.get("ok"):
             return CommandResult(

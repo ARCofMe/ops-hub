@@ -69,11 +69,24 @@ class DispatchCog(commands.Cog):
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
-    async def dispatch_attention(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(
+        stage="Optional stage filter: issue_reported, part_received, or part_ready.",
+        bluefolder_user_id="Optional BlueFolder technician user id to narrow the view.",
+    )
+    async def dispatch_attention(
+        self,
+        interaction: discord.Interaction,
+        stage: str | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> None:
         """Dispatcher-focused triage view for parts-related attention states."""
         mappings = self.bot.container.technician_directory_service.mapping_records()
         await interaction.response.defer(ephemeral=True)
-        result = await self.bot.container.dispatch_service.lookup_dispatch_attention(mappings)
+        result = await self.bot.container.dispatch_service.lookup_dispatch_attention(
+            mappings,
+            stage_filter=stage,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
         await interaction.followup.send(result.message, ephemeral=True)
 
     def _resolve_identity(self, interaction: discord.Interaction):

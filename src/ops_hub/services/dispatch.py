@@ -132,10 +132,39 @@ class DispatchService:
         lines.insert(3, f"Total visible assignments: `{total_assignments}`")
         return CommandResult(message="\n".join(lines))
 
-    async def lookup_dispatch_attention(self, mappings: list[TechnicianMappingRecord]) -> CommandResult:
+    async def lookup_dispatch_attention(
+        self,
+        mappings: list[TechnicianMappingRecord],
+        *,
+        stage_filter: str | None = None,
+        technician_bluefolder_user_id: int | None = None,
+    ) -> CommandResult:
         """Return a dispatcher triage view for jobs that appear actionable."""
         if not mappings:
             return CommandResult(message="Dispatch attention view requires at least one technician mapping.")
+
+        allowed_stages = {
+            "issue_reported": "Issue Reported",
+            "part_received": "Received",
+            "part_ready": "Ready for Scheduling",
+        }
+        normalized_stage_filter = None if stage_filter is None else stage_filter.strip().lower().replace(" ", "_")
+        if normalized_stage_filter is not None and normalized_stage_filter not in allowed_stages:
+            return CommandResult(
+                message="Dispatch attention stage filter must be one of: `issue_reported`, `part_received`, `part_ready`."
+            )
+
+        if technician_bluefolder_user_id is not None:
+            mappings = [
+                record for record in mappings if record.bluefolder_user_id == technician_bluefolder_user_id
+            ]
+            if not mappings:
+                return CommandResult(
+                    message=(
+                        "Dispatch attention view could not find a technician mapping for "
+                        f"BlueFolder user `{technician_bluefolder_user_id}`."
+                    )
+                )
 
         attention_items: list[str] = []
         scanned_jobs = 0
@@ -152,7 +181,9 @@ class DispatchService:
                     continue
                 if snapshot is None:
                     continue
-                if snapshot.stage not in {"issue_reported", "part_received", "part_ready"}:
+                if snapshot.stage not in allowed_stages:
+                    continue
+                if normalized_stage_filter is not None and snapshot.stage != normalized_stage_filter:
                     continue
 
                 subject = assignment.get("subject") or "Unlabeled Service Request"
@@ -177,6 +208,16 @@ class DispatchService:
                     [
                         "Dispatch attention",
                         f"Scanned jobs: `{scanned_jobs}`",
+                        *(
+                            [f"Stage filter: `{allowed_stages[normalized_stage_filter]}`"]
+                            if normalized_stage_filter is not None
+                            else []
+                        ),
+                        *(
+                            [f"Technician filter: BlueFolder `{technician_bluefolder_user_id}`"]
+                            if technician_bluefolder_user_id is not None
+                            else []
+                        ),
                         "No mapped assignments currently match the parts-attention stages.",
                     ]
                 )
@@ -187,6 +228,16 @@ class DispatchService:
             f"Scanned jobs: `{scanned_jobs}`",
             f"Attention jobs: `{len(attention_items)}`",
             "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`",
+            *(
+                [f"Stage filter: `{allowed_stages[normalized_stage_filter]}`"]
+                if normalized_stage_filter is not None
+                else []
+            ),
+            *(
+                [f"Technician filter: BlueFolder `{technician_bluefolder_user_id}`"]
+                if technician_bluefolder_user_id is not None
+                else []
+            ),
             *attention_items[:20],
         ]
         if len(attention_items) > 20:

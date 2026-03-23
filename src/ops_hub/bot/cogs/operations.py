@@ -127,29 +127,108 @@ class OperationsCog(commands.Cog):
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="part_ordered", description="Log that a part was ordered in BlueFolder for a service request.")
-    async def part_ordered(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+    @app_commands.describe(vendor="Vendor or supplier name.", eta="Optional ETA text.", details="Optional extra order detail.")
+    async def part_ordered(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        vendor: str,
+        eta: str | None = None,
+        details: str | None = None,
+    ) -> None:
         """Log a part-ordered BlueFolder comment."""
-        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_ordered")
+        detail_text = details or "Order submitted."
+        await self._send_parts_update(
+            interaction,
+            sr_id=sr_id,
+            details=detail_text,
+            update_type="part_ordered",
+            metadata={"vendor": vendor, **({"eta": eta} if eta else {})},
+        )
 
     @app_commands.command(name="part_eta", description="Log an ETA update in BlueFolder for a service request.")
-    async def part_eta(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+    @app_commands.describe(eta="ETA text or date/time.", carrier="Optional carrier name.", details="Optional extra ETA detail.")
+    async def part_eta(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        eta: str,
+        carrier: str | None = None,
+        details: str | None = None,
+    ) -> None:
         """Log a part-ETA BlueFolder comment."""
-        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_eta")
+        detail_text = details or "ETA updated."
+        metadata = {"eta": eta, **({"carrier": carrier} if carrier else {})}
+        await self._send_parts_update(interaction, sr_id=sr_id, details=detail_text, update_type="part_eta", metadata=metadata)
 
     @app_commands.command(name="part_tracking", description="Log a tracking update in BlueFolder for a service request.")
-    async def part_tracking(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+    @app_commands.describe(
+        tracking_number="Tracking number or reference.",
+        carrier="Optional carrier name.",
+        eta="Optional ETA text.",
+        details="Optional extra tracking detail.",
+    )
+    async def part_tracking(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        tracking_number: str,
+        carrier: str | None = None,
+        eta: str | None = None,
+        details: str | None = None,
+    ) -> None:
         """Log a part-tracking BlueFolder comment."""
-        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_tracking")
+        detail_text = details or "Tracking posted."
+        metadata = {
+            "tracking_number": tracking_number,
+            **({"carrier": carrier} if carrier else {}),
+            **({"eta": eta} if eta else {}),
+        }
+        await self._send_parts_update(
+            interaction,
+            sr_id=sr_id,
+            details=detail_text,
+            update_type="part_tracking",
+            metadata=metadata,
+        )
 
     @app_commands.command(name="part_received", description="Log that a part was received in BlueFolder for a service request.")
-    async def part_received(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+    @app_commands.describe(received_from="Optional vendor, carrier, or source.", details="Receipt detail.")
+    async def part_received(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        details: str,
+        received_from: str | None = None,
+    ) -> None:
         """Log a part-received BlueFolder comment."""
-        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_received")
+        metadata = {"received_from": received_from} if received_from else None
+        await self._send_parts_update(
+            interaction,
+            sr_id=sr_id,
+            details=details,
+            update_type="part_received",
+            metadata=metadata,
+        )
 
     @app_commands.command(name="part_ready", description="Log that a service request is ready for scheduling after parts arrival.")
-    async def part_ready(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+    @app_commands.describe(ready_note="Optional scheduling note.", details="Ready detail.")
+    async def part_ready(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        details: str,
+        ready_note: str | None = None,
+    ) -> None:
         """Log a part-ready BlueFolder comment."""
-        await self._send_parts_update(interaction, sr_id=sr_id, details=details, update_type="part_ready")
+        metadata = {"ready_note": ready_note} if ready_note else None
+        await self._send_parts_update(
+            interaction,
+            sr_id=sr_id,
+            details=details,
+            update_type="part_ready",
+            metadata=metadata,
+        )
 
     @app_commands.command(name="part_request", description="Create a new tracked parts request.")
     @app_commands.describe(
@@ -307,6 +386,7 @@ class OperationsCog(commands.Cog):
         sr_id: int,
         details: str,
         update_type: str,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         """Log a standardized BlueFolder parts update after access checks."""
         identity = self._resolve_identity(interaction)
@@ -317,6 +397,7 @@ class OperationsCog(commands.Cog):
             update_type=update_type,
             details=details,
             requested_by_user_id=interaction.user.id,
+            metadata=metadata,
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
