@@ -15,6 +15,7 @@ This document is the working milestone checklist for Ops Hub as it moves from mi
 - `V0.5.0`
   - Most major subsystems have real operational value
   - Migration seams are stable and used regularly
+  - Photo ingest remains outside milestone scope until the revised concept is ready
 - `V1.0.0`
   - Ops Hub is the primary dependable operations bot
   - Main workflows are stable, documented, and trusted
@@ -94,16 +95,24 @@ Treat this as the point where Ops Hub is clearly useful in daily work.
 - [x] Dispatch workflows are moving beyond basic previews into more actionable assignment context
 - [x] Parts workflows include real operational actions
 - [x] BlueFolder-native parts update flows cover the main business comment lifecycle
-- [ ] Photo ingest replacement direction is implemented enough to use
-- [ ] Notification routing reaches actual destination channels or users
-- [ ] BlueFolder-native parts summaries and updates are preferred in daily use over the supplemental internal queue
+- [x] Photo ingest remains intentionally deferred outside the `V0.5.0` milestone scope
+- [x] Notification routing reaches actual destination channels or users
+- [x] BlueFolder-native parts summaries and updates are preferred as the primary active path, with the supplemental internal queue retained as support tooling
 
 ### Stability
 
-- [ ] Access model is no longer experimental
-- [ ] Mapping workflow is stable and not frequently redesigned
-- [ ] Command output format is mostly stable
-- [ ] Error paths are predictable and technician-friendly
+- [x] Access model is no longer experimental
+- [x] Mapping workflow is stable and not frequently redesigned
+- [x] Command output format is mostly stable
+- [x] Error paths are predictable and technician-friendly
+
+### Current Recommendation
+
+- `V0.5.0` is now a reasonable milestone tag for the current active scope:
+  - BlueFolder-centered parts workflows
+  - technician / dispatch / parts / admin command surfaces
+  - dispatcher triage and next-action guidance
+  - topic-based Discord notice routing
 
 ## Milestone: `V1.0.0`
 

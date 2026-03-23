@@ -10,7 +10,7 @@ Ops Hub currently focuses on:
 
 - BlueFolder job lookups and service request context
 - technician assignment views
-- dispatcher assignment and board views
+- dispatcher assignment, board, triage, and next-action views
 - BlueFolder-native parts comment/update flows
 - tracked internal parts queue workflows where supplemental coordination is useful
 - admin/debug visibility for runtime, config, mappings, and service state
@@ -49,6 +49,8 @@ Dispatch / admin:
 - `/tech_assignments`
 - `/tech_job`
 - `/dispatch_board`
+- `/dispatch_attention`
+- `/dispatch_next`
 
 Technician / parts / admin:
 
@@ -98,7 +100,7 @@ Admin only:
 - `/job` supports direct SR lookup
 - `/job` also supports mapped self-context when no reference is provided
 - `/assignments` shows the current mapped technician assignment view
-- dispatch has dedicated one-tech and team-board views
+- dispatch has dedicated one-tech, team-board, triage, and next-action views
 
 ### BlueFolder-Native Parts Flow
 
@@ -115,6 +117,12 @@ Ops Hub supports the parts comment/update lifecycle directly against BlueFolder:
 - `/part_ready`
 
 This aligns the bot with the real business workflow instead of forcing a separate parallel system.
+
+The BlueFolder-native path also supports:
+
+- normalized lifecycle stage summaries
+- recommended next-action guidance
+- dispatcher attention filtering by stage or technician
 
 ### Supplemental Internal Parts Queue
 
@@ -150,6 +158,11 @@ To enable BlueFolder integration, set:
 - `OPS_HUB_BLUEFOLDER_API_PATH`
 - `OPS_HUB_BLUEFOLDER_API_KEY`
 - either `OPS_HUB_BLUEFOLDER_ACCOUNT_NAME` or `OPS_HUB_BLUEFOLDER_BASE_URL`
+
+To enable Discord notice routing, optionally set:
+
+- `OPS_HUB_NOTIFICATION_CHANNEL_ID` for a default notice channel
+- `OPS_HUB_NOTIFICATION_CHANNEL_MAP` to route topic families like `parts` or `dispatch` to specific channels
 
 ## Project Layout
 
