@@ -52,6 +52,9 @@ def build_container(settings: Settings) -> ServiceContainer:
         api_key=settings.bluefolder_api_key,
         account_name=settings.bluefolder_account_name,
         base_url=settings.bluefolder_base_url,
+        host_header=settings.bluefolder_host_header,
+        verify_ssl=settings.bluefolder_verify_ssl,
+        timeout_seconds=settings.bluefolder_timeout_seconds,
     )
     parts_adapter = PartsCannonAdapter(base_path=settings.parts_cannon_project_path)
     parts_request_store = PartsRequestStore(

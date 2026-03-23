@@ -27,6 +27,9 @@ class BlueFolderAdapter:
     api_key: str | None = None
     account_name: str | None = None
     base_url: str | None = None
+    host_header: str | None = None
+    verify_ssl: bool | None = None
+    timeout_seconds: float | None = None
     parts_comment_keywords: tuple[str, ...] = (
         "part",
         "tracking",
@@ -106,6 +109,9 @@ class BlueFolderAdapter:
             api_key=self.api_key,
             account_name=self.account_name,
             base_url=self.base_url,
+            host_header=self.host_header,
+            verify_ssl=self.verify_ssl,
+            timeout_seconds=self.timeout_seconds,
         ):
             try:
                 client = client_class(base_url=(self.base_url or None))
@@ -152,6 +158,9 @@ class BlueFolderAdapter:
                 api_key=self.api_key,
                 account_name=self.account_name,
                 base_url=self.base_url,
+                host_header=self.host_header,
+                verify_ssl=self.verify_ssl,
+                timeout_seconds=self.timeout_seconds,
             ):
                 try:
                     client = client_class(base_url=(self.base_url or None))
@@ -368,6 +377,9 @@ class BlueFolderAdapter:
             api_key=self.api_key,
             account_name=self.account_name,
             base_url=self.base_url,
+            host_header=self.host_header,
+            verify_ssl=self.verify_ssl,
+            timeout_seconds=self.timeout_seconds,
         ):
             client = client_class(base_url=(self.base_url or None))
         return client, resolved_path
@@ -412,11 +424,22 @@ class _temporary_sys_path:
 class _temporary_bluefolder_env:
     """Context manager for configuring the shared BlueFolder client safely."""
 
-    def __init__(self, api_key: str | None, account_name: str | None, base_url: str | None) -> None:
+    def __init__(
+        self,
+        api_key: str | None,
+        account_name: str | None,
+        base_url: str | None,
+        host_header: str | None,
+        verify_ssl: bool | None,
+        timeout_seconds: float | None,
+    ) -> None:
         self.values = {
             "BLUEFOLDER_API_KEY": api_key or "",
             "BLUEFOLDER_ACCOUNT_NAME": account_name or "",
             "BLUEFOLDER_BASE_URL": base_url or "",
+            "BLUEFOLDER_HOST_HEADER": host_header or "",
+            "BLUEFOLDER_VERIFY_SSL": "" if verify_ssl is None else str(verify_ssl).lower(),
+            "BLUEFOLDER_TIMEOUT_SECONDS": "" if timeout_seconds is None else str(timeout_seconds),
         }
         self.previous: dict[str, str | None] = {}
 

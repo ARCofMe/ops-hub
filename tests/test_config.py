@@ -176,6 +176,27 @@ def test_validation_errors_reject_non_positive_notification_channel_map_values()
     assert "OPS_HUB_NOTIFICATION_CHANNEL_MAP values must contain only positive Discord channel IDs." in errors
 
 
+def test_blank_optional_settings_values_are_treated_as_unset() -> None:
+    settings = Settings(
+        discord_token="token",
+        guild_id="",
+        photo_ingest_channel_id="",
+        notification_channel_id="",
+        bluefolder_timeout_seconds="",
+        notification_channel_map="",
+        technician_user_ids="",
+        technician_bluefolder_user_map="",
+    )
+
+    assert settings.guild_id is None
+    assert settings.photo_ingest_channel_id is None
+    assert settings.notification_channel_id is None
+    assert settings.bluefolder_timeout_seconds is None
+    assert settings.notification_channel_map == {}
+    assert settings.technician_user_ids == []
+    assert settings.technician_bluefolder_user_map == {}
+
+
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:
     settings = _settings(bluefolder_api_key="key")
 
@@ -198,7 +219,7 @@ def test_validation_errors_require_bluefolder_key_with_account() -> None:
     )
 
 
-def test_validation_errors_reject_bluefolder_account_and_base_url_together() -> None:
+def test_validation_errors_allow_bluefolder_account_and_base_url_together() -> None:
     settings = _settings(
         bluefolder_api_key="key",
         bluefolder_account_name="acme",
@@ -207,7 +228,4 @@ def test_validation_errors_reject_bluefolder_account_and_base_url_together() -> 
 
     errors = settings.validation_errors()
 
-    assert (
-        "Set either OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL, not both."
-        in errors
-    )
+    assert errors == []

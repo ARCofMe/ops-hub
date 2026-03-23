@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,6 +34,9 @@ class Settings(BaseSettings):
     bluefolder_api_key: str | None = None
     bluefolder_account_name: str | None = None
     bluefolder_base_url: str | None = None
+    bluefolder_host_header: str | None = None
+    bluefolder_verify_ssl: bool | None = None
+    bluefolder_timeout_seconds: float | None = None
     bluebot_discord_extension_path: str | None = None
     photo_ingest_project_path: str | None = None
     parts_cannon_project_path: str | None = None
@@ -49,6 +54,62 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_blank_values(cls, data: Any) -> Any:
+        """Treat blank optional env values as unset instead of failing to parse."""
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        list_fields = {
+            "admin_user_ids",
+            "admin_role_ids",
+            "technician_user_ids",
+            "technician_role_ids",
+            "parts_user_ids",
+            "parts_role_ids",
+            "dispatcher_user_ids",
+            "dispatcher_role_ids",
+            "operator_user_ids",
+            "operator_role_ids",
+        }
+        map_fields = {
+            "technician_bluefolder_user_map",
+            "notification_channel_map",
+            "operator_bluefolder_user_map",
+        }
+        optional_scalar_fields = {
+            "guild_id",
+            "technician_mapping_file",
+            "operator_mapping_file",
+            "parts_request_file",
+            "notification_channel_id",
+            "photo_ingest_channel_id",
+            "bluefolder_api_path",
+            "bluefolder_api_key",
+            "bluefolder_account_name",
+            "bluefolder_base_url",
+            "bluefolder_host_header",
+            "bluefolder_verify_ssl",
+            "bluefolder_timeout_seconds",
+            "bluebot_discord_extension_path",
+            "photo_ingest_project_path",
+            "parts_cannon_project_path",
+            "dispatch_project_path",
+        }
+
+        for field in list_fields:
+            if normalized.get(field) == "":
+                normalized[field] = []
+        for field in map_fields:
+            if normalized.get(field) == "":
+                normalized[field] = {}
+        for field in optional_scalar_fields:
+            if normalized.get(field) == "":
+                normalized[field] = None
+        return normalized
 
     @model_validator(mode="after")
     def apply_operator_compatibility(self) -> Settings:
@@ -122,11 +183,6 @@ class Settings(BaseSettings):
         bluefolder_account = (self.bluefolder_account_name or "").strip()
         bluefolder_base_url = (self.bluefolder_base_url or "").strip()
 
-        if bluefolder_account and bluefolder_base_url:
-            errors.append(
-                "Set either OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL, not both."
-            )
-
         if bluefolder_key and not (bluefolder_account or bluefolder_base_url):
             errors.append(
                 "OPS_HUB_BLUEFOLDER_API_KEY requires OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL."
@@ -136,6 +192,9 @@ class Settings(BaseSettings):
             errors.append(
                 "OPS_HUB_BLUEFOLDER_ACCOUNT_NAME or OPS_HUB_BLUEFOLDER_BASE_URL requires OPS_HUB_BLUEFOLDER_API_KEY."
             )
+
+        if self.bluefolder_timeout_seconds is not None and float(self.bluefolder_timeout_seconds) <= 0:
+            errors.append("OPS_HUB_BLUEFOLDER_TIMEOUT_SECONDS must be greater than 0 when set.")
 
         return errors
 
