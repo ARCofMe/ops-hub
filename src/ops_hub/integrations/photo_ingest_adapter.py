@@ -119,6 +119,7 @@ class PhotoIngestAdapter:
                 compressed_name,
                 base64.b64encode(compressed_bytes).decode("ascii"),
                 description=description,
+                content_type="image/jpeg",
             )
         except Exception as exc:
             logger.exception("BlueFolder attachment upload failed for SR %s", sr_id)

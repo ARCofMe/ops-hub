@@ -128,10 +128,11 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
             LAST_UPLOAD = {}
 
             class _Attachments:
-                def add_to_service_request(self, service_request_id, file_name, file_data_base64, description=""):
+                def add_to_service_request(self, service_request_id, file_name, file_data_base64, description="", content_type="application/octet-stream"):
                     LAST_UPLOAD["service_request_id"] = service_request_id
                     LAST_UPLOAD["file_name"] = file_name
                     LAST_UPLOAD["description"] = description
+                    LAST_UPLOAD["content_type"] = content_type
                     LAST_UPLOAD["size"] = len(base64.b64decode(file_data_base64))
                     return {"ok": True}
 
@@ -175,6 +176,7 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
     assert LAST_UPLOAD["service_request_id"] == 12345
     assert LAST_UPLOAD["file_name"] == "photo.jpg"
     assert "Discord user 99" in LAST_UPLOAD["description"]
+    assert LAST_UPLOAD["content_type"] == "image/jpeg"
     assert LAST_UPLOAD["size"] > 0
 
 
