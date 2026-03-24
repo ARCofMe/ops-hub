@@ -12,6 +12,7 @@ dependencies = [
     "discord.py>=2.4,<3",
     "pydantic-settings>=2.4,<3",
     "python-dotenv>=1.0,<2",
+    "requests>=2.32,<3",
 ]
 
 [project.optional-dependencies]
@@ -24,4 +25,3 @@ ops-hub = "ops_hub.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
