@@ -64,6 +64,37 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.dispatch_service.lookup_assignments(request)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="route_map", description="Show today's route as an inline map preview.")
+    @app_commands.describe(
+        bluefolder_user_id="Optional BlueFolder user id. Dispatch/Admin can override; technicians use their mapping by default."
+    )
+    async def route_map(
+        self,
+        interaction: discord.Interaction,
+        bluefolder_user_id: int | None = None,
+    ) -> None:
+        """Show a route preview map for the current day's assignments."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_job_commands(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        if bluefolder_user_id is not None and not (identity.is_dispatcher or identity.is_admin):
+            raise app_commands.CheckFailure("Only dispatch or admin can request another user's route map.")
+
+        request = JobLookupRequest(
+            reference=None,
+            requested_by_user_id=interaction.user.id,
+            technician_bluefolder_user_id=identity.bluefolder_user_id,
+            target_bluefolder_user_id=bluefolder_user_id,
+            requester_is_admin=identity.is_admin,
+        )
+        await interaction.response.defer(ephemeral=True)
+        result = await self.bot.container.dispatch_service.lookup_route_map(request)
+        embed = None
+        if result.image_url:
+            embed = discord.Embed(title="Route Preview")
+            embed.set_image(url=result.image_url)
+        await interaction.followup.send(result.message, embed=embed, ephemeral=True)
+
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
     async def part(self, interaction: discord.Interaction, reference: str) -> None:

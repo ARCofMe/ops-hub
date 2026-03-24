@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 from types import TracebackType
+from urllib.parse import quote_plus
 
 from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
@@ -217,6 +218,69 @@ class DispatchAdapter:
                 exc,
             )
             return None
+
+    async def build_route_map_urls(
+        self,
+        stops: list[dict[str, str]],
+    ) -> tuple[str | None, str | None]:
+        """Build a route link and optional static image URL for a list of stops."""
+        if not stops:
+            return None, None
+
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        env_values = self._load_dispatch_project_env(resolved_path)
+        default_origin = env_values.get("DEFAULT_ORIGIN") or None
+        google_maps_api_key = env_values.get("GOOGLE_MAPS_API_KEY") or None
+
+        addresses = [stop["address"] for stop in stops if stop.get("address")]
+        if not addresses:
+            return None, None
+
+        route_points = [default_origin, *addresses] if default_origin else addresses
+        route_url = "https://www.google.com/maps/dir/" + "/".join(
+            quote_plus(point) for point in route_points if point
+        )
+
+        if not google_maps_api_key:
+            return route_url, None
+
+        image_stops = stops[:8]
+        params: list[str] = ["size=640x360", "scale=2", "maptype=roadmap"]
+        if default_origin:
+            params.append(f"markers=color:green%7Clabel:O%7C{quote_plus(default_origin)}")
+        for index, stop in enumerate(image_stops, start=1):
+            params.append(
+                f"markers=color:red%7Clabel:{index}%7C{quote_plus(stop['address'])}"
+            )
+
+        path_points = ([default_origin] if default_origin else []) + [stop["address"] for stop in image_stops]
+        if len(path_points) >= 2:
+            encoded_path = "%7C".join(quote_plus(point) for point in path_points)
+            params.append(f"path=color:0x3367d6ff%7Cweight:5%7C{encoded_path}")
+
+        params.append(f"key={quote_plus(google_maps_api_key)}")
+        image_url = "https://maps.googleapis.com/maps/api/staticmap?" + "&".join(params)
+        return route_url, image_url
+
+    def _load_dispatch_project_env(self, resolved_path: Path | None) -> dict[str, str]:
+        """Load selected env values from the dispatch project .env when available."""
+        if resolved_path is None:
+            return {}
+        env_path = resolved_path / ".env"
+        if not env_path.exists():
+            return {}
+
+        values: dict[str, str] = {}
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            cleaned = value.strip()
+            if " #" in cleaned:
+                cleaned = cleaned.split(" #", 1)[0].rstrip()
+            values[key.strip()] = cleaned
+        return values
 
     def _dispatch_runtime_context(self, resolved_path: Path) -> "_temporary_dispatch_context":
         """Build the shared runtime context for dispatch wrapper imports and calls."""

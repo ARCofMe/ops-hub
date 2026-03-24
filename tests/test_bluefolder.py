@@ -172,6 +172,94 @@ def test_dispatch_service_uses_bluefolder_assignments_when_dispatch_path_is_miss
     assert "`SR-101` Washer repair [start 11:00 AM]" in result.message
 
 
+def test_dispatch_service_builds_route_map_preview(tmp_path: Path) -> None:
+    dispatch_project = tmp_path / "dispatch"
+    dispatch_project.mkdir()
+    (dispatch_project / ".env").write_text(
+        "GOOGLE_MAPS_API_KEY=test-google-key\nDEFAULT_ORIGIN=South Paris, ME\n",
+        encoding="utf-8",
+    )
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _Assignments:
+                def list_for_user_range(self, user_id, start_date, end_date, date_range_type=None):
+                    return [
+                        {"serviceRequestId": "100", "start": "2026-03-24T08:00:00"},
+                        {"serviceRequestId": "101", "start": "2026-03-24T11:00:00"},
+                    ]
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = (
+                        "Dryer repair" if service_request_id == 100 else "Washer repair"
+                    )
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: str, location_id: str):
+                    root = ET.Element("response")
+                    location = ET.SubElement(root, "customerLocation")
+                    ET.SubElement(location, "addressStreet").text = (
+                        "123 Main St" if customer_id == "42" else "44 Oak St"
+                    )
+                    ET.SubElement(location, "addressCity").text = (
+                        "Portland" if customer_id == "42" else "Lewiston"
+                    )
+                    ET.SubElement(location, "addressState").text = "ME"
+                    ET.SubElement(location, "addressPostalCode").text = (
+                        "04101" if customer_id == "42" else "04240"
+                    )
+                    return root
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.assignments = _Assignments()
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=str(dispatch_project)),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_route_map(
+            JobLookupRequest(
+                reference=None,
+                requested_by_user_id=1,
+                technician_bluefolder_user_id=13051,
+            )
+        )
+    )
+
+    assert "**Route Map for BlueFolder user `13051`**" in result.message
+    assert "Assignments considered: `2`" in result.message
+    assert "Mappable stops: `2`" in result.message
+    assert "Open route: https://www.google.com/maps/dir/South+Paris%2C+ME/" in result.message
+    assert result.image_url is not None
+    assert "maps.googleapis.com/maps/api/staticmap" in result.image_url
+
+
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()

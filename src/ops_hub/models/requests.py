@@ -64,6 +64,15 @@ class CommandResult:
 
 
 @dataclass(slots=True)
+class RouteMapResult:
+    """User-facing route preview payload with optional map assets."""
+
+    message: str
+    route_url: str | None = None
+    image_url: str | None = None
+
+
+@dataclass(slots=True)
 class NotificationRecord:
     """A single notification attempt captured by the notification service."""
 

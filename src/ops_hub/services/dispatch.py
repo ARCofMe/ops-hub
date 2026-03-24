@@ -11,6 +11,7 @@ from ops_hub.models.requests import (
     CommandResult,
     DispatchJobSummary,
     JobLookupRequest,
+    RouteMapResult,
     TechnicianMappingRecord,
 )
 from ops_hub.services.bluefolder import BlueFolderService
@@ -256,6 +257,68 @@ class DispatchService:
             lines.extend(["", f"...and {len(attention_items) - 20} more attention job(s)"])
         return CommandResult(message="\n".join(lines))
 
+    async def lookup_route_map(self, request: JobLookupRequest) -> RouteMapResult:
+        """Return an inline route preview for the current technician/day."""
+        target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id
+        if target_user_id is None:
+            return RouteMapResult(
+                message="Route map lookup requires a mapped BlueFolder user. Add a technician mapping first."
+            )
+
+        assignments = await self._assignments_for_user(target_user_id)
+        technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
+        if not assignments:
+            return RouteMapResult(message=f"No current assignments were found for {technician_label}.")
+
+        stops: list[dict[str, str]] = []
+        missing_address_count = 0
+        for assignment in assignments[:10]:
+            sr_id = assignment.get("serviceRequestId")
+            if not isinstance(sr_id, str) or not sr_id.strip():
+                continue
+            summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+            if not summary.available or not summary.address:
+                missing_address_count += 1
+                continue
+            address = self._format_summary_address(summary)
+            if not address:
+                missing_address_count += 1
+                continue
+            stops.append(
+                {
+                    "label": f"SR-{sr_id}",
+                    "address": address,
+                    "subject": summary.subject or assignment.get("subject") or "Service Request",
+                }
+            )
+
+        if not stops:
+            return RouteMapResult(
+                message=(
+                    f"Current assignments were found for {technician_label}, but no mappable addresses "
+                    "were available from BlueFolder."
+                )
+            )
+
+        route_url, image_url = await self.adapter.build_route_map_urls(stops)
+        lines = [
+            f"**Route Map for {technician_label}**",
+            f"Assignments considered: `{len(assignments)}`",
+            f"Mappable stops: `{len(stops)}`",
+        ]
+        if len(assignments) > len(stops):
+            lines.append(f"Skipped without address: `{missing_address_count}`")
+        if len(assignments) > 10:
+            lines.append(f"Map limited to first `{len(stops)}` of `{len(assignments)}` assignments.")
+
+        preview_stops = stops[:8]
+        for index, stop in enumerate(preview_stops, start=1):
+            lines.append(f"{index}. `{stop['label']}` {stop['subject']}")
+        if route_url:
+            lines.extend(["", f"Open route: {route_url}"])
+
+        return RouteMapResult(message="\n".join(lines), route_url=route_url, image_url=image_url)
+
     def _format_job_message(
         self,
         request: JobLookupRequest,
@@ -413,3 +476,12 @@ class DispatchService:
         elif issue_line:
             result.append(issue_line)
         return result
+
+    def _format_summary_address(self, summary: BlueFolderJobSummary) -> str | None:
+        """Render a single-line service-request address for route mapping."""
+        if not summary.address:
+            return None
+        trailing = " ".join(
+            part for part in [summary.city, summary.state, summary.postal_code] if part
+        ).strip()
+        return ", ".join(part for part in [summary.address, trailing] if part)
