@@ -315,20 +315,27 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     (bluefolder_package / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
                     if service_request_id == 100:
-                        return [
-                            {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False},
-                        ]
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 09:00", "text": "Part tracking update: UPS 123", "isVisibleToCustomer": False},
-                    ]
+                        entry = ET.SubElement(root, "serviceRequestHistory")
+                        ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                        ET.SubElement(entry, "userName").text = "Parts"
+                        ET.SubElement(entry, "comment").text = "Part ready for scheduling at 10:00 AM. Details: all parts are in."
+                    else:
+                        entry = ET.SubElement(root, "serviceRequestHistory")
+                        ET.SubElement(entry, "entryDate").text = "2026-03-22 09:00"
+                        ET.SubElement(entry, "userName").text = "Parts"
+                        ET.SubElement(entry, "comment").text = "Part tracking update: UPS 123"
+                    return root
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _Comments()
+                    self.service_requests = _ServiceRequests()
             """
         ),
         encoding="utf-8",
@@ -391,16 +398,25 @@ def test_dispatch_service_filters_dispatch_attention_by_stage_and_technician(tmp
     (bluefolder_package / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    if service_request_id == 100:
-                        return [{"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False}]
-                    return [{"author": "Parts", "dateCreated": "2026-03-22 09:00", "text": "Part received at 9:00 AM. Details: received at shop.", "isVisibleToCustomer": False}]
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00" if service_request_id == 100 else "2026-03-22 09:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = (
+                        "Part ready for scheduling at 10:00 AM. Details: all parts are in."
+                        if service_request_id == 100
+                        else "Part received at 9:00 AM. Details: received at shop."
+                    )
+                    return root
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _Comments()
+                    self.service_requests = _ServiceRequests()
             """
         ),
         encoding="utf-8",
@@ -451,6 +467,14 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
                     ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
                     return root
 
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = "Part tracking update: UPS 123"
+                    return root
+
 
             class _Customers:
                 def get_location_by_id(self, customer_id: str, location_id: str):
@@ -462,24 +486,15 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
                     ET.SubElement(location, "addressPostalCode").text = "04101"
                     return root
 
-
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part tracking update: UPS 123", "isVisibleToCustomer": False},
-                    ]
-
-
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
                     self.customers = _Customers()
-                    self.comments = _Comments()
             """
-        ),
-        encoding="utf-8",
-    )
+            ),
+            encoding="utf-8",
+        )
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()
     (dispatch_package / "__init__.py").write_text("", encoding="utf-8")
@@ -655,6 +670,18 @@ def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) ->
                     ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
                     return root
 
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = "Tracking update: UPS 123"
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 09:00"
+                    ET.SubElement(entry, "userName").text = "Tech"
+                    ET.SubElement(entry, "comment").text = "General note"
+                    return root
+
 
             class _Customers:
                 def get_location_by_id(self, customer_id: str, location_id: str):
@@ -666,21 +693,11 @@ def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) ->
                     ET.SubElement(location, "addressPostalCode").text = "04101"
                     return root
 
-
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Tracking update: UPS 123", "isVisibleToCustomer": False},
-                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "General note", "isVisibleToCustomer": False},
-                    ]
-
-
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
                     self.customers = _Customers()
-                    self.comments = _Comments()
             """
         ),
         encoding="utf-8",
@@ -716,18 +733,25 @@ def test_bluefolder_service_returns_parts_brief_when_sr_lookup_fails_but_comment
                     raise RuntimeError("Invalid XML response")
 
 
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part tracking update: UPS 123", "isVisibleToCustomer": False},
-                    ]
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    raise RuntimeError("Invalid XML response")
+
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = "Part tracking update: UPS 123"
+                    return root
 
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
-                    self.comments = _Comments()
             """
         ),
         encoding="utf-8",
@@ -756,15 +780,15 @@ def test_bluefolder_adapter_returns_no_comments_when_comment_lookup_has_invalid_
     (package_dir / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
+            class _ServiceRequests:
+                def get_history(self, service_request_id: int):
                     raise RuntimeError("Invalid XML response")
 
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _Comments()
+                    self.service_requests = _ServiceRequests()
             """
         ),
         encoding="utf-8",
@@ -798,18 +822,22 @@ def test_bluefolder_service_returns_issue_stage_when_only_issue_comments_exist(t
                     return root
 
 
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "Missing part reported at 9:00 AM. Details: belt.", "isVisibleToCustomer": False},
-                    ]
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 09:00"
+                    ET.SubElement(entry, "userName").text = "Tech"
+                    ET.SubElement(entry, "comment").text = "Missing part reported at 9:00 AM. Details: belt."
+                    return root
 
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
-                    self.comments = _Comments()
             """
         ),
         encoding="utf-8",
@@ -846,17 +874,25 @@ def test_bluefolder_service_returns_dispatch_next_action(tmp_path: Path) -> None
                     ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
                     return root
 
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Part ready for scheduling at 10:00 AM. Details: all parts are in.", "isVisibleToCustomer": False},
-                    ]
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    return root
+
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = "Part ready for scheduling at 10:00 AM. Details: all parts are in."
+                    return root
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
                     self.service_requests = _ServiceRequests()
-                    self.comments = _Comments()
             """
         ),
         encoding="utf-8",
@@ -883,18 +919,29 @@ def test_bluefolder_service_lists_parts_notes_from_bluefolder_comments(tmp_path:
     (package_dir / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
-                def list_for_service_request(self, service_request_id: int):
-                    return [
-                        {"author": "Parts", "dateCreated": "2026-03-22 10:00", "text": "Tracking update: UPS 123", "isVisibleToCustomer": False},
-                        {"author": "Tech", "dateCreated": "2026-03-22 09:00", "text": "Missing part reported at 9:00 AM. Details: belt.", "isVisibleToCustomer": False},
-                        {"author": "Tech", "dateCreated": "2026-03-22 08:00", "text": "Unrelated note", "isVisibleToCustomer": False},
-                    ]
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_history(self, service_request_id: int):
+                    root = ET.Element("response")
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 10:00"
+                    ET.SubElement(entry, "userName").text = "Parts"
+                    ET.SubElement(entry, "comment").text = "Tracking update: UPS 123"
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 09:00"
+                    ET.SubElement(entry, "userName").text = "Tech"
+                    ET.SubElement(entry, "comment").text = "Missing part reported at 9:00 AM. Details: belt."
+                    entry = ET.SubElement(root, "serviceRequestHistory")
+                    ET.SubElement(entry, "entryDate").text = "2026-03-22 08:00"
+                    ET.SubElement(entry, "userName").text = "Tech"
+                    ET.SubElement(entry, "comment").text = "Unrelated note"
+                    return root
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _Comments()
+                    self.service_requests = _ServiceRequests()
             """
         ),
         encoding="utf-8",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib
+import html
 import logging
 import os
 from pathlib import Path
@@ -202,29 +203,35 @@ class BlueFolderAdapter:
         )
 
     async def get_recent_parts_comments(self, sr_id: int, *, limit: int = 6) -> list[PartsCommentRecord]:
-        """Return recent service-request comments that look parts-related."""
+        """Return recent service-request history entries that look parts-related."""
         client, _resolved_path = self._build_client()
         if client is None:
             return []
         try:
-            comments = client.comments.list_for_service_request(sr_id)
+            history_xml = client.service_requests.get_history(sr_id)
         except Exception as exc:
             if isinstance(exc, RuntimeError) and str(exc) == "Invalid XML response":
-                logger.warning("BlueFolder comment lookup unavailable for SR %s: %s", sr_id, exc)
+                logger.warning("BlueFolder history lookup unavailable for SR %s: %s", sr_id, exc)
             else:
-                logger.exception("BlueFolder comment lookup failed for SR %s", sr_id)
+                logger.exception("BlueFolder history lookup failed for SR %s", sr_id)
             return []
 
         filtered = [
             PartsCommentRecord(
-                author=comment.get("author"),
-                date_created=comment.get("dateCreated"),
-                text=str(comment.get("text") or ""),
-                is_visible_to_customer=bool(comment.get("isVisibleToCustomer")),
+                author=entry.findtext("userName"),
+                date_created=entry.findtext("entryDate"),
+                text=self._clean_html_text(
+                    entry.findtext("comment") or entry.findtext("description")
+                )
+                or "",
+                is_visible_to_customer=False,
             )
-            for comment in comments
-            if self._is_parts_comment(str(comment.get("text") or ""))
+            for entry in history_xml.findall(".//serviceRequestHistory")
+            if self._is_parts_comment(
+                self._clean_html_text(entry.findtext("comment") or entry.findtext("description")) or ""
+            )
         ]
+        filtered = [item for item in filtered if item.text]
         filtered.sort(key=lambda item: item.date_created or "", reverse=True)
         return filtered[:limit]
 
@@ -429,6 +436,28 @@ class BlueFolderAdapter:
         last_name = str(row.get("lastName") or "").strip()
         name = " ".join(part for part in [first_name, last_name] if part).strip() or f"Tech {user_id}"
         return user_id, name
+
+    def _clean_html_text(self, value: str | None) -> str | None:
+        """Normalize simple BlueFolder HTML/text content for Discord display."""
+        if value is None:
+            return None
+
+        text = str(value)
+        text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</li\s*>", "\n", text)
+        text = re.sub(r"(?i)<li\s*>", "- ", text)
+        text = re.sub(r"(?i)</p\s*>", "\n\n", text)
+        text = re.sub(r"(?i)<p\s*>", "", text)
+        text = re.sub(r"(?i)</?ul\s*>", "", text)
+        text = re.sub(r"(?i)</?ol\s*>", "", text)
+        text = re.sub(r"(?i)</?label\s*>", "", text)
+        text = re.sub(r"<[^>]+>", "", text)
+        text = html.unescape(text)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = "\n".join(line.strip() for line in text.splitlines())
+        text = text.strip()
+        return text or None
 
     def _resolve_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""
