@@ -208,8 +208,11 @@ class BlueFolderAdapter:
             return []
         try:
             comments = client.comments.list_for_service_request(sr_id)
-        except Exception:
-            logger.exception("BlueFolder comment lookup failed for SR %s", sr_id)
+        except Exception as exc:
+            if isinstance(exc, RuntimeError) and str(exc) == "Invalid XML response":
+                logger.warning("BlueFolder comment lookup unavailable for SR %s: %s", sr_id, exc)
+            else:
+                logger.exception("BlueFolder comment lookup failed for SR %s", sr_id)
             return []
 
         filtered = [

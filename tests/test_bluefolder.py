@@ -749,6 +749,37 @@ def test_bluefolder_service_returns_parts_brief_when_sr_lookup_fails_but_comment
     assert "Recommended next action: Track shipment progress and prepare dispatch for receipt or scheduling follow-up." in result.message
 
 
+def test_bluefolder_adapter_returns_no_comments_when_comment_lookup_has_invalid_xml(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Comments:
+                def list_for_service_request(self, service_request_id: int):
+                    raise RuntimeError("Invalid XML response")
+
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.comments = _Comments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_recent_parts_comments(100))
+
+    assert result == []
+
+
 def test_bluefolder_service_returns_issue_stage_when_only_issue_comments_exist(tmp_path: Path) -> None:
     package_dir = tmp_path / "bluefolder_api"
     package_dir.mkdir()
