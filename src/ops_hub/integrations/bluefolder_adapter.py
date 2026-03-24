@@ -158,6 +158,14 @@ class BlueFolderAdapter:
         city: str | None = None
         state: str | None = None
         postal_code: str | None = None
+        service_request_status = (
+            sr.findtext("serviceRequestStatus")
+            or sr.findtext("serviceRequestStatusName")
+            or sr.findtext("status")
+            or sr.findtext("statusName")
+            or sr.findtext(".//status")
+            or sr.findtext(".//statusName")
+        )
 
         if customer_id and customer_location_id:
             with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
@@ -200,6 +208,7 @@ class BlueFolderAdapter:
             city=city,
             state=state,
             postal_code=postal_code,
+            service_request_status=service_request_status,
         )
 
     async def get_recent_parts_comments(self, sr_id: int, *, limit: int = 6) -> list[PartsCommentRecord]:

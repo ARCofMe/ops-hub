@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     photo_mailbox_imap_use_ssl: bool = True
     photo_mailbox_folder: str = "INBOX"
     photo_mailbox_search_days: int = 21
+    photo_required_sr_statuses: list[str] = []
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
 
@@ -94,6 +95,7 @@ class Settings(BaseSettings):
             "parts_role_ids",
             "dispatcher_user_ids",
             "dispatcher_role_ids",
+            "photo_required_sr_statuses",
             "operator_user_ids",
             "operator_role_ids",
         }

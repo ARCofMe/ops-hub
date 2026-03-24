@@ -168,6 +168,7 @@ class BlueFolderJobSummary:
     city: str | None = None
     state: str | None = None
     postal_code: str | None = None
+    service_request_status: str | None = None
 
 
 @dataclass(slots=True)
@@ -252,6 +253,19 @@ class PhotoComplianceSummary:
     message: str
     matched_records: list[ArchivedPhotoRecord]
     total_photos: int
+
+
+@dataclass(slots=True)
+class PhotoReminderEvaluation:
+    """Decision payload for a photo reminder check."""
+
+    sr_id: int
+    service_request_status: str | None
+    matched_required_status: bool
+    missing_photos: bool
+    technician_discord_user_id: int | None
+    should_notify: bool
+    reason: str
 
 
 @dataclass(slots=True)

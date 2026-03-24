@@ -127,6 +127,9 @@ def build_container(settings: Settings) -> ServiceContainer:
             settings=settings,
             adapter=photo_adapter,
             feature_flags=photo_feature_flags_service,
+            bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
+            technician_directory_service=technician_directory_service,
+            notifications=notification_service,
         ),
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,

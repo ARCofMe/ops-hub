@@ -143,6 +143,8 @@ def test_build_command_access_describes_current_scopes() -> None:
     assert "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only" in result
     assert "`/job`, `/assignments`: technicians, dispatchers, admins" in result
     assert "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)" in result
+    assert "`/photo_status`: technicians, parts, dispatchers, admins (if mailbox scan is enabled)" in result
+    assert "`/photo_reminder_check`: dispatchers, admins" in result
     assert "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins" in result
     assert "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins" in result
     assert "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`: dispatchers, admins" in result

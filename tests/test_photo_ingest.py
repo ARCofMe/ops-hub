@@ -10,6 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 from ops_hub.core.config import Settings
+from ops_hub.models.requests import BlueFolderJobSummary, CommandResult
 from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
 from ops_hub.models.requests import PhotoAttachmentPayload, PhotoIngestMessage
 from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
@@ -347,6 +348,110 @@ def test_photo_ingest_service_reports_disabled_mailbox_scan() -> None:
     result = asyncio.run(service.get_photo_status(12345))
 
     assert result.message == "Photo mailbox scan is currently disabled."
+
+
+def test_photo_ingest_service_evaluates_missing_photo_reminder() -> None:
+    class _Adapter(PhotoIngestAdapter):
+        async def get_photo_compliance_summary(self, sr_id: int):
+            from ops_hub.models.requests import PhotoComplianceSummary
+
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="missing",
+                message="No archived photo email was found for SR-12345.",
+                matched_records=[],
+                total_photos=0,
+            )
+
+    class _BlueFolderStub:
+        async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="live_read",
+                message="ok",
+                service_request_id="12345",
+                subject="Washer repair",
+                service_request_status="Completed",
+            )
+
+        async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str]]:
+            if user_id == 13051:
+                return [{"id": "12345"}]
+            return []
+
+    class _NotificationsStub:
+        def __init__(self) -> None:
+            self.messages: list[tuple[str, str]] = []
+
+        async def send_notice(self, *, topic: str, message: str) -> None:
+            self.messages.append((topic, message))
+
+    service = PhotoIngestService(
+        settings=_settings(photo_required_sr_statuses=["Completed"]),
+        adapter=_Adapter(),
+        feature_flags=_feature_flags(photo_mailbox_scan=True),
+        bluefolder_service=_BlueFolderStub(),  # type: ignore[arg-type]
+        technician_directory_service=type(
+            "_DirectoryStub",
+            (),
+            {"reverse_mappings": lambda self: {13051: 42}},
+        )(),
+        notifications=_NotificationsStub(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(service.evaluate_photo_reminder(12345, send_notice=True))
+
+    assert "Service request status: `Completed`" in result.message
+    assert "Photo-required status match: `yes`" in result.message
+    assert "Should notify: `yes`" in result.message
+    assert "Reminder notice sent." in result.message
+
+
+def test_photo_ingest_service_skips_reminder_when_status_not_required() -> None:
+    class _Adapter(PhotoIngestAdapter):
+        async def get_photo_compliance_summary(self, sr_id: int):
+            from ops_hub.models.requests import PhotoComplianceSummary
+
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="missing",
+                message="No archived photo email was found for SR-12345.",
+                matched_records=[],
+                total_photos=0,
+            )
+
+    class _BlueFolderStub:
+        async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="live_read",
+                message="ok",
+                service_request_id="12345",
+                subject="Washer repair",
+                service_request_status="In Progress",
+            )
+
+        async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str]]:
+            return [{"id": "12345"}]
+
+    service = PhotoIngestService(
+        settings=_settings(photo_required_sr_statuses=["Completed"]),
+        adapter=_Adapter(),
+        feature_flags=_feature_flags(photo_mailbox_scan=True),
+        bluefolder_service=_BlueFolderStub(),  # type: ignore[arg-type]
+        technician_directory_service=type(
+            "_DirectoryStub",
+            (),
+            {"reverse_mappings": lambda self: {13051: 42}},
+        )(),
+    )
+
+    result = asyncio.run(service.evaluate_photo_reminder(12345))
+
+    assert "Photo-required status match: `no`" in result.message
+    assert "Should notify: `no`" in result.message
 
 
 def _mk_email(subject: str, attachment_count: int) -> bytes:

@@ -799,6 +799,45 @@ def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) 
     assert result.city == "Portland"
     assert result.state == "ME"
     assert result.postal_code == "04101"
+    assert result.service_request_status is None
+
+
+def test_bluefolder_adapter_reads_service_request_status_when_present(tmp_path: Path) -> None:
+    package_dir = tmp_path / "bluefolder_api"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = f"SR description {service_request_id}"
+                    ET.SubElement(sr, "status").text = "Completed"
+                    return root
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = object()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_job_summary("SR-100"))
+
+    assert result.integration_status == "live_read"
+    assert result.service_request_status == "Completed"
 
 
 def test_bluefolder_service_returns_parts_brief_from_comments(tmp_path: Path) -> None:

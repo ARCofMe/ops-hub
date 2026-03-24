@@ -280,6 +280,7 @@ class AdminCog(commands.Cog):
                 "`/job`, `/assignments`: technicians, dispatchers, admins",
                 "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)",
                 "`/photo_status`: technicians, parts, dispatchers, admins (if mailbox scan is enabled)",
+                "`/photo_reminder_check`: dispatchers, admins",
                 "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins",
                 "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins",
                 "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`: dispatchers, admins",

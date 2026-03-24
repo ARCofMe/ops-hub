@@ -161,6 +161,29 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.photo_ingest_service.get_photo_status(sr_id)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="photo_reminder_check", description="Evaluate whether a missing-photo reminder should be sent.")
+    @app_commands.describe(
+        status_override="Optional SR status override when testing reminder policy.",
+        send_notice="Send the reminder notice if the policy says it should fire.",
+    )
+    async def photo_reminder_check(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        status_override: str | None = None,
+        send_notice: bool = False,
+    ) -> None:
+        """Evaluate the missing-photo reminder policy for an SR."""
+        identity = self._resolve_identity(interaction)
+        if not (identity.is_admin or identity.is_dispatcher):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.photo_ingest_service.evaluate_photo_reminder(
+            sr_id,
+            status_override=status_override,
+            send_notice=send_notice,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
     async def part(self, interaction: discord.Interaction, reference: str) -> None:
