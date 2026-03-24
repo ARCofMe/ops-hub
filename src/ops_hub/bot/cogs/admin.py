@@ -85,6 +85,37 @@ class AdminCog(commands.Cog):
         """Report command scope definitions for admins/technicians/dispatchers."""
         await interaction.response.send_message(self._build_command_access(), ephemeral=True)
 
+    @app_commands.command(name="photo_features", description="Show current photo workflow feature flags.")
+    async def photo_features(self, interaction: discord.Interaction) -> None:
+        """Show effective photo feature states."""
+        await interaction.response.send_message(self._build_photo_features(), ephemeral=True)
+
+    @app_commands.command(name="set_photo_feature", description="Enable or disable a photo workflow feature.")
+    @app_commands.choices(
+        feature=[
+            app_commands.Choice(name="mdlsn_upload", value="mdlsn_upload"),
+            app_commands.Choice(name="photo_archive_handoff", value="photo_archive_handoff"),
+            app_commands.Choice(name="photo_mailbox_scan", value="photo_mailbox_scan"),
+            app_commands.Choice(name="weekly_missing_photo_notices", value="weekly_missing_photo_notices"),
+        ]
+    )
+    async def set_photo_feature(self, interaction: discord.Interaction, feature: str, enabled: bool) -> None:
+        """Persist a photo feature override."""
+        await interaction.response.send_message(self._build_set_photo_feature(feature, enabled), ephemeral=True)
+
+    @app_commands.command(name="clear_photo_feature", description="Clear a photo feature override and revert to env default.")
+    @app_commands.choices(
+        feature=[
+            app_commands.Choice(name="mdlsn_upload", value="mdlsn_upload"),
+            app_commands.Choice(name="photo_archive_handoff", value="photo_archive_handoff"),
+            app_commands.Choice(name="photo_mailbox_scan", value="photo_mailbox_scan"),
+            app_commands.Choice(name="weekly_missing_photo_notices", value="weekly_missing_photo_notices"),
+        ]
+    )
+    async def clear_photo_feature(self, interaction: discord.Interaction, feature: str) -> None:
+        """Clear a persisted photo feature override."""
+        await interaction.response.send_message(self._build_clear_photo_feature(feature), ephemeral=True)
+
     def _build_ops_status(self) -> str:
         """Render a concise runtime status summary."""
         settings = self.bot.settings
@@ -120,6 +151,7 @@ class AdminCog(commands.Cog):
             self._path_line("Parts Cannon path", settings.parts_cannon_project_path),
             self._path_line("Dispatch path", settings.dispatch_project_path),
             self._path_line("Photo ingest path", settings.photo_ingest_project_path),
+            self._path_line("Photo feature flags file", settings.photo_feature_flags_file),
         ]
         return "\n".join(lines)
 
@@ -154,6 +186,12 @@ class AdminCog(commands.Cog):
             f"Notification notices sent: `{notifications.notice_count}`",
             f"Last notification topic: `{notifications.last_topic or 'none'}`",
         ]
+        features = photo.get("features", "")
+        if features:
+            lines.append("Photo features:")
+            lines.extend(features.split(", "))
+        else:
+            lines.append("Photo features: unavailable")
         return "\n".join(lines)
 
     async def _build_recent_notices(self, limit: int = 5) -> str:
@@ -238,8 +276,9 @@ class AdminCog(commands.Cog):
         return "\n".join(
             [
                 "Command Access",
-                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`: admin only",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
                 "`/job`, `/assignments`: technicians, dispatchers, admins",
+                "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)",
                 "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins",
                 "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins",
                 "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`: dispatchers, admins",
@@ -247,6 +286,31 @@ class AdminCog(commands.Cog):
                 "`/ping`: open to anyone who can invoke the bot",
             ]
         )
+
+    def _build_photo_features(self) -> str:
+        """Render effective photo workflow feature states."""
+        lines = ["Photo Features"]
+        lines.extend(self.bot.container.photo_feature_flags_service.status_lines())
+        return "\n".join(lines)
+
+    def _build_set_photo_feature(self, feature: str, enabled: bool) -> str:
+        """Persist a photo feature override."""
+        try:
+            self.bot.container.photo_feature_flags_service.set_override(feature, enabled)
+        except ValueError as exc:
+            return str(exc)
+        state = "enabled" if enabled else "disabled"
+        return f"Photo feature `{feature}` is now `{state}`."
+
+    def _build_clear_photo_feature(self, feature: str) -> str:
+        """Clear a persisted photo feature override."""
+        try:
+            removed = self.bot.container.photo_feature_flags_service.clear_override(feature)
+        except ValueError as exc:
+            return str(exc)
+        if removed:
+            return f"Cleared photo feature override for `{feature}`."
+        return f"No override was set for `{feature}`."
 
     def _path_line(self, label: str, path_value: str | None) -> str:
         """Render a filesystem path status line."""

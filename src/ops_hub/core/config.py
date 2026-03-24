@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     photo_ingest_channel_id: int | None = None
     photo_compress_max_dimension: int = 1800
     photo_compress_jpeg_quality: int = 82
+    photo_feature_flags_file: str | None = None
+    enable_mdlsn_upload: bool = True
+    enable_photo_archive_handoff: bool = True
+    enable_photo_mailbox_scan: bool = False
+    enable_weekly_missing_photo_notices: bool = False
 
     bluefolder_api_path: str | None = None
     bluefolder_api_key: str | None = None
@@ -99,6 +104,7 @@ class Settings(BaseSettings):
             "photo_ingest_channel_id",
             "photo_compress_max_dimension",
             "photo_compress_jpeg_quality",
+            "photo_feature_flags_file",
             "bluefolder_api_path",
             "bluefolder_api_key",
             "bluefolder_account_name",

@@ -12,6 +12,7 @@ from ops_hub.models.requests import (
     PhotoIngestMessage,
     PhotoIngestResult,
 )
+from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
 
 
 @dataclass(slots=True)
@@ -20,11 +21,13 @@ class PhotoIngestService:
 
     settings: Settings
     adapter: PhotoIngestAdapter
+    feature_flags: PhotoFeatureFlagsService
 
     async def status(self) -> dict[str, str]:
         """Return placeholder photo-ingest status."""
-        # TODO: Add a Discord channel listener that wraps the current photo ingest flow.
-        return await self.adapter.healthcheck()
+        status = await self.adapter.healthcheck()
+        status["features"] = ", ".join(self.feature_flags.status_lines())
+        return status
 
     def should_process_channel(self, channel_id: int) -> bool:
         """Return whether the message channel should be handled by the listener."""
@@ -50,6 +53,8 @@ class PhotoIngestService:
         requested_by_user_id: int,
     ) -> CommandResult:
         """Attach a compressed model/serial photo to a BlueFolder service request."""
+        if not self.feature_flags.is_enabled("mdlsn_upload"):
+            return CommandResult(message="Model/serial photo upload is currently disabled.")
         result = await self.adapter.attach_photo_to_service_request(
             sr_id,
             photo=photo,
@@ -67,6 +72,8 @@ class PhotoIngestService:
         sr_subject: str | None = None,
     ) -> CommandResult:
         """Send a batch of compressed job photos to the configured archive mailbox."""
+        if not self.feature_flags.is_enabled("photo_archive_handoff"):
+            return CommandResult(message="Photo archive handoff is currently disabled.")
         result = await self.adapter.archive_photos_via_email(
             sr_id,
             photos=photos,

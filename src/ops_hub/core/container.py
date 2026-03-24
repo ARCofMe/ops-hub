@@ -16,6 +16,8 @@ from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
 from ops_hub.services.parts_cannon import PartsCannonService
+from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
+from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 
@@ -27,6 +29,7 @@ class ServiceContainer:
     settings: Settings
     notification_service: NotificationService
     technician_directory_service: TechnicianDirectoryService
+    photo_feature_flags_service: PhotoFeatureFlagsService
     bluefolder_service: BlueFolderService
     parts_cannon_service: PartsCannonService
     photo_ingest_service: PhotoIngestService
@@ -43,6 +46,17 @@ def build_container(settings: Settings) -> ServiceContainer:
         settings=settings,
         store=OperatorMappingStore(
             file_path=Path(settings.technician_mapping_file).expanduser() if settings.technician_mapping_file else None,
+        ),
+    )
+    photo_feature_flags_service = PhotoFeatureFlagsService(
+        defaults={
+            "mdlsn_upload": settings.enable_mdlsn_upload,
+            "photo_archive_handoff": settings.enable_photo_archive_handoff,
+            "photo_mailbox_scan": settings.enable_photo_mailbox_scan,
+            "weekly_missing_photo_notices": settings.enable_weekly_missing_photo_notices,
+        },
+        store=PhotoFeatureStore(
+            file_path=Path(settings.photo_feature_flags_file).expanduser() if settings.photo_feature_flags_file else None,
         ),
     )
 
@@ -94,6 +108,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         settings=settings,
         notification_service=notification_service,
         technician_directory_service=technician_directory_service,
+        photo_feature_flags_service=photo_feature_flags_service,
         bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
         parts_cannon_service=PartsCannonService(
             adapter=parts_adapter,
@@ -101,7 +116,11 @@ def build_container(settings: Settings) -> ServiceContainer:
             request_store=parts_request_store,
             technician_directory_service=technician_directory_service,
         ),
-        photo_ingest_service=PhotoIngestService(settings=settings, adapter=photo_adapter),
+        photo_ingest_service=PhotoIngestService(
+            settings=settings,
+            adapter=photo_adapter,
+            feature_flags=photo_feature_flags_service,
+        ),
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),

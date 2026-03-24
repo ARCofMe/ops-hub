@@ -11,6 +11,8 @@ from PIL import Image
 from ops_hub.core.config import Settings
 from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
 from ops_hub.models.requests import PhotoAttachmentPayload, PhotoIngestMessage
+from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
+from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 
 
@@ -31,10 +33,23 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**defaults)
 
 
+def _feature_flags(**defaults: bool) -> PhotoFeatureFlagsService:
+    return PhotoFeatureFlagsService(
+        defaults={
+            "mdlsn_upload": defaults.get("mdlsn_upload", True),
+            "photo_archive_handoff": defaults.get("photo_archive_handoff", True),
+            "photo_mailbox_scan": defaults.get("photo_mailbox_scan", False),
+            "weekly_missing_photo_notices": defaults.get("weekly_missing_photo_notices", False),
+        },
+        store=PhotoFeatureStore(),
+    )
+
+
 def test_photo_ingest_service_ignores_unconfigured_channel() -> None:
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=None),
         adapter=PhotoIngestAdapter(base_path=None),
+        feature_flags=_feature_flags(),
     )
 
     result = asyncio.run(
@@ -57,6 +72,7 @@ def test_photo_ingest_service_ignores_other_channels() -> None:
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=999),
         adapter=PhotoIngestAdapter(base_path=None),
+        feature_flags=_feature_flags(),
     )
 
     result = asyncio.run(
@@ -79,6 +95,7 @@ def test_photo_ingest_service_handles_attachment_messages_in_configured_channel(
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=123),
         adapter=PhotoIngestAdapter(base_path=None),
+        feature_flags=_feature_flags(),
     )
 
     result = asyncio.run(
@@ -131,6 +148,7 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
             bluefolder_api_key="key",
             bluefolder_account_name="acme",
         ),
+        feature_flags=_feature_flags(),
     )
 
     result = asyncio.run(
@@ -197,6 +215,7 @@ def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
                 archive_from_email="from@example.com",
                 archive_to_email="to@example.com",
             ),
+            feature_flags=_feature_flags(),
         )
 
         result = asyncio.run(
@@ -228,6 +247,42 @@ def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
     attachments = list(message.iter_attachments())
     assert len(attachments) == 2
     assert all(part.get_filename().endswith(".jpg") for part in attachments)
+
+
+def test_photo_ingest_service_respects_disabled_mdlsn_feature() -> None:
+    service = PhotoIngestService(
+        settings=_settings(),
+        adapter=PhotoIngestAdapter(),
+        feature_flags=_feature_flags(mdlsn_upload=False),
+    )
+
+    result = asyncio.run(
+        service.attach_model_serial_photo(
+            12345,
+            photo=PhotoAttachmentPayload(filename="one.png", content_type="image/png", data=_image_bytes("PNG")),
+            requested_by_user_id=7,
+        )
+    )
+
+    assert result.message == "Model/serial photo upload is currently disabled."
+
+
+def test_photo_ingest_service_respects_disabled_archive_feature() -> None:
+    service = PhotoIngestService(
+        settings=_settings(),
+        adapter=PhotoIngestAdapter(),
+        feature_flags=_feature_flags(photo_archive_handoff=False),
+    )
+
+    result = asyncio.run(
+        service.archive_job_photos(
+            12345,
+            photos=[PhotoAttachmentPayload(filename="one.png", content_type="image/png", data=_image_bytes("PNG"))],
+            requested_by_user_id=7,
+        )
+    )
+
+    assert result.message == "Photo archive handoff is currently disabled."
 
 
 def _image_bytes(image_format: str) -> bytes:
