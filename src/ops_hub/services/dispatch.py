@@ -59,7 +59,7 @@ class DispatchService:
                 message="Current assignment lookup requires a mapped BlueFolder user. Add a technician mapping first."
             )
 
-        assignments = await self.adapter.get_assignments_for_user(target_user_id)
+        assignments = await self._assignments_for_user(target_user_id)
         origin_address = await self.adapter.get_origin_for_user(target_user_id)
         technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
         if not assignments:
@@ -108,7 +108,7 @@ class DispatchService:
         active_techs = 0
         total_assignments = 0
         for record in mappings:
-            assignments = await self.adapter.get_assignments_for_user(record.bluefolder_user_id)
+            assignments = await self._assignments_for_user(record.bluefolder_user_id)
             origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
             assignment_count = len(assignments)
             total_assignments += assignment_count
@@ -173,7 +173,7 @@ class DispatchService:
         attention_items: list[str] = []
         scanned_jobs = 0
         for record in mappings:
-            assignments = await self.adapter.get_assignments_for_user(record.bluefolder_user_id)
+            assignments = await self._assignments_for_user(record.bluefolder_user_id)
             for assignment in assignments[:10]:
                 sr_id = assignment.get("serviceRequestId")
                 if sr_id in (None, ""):
@@ -367,6 +367,13 @@ class DispatchService:
                 return user_name
             return f"BlueFolder user `{bluefolder_user_id}`"
         return "Unknown technician"
+
+    async def _assignments_for_user(self, bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
+        """Load current assignments, preferring direct BlueFolder reads with a wrapper fallback."""
+        assignments = await self.bluefolder_service.get_assignments_for_user_today(bluefolder_user_id)
+        if assignments:
+            return assignments
+        return await self.adapter.get_assignments_for_user(bluefolder_user_id)
 
     def _parts_context_lines(self, parts_brief: CommandResult | None) -> list[str]:
         """Extract a compact parts snapshot from the BlueFolder parts brief."""

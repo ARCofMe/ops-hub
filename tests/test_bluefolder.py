@@ -111,6 +111,67 @@ def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Pa
     assert "`SR-101` Washer repair [Lewiston ME | PM]" in result.message
 
 
+def test_dispatch_service_uses_bluefolder_assignments_when_dispatch_path_is_missing(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _Assignments:
+                def list_for_user_range(self, user_id, start_date, end_date, date_range_type=None):
+                    return [
+                        {"serviceRequestId": "100", "start": "2026-03-24T08:00:00"},
+                        {"serviceRequestId": "101", "start": "2026-03-24T11:00:00"},
+                    ]
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = (
+                        "Dryer repair" if service_request_id == 100 else "Washer repair"
+                    )
+                    return root
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.assignments = _Assignments()
+                    self.service_requests = _ServiceRequests()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path="/does/not/exist"),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_job(
+            JobLookupRequest(
+                reference=None,
+                requested_by_user_id=1,
+                technician_bluefolder_user_id=13051,
+            )
+        )
+    )
+
+    assert "Current assignments for BlueFolder user `13051`" in result.message
+    assert "Assignment count: `2`" in result.message
+    assert "`SR-100` Dryer repair [start 2026-03-24T08:00:00]" in result.message
+    assert "`SR-101` Washer repair [start 2026-03-24T11:00:00]" in result.message
+
+
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()

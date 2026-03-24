@@ -12,7 +12,7 @@ import re
 import sys
 from types import TracebackType
 
-from datetime import datetime
+from datetime import date, datetime
 
 from ops_hub.models.requests import BlueFolderJobSummary, PartsCommentRecord
 
@@ -235,6 +235,28 @@ class BlueFolderAdapter:
         filtered.sort(key=lambda item: item.date_created or "", reverse=True)
         return filtered[:limit]
 
+    async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str | bool | None]]:
+        """Return today's scheduled assignments directly from BlueFolder."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return []
+
+        day = date.today()
+        start_date = f"{day.strftime('%Y.%m.%d')} 12:00 AM"
+        end_date = f"{day.strftime('%Y.%m.%d')} 11:59 PM"
+        try:
+            assignments = client.assignments.list_for_user_range(
+                user_id,
+                start_date,
+                end_date,
+                date_range_type="scheduled",
+            )
+        except Exception as exc:
+            logger.warning("BlueFolder assignment lookup unavailable for user %s: %s", user_id, exc)
+            return []
+
+        return self._enrich_assignments(client, assignments or [])
+
     async def add_parts_comment(
         self,
         sr_id: int,
@@ -437,6 +459,58 @@ class BlueFolderAdapter:
         name = " ".join(part for part in [first_name, last_name] if part).strip() or f"Tech {user_id}"
         return user_id, name
 
+    def _enrich_assignments(
+        self,
+        client: object,
+        assignments: list[dict[str, object]],
+    ) -> list[dict[str, str | bool | None]]:
+        """Normalize raw BlueFolder assignment rows for Discord-facing command output."""
+        results: list[dict[str, str | bool | None]] = []
+        for row in assignments:
+            if not isinstance(row, dict):
+                continue
+            service_request_id = row.get("serviceRequestId")
+            subject = None
+            sr_lookup_id = self._safe_int(service_request_id)
+            if sr_lookup_id is not None:
+                try:
+                    sr_xml = client.service_requests.get_by_id(sr_lookup_id)
+                    sr = sr_xml.find(".//serviceRequest")
+                    if sr is not None:
+                        subject = sr.findtext("description") or sr.findtext("subject")
+                except Exception as exc:
+                    if isinstance(exc, RuntimeError) and str(exc) == "Invalid XML response":
+                        logger.warning(
+                            "BlueFolder assignment subject lookup unavailable for SR %s: %s",
+                            sr_lookup_id,
+                            exc,
+                        )
+                    else:
+                        logger.warning(
+                            "BlueFolder assignment subject lookup failed for SR %s: %s",
+                            sr_lookup_id,
+                            exc,
+                        )
+                    subject = None
+
+            results.append(
+                {
+                    "assignmentId": self._stringify(row.get("assignmentId")),
+                    "serviceRequestId": self._stringify(service_request_id),
+                    "subject": subject or "Service Request",
+                    "start": self._stringify(row.get("start")),
+                    "end": self._stringify(row.get("end")),
+                    "routeLabel": self._stringify(
+                        row.get("routeLabel") or row.get("window") or row.get("timeWindow")
+                    ),
+                    "city": self._stringify(row.get("city")),
+                    "state": self._stringify(row.get("state")),
+                    "isComplete": row.get("isComplete") if isinstance(row.get("isComplete"), bool) else None,
+                }
+            )
+
+        return sorted(results, key=lambda item: item.get("start") or "")
+
     def _clean_html_text(self, value: str | None) -> str | None:
         """Normalize simple BlueFolder HTML/text content for Discord display."""
         if value is None:
@@ -457,6 +531,22 @@ class BlueFolderAdapter:
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = "\n".join(line.strip() for line in text.splitlines())
         text = text.strip()
+        return text or None
+
+    @staticmethod
+    def _safe_int(value: object) -> int | None:
+        """Best-effort integer parsing."""
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except Exception:
+            return None
+
+    @staticmethod
+    def _stringify(value: object) -> str | None:
+        """Return a stripped string value or ``None``."""
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
         return text or None
 
     def _resolve_path(self) -> Path | None:
