@@ -173,12 +173,13 @@ def test_dispatch_service_uses_bluefolder_assignments_when_dispatch_path_is_miss
 
 
 def test_dispatch_service_builds_route_map_preview(tmp_path: Path) -> None:
-    dispatch_project = tmp_path / "dispatch"
-    dispatch_project.mkdir()
-    (dispatch_project / ".env").write_text(
-        "GOOGLE_MAPS_API_KEY=test-google-key\nDEFAULT_ORIGIN=South Paris, ME\n",
-        encoding="utf-8",
-    )
+    class RouteMapDispatchAdapter(DummyDispatchAdapter):
+        async def build_route_map_urls(self, stops):
+            return (
+                "https://map.project-osrm.org/?loc=44.2598,-70.5009&loc=43.6591,-70.2568&loc=44.1004,-70.2148",
+                "https://maps.geoapify.com/v1/staticmap?style=osm-bright",
+            )
+
     bluefolder_package = tmp_path / "bluefolder_api"
     bluefolder_package.mkdir()
     (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
@@ -232,7 +233,7 @@ def test_dispatch_service_builds_route_map_preview(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     service = DispatchService(
-        adapter=DummyDispatchAdapter(base_path=str(dispatch_project)),
+        adapter=RouteMapDispatchAdapter(base_path=None),
         bluefolder_service=BlueFolderService(
             adapter=BlueFolderAdapter(
                 base_path=str(tmp_path),
@@ -255,9 +256,9 @@ def test_dispatch_service_builds_route_map_preview(tmp_path: Path) -> None:
     assert "**Route Map for BlueFolder user `13051`**" in result.message
     assert "Assignments considered: `2`" in result.message
     assert "Mappable stops: `2`" in result.message
-    assert "Open route: https://www.google.com/maps/dir/South+Paris%2C+ME/" in result.message
+    assert "Open route: https://map.project-osrm.org/?" in result.message
     assert result.image_url is not None
-    assert "maps.googleapis.com/maps/api/staticmap" in result.image_url
+    assert "maps.geoapify.com/v1/staticmap" in result.image_url
 
 
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:

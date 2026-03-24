@@ -7,10 +7,11 @@ import importlib
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlencode
 import sys
 from types import TracebackType
-from urllib.parse import quote_plus
 
+import requests
 from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
 
@@ -29,6 +30,7 @@ class DispatchAdapter:
     bluefolder_verify_ssl: bool | None = None
     bluefolder_timeout_seconds: float | None = None
     _origin_lookup_unavailable: bool = False
+    _geocode_cache: dict[str, tuple[float, float] | None] | None = None
 
     async def get_job(
         self,
@@ -223,43 +225,74 @@ class DispatchAdapter:
         self,
         stops: list[dict[str, str]],
     ) -> tuple[str | None, str | None]:
-        """Build a route link and optional static image URL for a list of stops."""
+        """Build an OpenStreetMap route link and Geoapify static image URL for a list of stops."""
         if not stops:
             return None, None
 
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         env_values = self._load_dispatch_project_env(resolved_path)
         default_origin = env_values.get("DEFAULT_ORIGIN") or None
-        google_maps_api_key = env_values.get("GOOGLE_MAPS_API_KEY") or None
+        geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
 
         addresses = [stop["address"] for stop in stops if stop.get("address")]
         if not addresses:
             return None, None
 
-        route_points = [default_origin, *addresses] if default_origin else addresses
-        route_url = "https://www.google.com/maps/dir/" + "/".join(
-            quote_plus(point) for point in route_points if point
-        )
+        geocoded_points: list[tuple[str, tuple[float, float]]] = []
+        if geoapify_api_key:
+            origin_coord = self._geocode_address_geoapify(default_origin, api_key=geoapify_api_key) if default_origin else None
+            if origin_coord is not None and default_origin:
+                geocoded_points.append((default_origin, origin_coord))
+            for stop in stops:
+                address = stop.get("address")
+                if not address:
+                    continue
+                coord = self._geocode_address_geoapify(address, api_key=geoapify_api_key)
+                if coord is not None:
+                    geocoded_points.append((address, coord))
 
-        if not google_maps_api_key:
+        if len(geocoded_points) >= 2:
+            route_url = "https://map.project-osrm.org/?" + "&".join(
+                f"loc={lat},{lon}" for _address, (lon, lat) in geocoded_points
+            )
+        else:
+            route_url = None
+
+        if not geoapify_api_key or len(geocoded_points) < 1:
             return route_url, None
 
-        image_stops = stops[:8]
-        params: list[str] = ["size=640x360", "scale=2", "maptype=roadmap"]
-        if default_origin:
-            params.append(f"markers=color:green%7Clabel:O%7C{quote_plus(default_origin)}")
-        for index, stop in enumerate(image_stops, start=1):
-            params.append(
-                f"markers=color:red%7Clabel:{index}%7C{quote_plus(stop['address'])}"
+        marker_defs: list[str] = []
+        point_index = 0
+        if default_origin and geocoded_points and geocoded_points[0][0] == default_origin:
+            lon, lat = geocoded_points[0][1]
+            marker_defs.append(
+                f"lonlat:{lon},{lat};type:material;color:#34a853;size:small;text:O"
+            )
+            point_index = 1
+
+        for index, (_address, (lon, lat)) in enumerate(geocoded_points[point_index:point_index + 8], start=1):
+            marker_defs.append(
+                f"lonlat:{lon},{lat};type:material;color:#d93025;size:small;text:{index}"
             )
 
-        path_points = ([default_origin] if default_origin else []) + [stop["address"] for stop in image_stops]
-        if len(path_points) >= 2:
-            encoded_path = "%7C".join(quote_plus(point) for point in path_points)
-            params.append(f"path=color:0x3367d6ff%7Cweight:5%7C{encoded_path}")
+        query_items: list[tuple[str, str]] = [
+            ("style", "osm-bright"),
+            ("width", "800"),
+            ("height", "420"),
+            ("scaleFactor", "2"),
+            ("apiKey", geoapify_api_key),
+        ]
+        if marker_defs:
+            query_items.append(("marker", "|".join(marker_defs)))
+        if len(geocoded_points) >= 2:
+            geometry_points = ",".join(
+                f"{lon},{lat}" for _address, (lon, lat) in geocoded_points
+            )
+            query_items.append(
+                ("geometry", f"polyline:{geometry_points};linecolor:#3367d6;linewidth:4")
+            )
 
-        params.append(f"key={quote_plus(google_maps_api_key)}")
-        image_url = "https://maps.googleapis.com/maps/api/staticmap?" + "&".join(params)
+        image_url = "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
         return route_url, image_url
 
     def _load_dispatch_project_env(self, resolved_path: Path | None) -> dict[str, str]:
@@ -281,6 +314,54 @@ class DispatchAdapter:
                 cleaned = cleaned.split(" #", 1)[0].rstrip()
             values[key.strip()] = cleaned
         return values
+
+    def _geocode_address_geoapify(
+        self,
+        address: str | None,
+        *,
+        api_key: str,
+    ) -> tuple[float, float] | None:
+        """Return ``(lon, lat)`` for an address using Geoapify geocoding."""
+        if not address or not address.strip():
+            return None
+
+        if self._geocode_cache is None:
+            self._geocode_cache = {}
+
+        cache_key = address.strip().lower()
+        if cache_key in self._geocode_cache:
+            return self._geocode_cache[cache_key]
+
+        try:
+            response = requests.get(
+                "https://api.geoapify.com/v1/geocode/search",
+                params={
+                    "text": address,
+                    "limit": 1,
+                    "format": "json",
+                    "apiKey": api_key,
+                },
+                timeout=6,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload.get("results") if isinstance(payload, dict) else None
+            first = results[0] if results else None
+            if not isinstance(first, dict):
+                self._geocode_cache[cache_key] = None
+                return None
+            lon = first.get("lon")
+            lat = first.get("lat")
+            if lon is None or lat is None:
+                self._geocode_cache[cache_key] = None
+                return None
+            value = (float(lon), float(lat))
+            self._geocode_cache[cache_key] = value
+            return value
+        except Exception as exc:
+            logger.warning("Geoapify geocode unavailable for '%s': %s", address, exc)
+            self._geocode_cache[cache_key] = None
+            return None
 
     def _dispatch_runtime_context(self, resolved_path: Path) -> "_temporary_dispatch_context":
         """Build the shared runtime context for dispatch wrapper imports and calls."""
