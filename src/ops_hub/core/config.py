@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "dev"
     photo_ingest_channel_id: int | None = None
+    photo_compress_max_dimension: int = 1800
+    photo_compress_jpeg_quality: int = 82
 
     bluefolder_api_path: str | None = None
     bluefolder_api_key: str | None = None
@@ -40,6 +42,13 @@ class Settings(BaseSettings):
     bluefolder_timeout_seconds: float | None = None
     bluebot_discord_extension_path: str | None = None
     photo_ingest_project_path: str | None = None
+    photo_archive_smtp_host: str | None = None
+    photo_archive_smtp_port: int | None = None
+    photo_archive_smtp_username: str | None = None
+    photo_archive_smtp_password: str | None = None
+    photo_archive_smtp_use_tls: bool = True
+    photo_archive_from_email: str | None = None
+    photo_archive_to_email: str | None = None
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
 
@@ -88,6 +97,8 @@ class Settings(BaseSettings):
             "parts_request_file",
             "notification_channel_id",
             "photo_ingest_channel_id",
+            "photo_compress_max_dimension",
+            "photo_compress_jpeg_quality",
             "bluefolder_api_path",
             "bluefolder_api_key",
             "bluefolder_account_name",
@@ -97,6 +108,13 @@ class Settings(BaseSettings):
             "bluefolder_timeout_seconds",
             "bluebot_discord_extension_path",
             "photo_ingest_project_path",
+            "photo_archive_smtp_host",
+            "photo_archive_smtp_port",
+            "photo_archive_smtp_username",
+            "photo_archive_smtp_password",
+            "photo_archive_smtp_use_tls",
+            "photo_archive_from_email",
+            "photo_archive_to_email",
             "parts_cannon_project_path",
             "dispatch_project_path",
         }
@@ -196,6 +214,29 @@ class Settings(BaseSettings):
 
         if self.bluefolder_timeout_seconds is not None and float(self.bluefolder_timeout_seconds) <= 0:
             errors.append("OPS_HUB_BLUEFOLDER_TIMEOUT_SECONDS must be greater than 0 when set.")
+
+        if self.photo_compress_max_dimension <= 0:
+            errors.append("OPS_HUB_PHOTO_COMPRESS_MAX_DIMENSION must be greater than 0.")
+
+        if self.photo_compress_jpeg_quality <= 0 or self.photo_compress_jpeg_quality > 95:
+            errors.append("OPS_HUB_PHOTO_COMPRESS_JPEG_QUALITY must be between 1 and 95.")
+
+        archive_fields = [
+            self.photo_archive_smtp_host,
+            self.photo_archive_smtp_username,
+            self.photo_archive_smtp_password,
+            self.photo_archive_from_email,
+            self.photo_archive_to_email,
+        ]
+        if any(value is not None and str(value).strip() for value in archive_fields):
+            if not (self.photo_archive_smtp_host or "").strip():
+                errors.append("OPS_HUB_PHOTO_ARCHIVE_SMTP_HOST is required when archive email is configured.")
+            if self.photo_archive_smtp_port is None or self.photo_archive_smtp_port <= 0:
+                errors.append("OPS_HUB_PHOTO_ARCHIVE_SMTP_PORT must be a positive integer when archive email is configured.")
+            if not (self.photo_archive_from_email or "").strip():
+                errors.append("OPS_HUB_PHOTO_ARCHIVE_FROM_EMAIL is required when archive email is configured.")
+            if not (self.photo_archive_to_email or "").strip():
+                errors.append("OPS_HUB_PHOTO_ARCHIVE_TO_EMAIL is required when archive email is configured.")
 
         return errors
 

@@ -216,6 +216,24 @@ class PhotoIngestResult:
 
 
 @dataclass(slots=True)
+class PhotoAttachmentPayload:
+    """Attachment payload passed from Discord into the photo service."""
+
+    filename: str
+    content_type: str | None
+    data: bytes
+
+
+@dataclass(slots=True)
+class PhotoArchiveResult:
+    """Result payload for photo archive operations."""
+
+    ok: bool
+    status: str
+    message: str
+
+
+@dataclass(slots=True)
 class PartsWorkflowSummary:
     """Placeholder summary for a future parts workflow wrapper."""
 

@@ -7,7 +7,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from ops_hub.bot.client import OpsHubBot
-from ops_hub.models.requests import JobLookupRequest, PartLookupRequest, PartRequestClaim, PartRequestCreate, PartRequestUpdate
+from ops_hub.models.requests import (
+    JobLookupRequest,
+    PartLookupRequest,
+    PartRequestClaim,
+    PartRequestCreate,
+    PartRequestUpdate,
+    PhotoAttachmentPayload,
+)
 
 
 class OperationsCog(commands.Cog):
@@ -94,6 +101,56 @@ class OperationsCog(commands.Cog):
             embed = discord.Embed(title="Route Preview")
             embed.set_image(url=result.image_url)
         await interaction.followup.send(result.message, embed=embed, ephemeral=True)
+
+    @app_commands.command(name="mdlsn", description="Attach a compressed model/serial photo to a BlueFolder service request.")
+    async def mdlsn(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        image: discord.Attachment,
+    ) -> None:
+        """Attach a model/serial photo to a service request."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        payload = await self._attachment_payload(image)
+        result = await self.bot.container.photo_ingest_service.attach_model_serial_photo(
+            sr_id,
+            photo=payload,
+            requested_by_user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="photo_archive", description="Email one or more compressed job photos to the archive mailbox.")
+    @app_commands.describe(
+        image_1="First required photo.",
+        image_2="Optional second photo.",
+        image_3="Optional third photo.",
+        image_4="Optional fourth photo.",
+    )
+    async def photo_archive(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        image_1: discord.Attachment,
+        image_2: discord.Attachment | None = None,
+        image_3: discord.Attachment | None = None,
+        image_4: discord.Attachment | None = None,
+    ) -> None:
+        """Archive one or more job photos through the configured email handoff."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        attachments = [image for image in [image_1, image_2, image_3, image_4] if image is not None]
+        payloads = [await self._attachment_payload(image) for image in attachments]
+        summary = await self.bot.container.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+        result = await self.bot.container.photo_ingest_service.archive_job_photos(
+            sr_id,
+            photos=payloads,
+            requested_by_user_id=interaction.user.id,
+            sr_subject=summary.subject if summary.available else None,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
@@ -455,6 +512,18 @@ class OperationsCog(commands.Cog):
     def _can_write_parts_update(self, identity) -> bool:
         """Return whether the user can log BlueFolder parts status updates."""
         return identity.is_admin or identity.is_parts
+
+    def _can_upload_sr_photo(self, identity) -> bool:
+        """Return whether the user can upload or archive service-request photos."""
+        return identity.is_admin or identity.is_technician
+
+    async def _attachment_payload(self, attachment: discord.Attachment) -> PhotoAttachmentPayload:
+        """Read a Discord attachment into the service-layer payload shape."""
+        return PhotoAttachmentPayload(
+            filename=attachment.filename,
+            content_type=attachment.content_type,
+            data=await attachment.read(),
+        )
 
 
 async def setup(bot: OpsHubBot) -> None:

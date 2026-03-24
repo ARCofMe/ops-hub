@@ -1,10 +1,16 @@
 """Photo ingest listener tests for Ops Hub."""
 
 import asyncio
+import base64
+import io
+import textwrap
+from pathlib import Path
+
+from PIL import Image
 
 from ops_hub.core.config import Settings
 from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
-from ops_hub.models.requests import PhotoIngestMessage
+from ops_hub.models.requests import PhotoAttachmentPayload, PhotoIngestMessage
 from ops_hub.services.photo_ingest import PhotoIngestService
 
 
@@ -89,3 +95,144 @@ def test_photo_ingest_service_handles_attachment_messages_in_configured_channel(
 
     assert result.handled is True
     assert result.status == "placeholder_ready"
+
+
+def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import base64
+
+            LAST_UPLOAD = {}
+
+            class _Attachments:
+                def add_to_service_request(self, service_request_id, file_name, file_data_base64, description=""):
+                    LAST_UPLOAD["service_request_id"] = service_request_id
+                    LAST_UPLOAD["file_name"] = file_name
+                    LAST_UPLOAD["description"] = description
+                    LAST_UPLOAD["size"] = len(base64.b64decode(file_data_base64))
+                    return {"ok": True}
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.attachments = _Attachments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = PhotoIngestService(
+        settings=_settings(),
+        adapter=PhotoIngestAdapter(
+            bluefolder_api_path=str(tmp_path),
+            bluefolder_api_key="key",
+            bluefolder_account_name="acme",
+        ),
+    )
+
+    result = asyncio.run(
+        service.attach_model_serial_photo(
+            12345,
+            photo=PhotoAttachmentPayload(
+                filename="photo.png",
+                content_type="image/png",
+                data=_image_bytes("PNG"),
+            ),
+            requested_by_user_id=99,
+        )
+    )
+
+    sys_path = str(tmp_path)
+    import sys
+    if sys_path not in sys.path:
+        sys.path.insert(0, sys_path)
+    from bluefolder_api.client import LAST_UPLOAD  # type: ignore
+
+    assert "Attached `photo.jpg` to `SR-12345`" in result.message
+    assert LAST_UPLOAD["service_request_id"] == 12345
+    assert LAST_UPLOAD["file_name"] == "photo.jpg"
+    assert "Discord user 99" in LAST_UPLOAD["description"]
+    assert LAST_UPLOAD["size"] > 0
+
+
+def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
+    sent_messages: list[object] = []
+
+    class _DummySMTP:
+        def __init__(self, host, port, timeout=30):
+            assert host == "smtp.example.com"
+            assert port == 587
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def starttls(self):
+            return None
+
+        def login(self, username, password):
+            assert username == "user"
+            assert password == "pass"
+
+        def send_message(self, message):
+            sent_messages.append(message)
+
+    import smtplib
+
+    original_smtp = smtplib.SMTP
+    smtplib.SMTP = _DummySMTP  # type: ignore[assignment]
+    try:
+        service = PhotoIngestService(
+            settings=_settings(),
+            adapter=PhotoIngestAdapter(
+                archive_smtp_host="smtp.example.com",
+                archive_smtp_port=587,
+                archive_smtp_username="user",
+                archive_smtp_password="pass",
+                archive_from_email="from@example.com",
+                archive_to_email="to@example.com",
+            ),
+        )
+
+        result = asyncio.run(
+            service.archive_job_photos(
+                12345,
+                photos=[
+                    PhotoAttachmentPayload(
+                        filename="one.png",
+                        content_type="image/png",
+                        data=_image_bytes("PNG"),
+                    ),
+                    PhotoAttachmentPayload(
+                        filename="two.png",
+                        content_type="image/png",
+                        data=_image_bytes("PNG"),
+                    ),
+                ],
+                requested_by_user_id=77,
+                sr_subject="Washer repair",
+            )
+        )
+    finally:
+        smtplib.SMTP = original_smtp  # type: ignore[assignment]
+
+    assert result.message == "Emailed `2` compressed photo(s) for `SR-12345` to the archive mailbox."
+    assert len(sent_messages) == 1
+    message = sent_messages[0]
+    assert message["Subject"] == "SR-12345 Washer repair"
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 2
+    assert all(part.get_filename().endswith(".jpg") for part in attachments)
+
+
+def _image_bytes(image_format: str) -> bytes:
+    """Build a small in-memory image for upload/archive tests."""
+    image = Image.new("RGB", (120, 80), color=(200, 30, 30))
+    output = io.BytesIO()
+    image.save(output, format=image_format)
+    return output.getvalue()

@@ -60,7 +60,25 @@ def build_container(settings: Settings) -> ServiceContainer:
     parts_request_store = PartsRequestStore(
         file_path=Path(settings.parts_request_file).expanduser() if settings.parts_request_file else None,
     )
-    photo_adapter = PhotoIngestAdapter(base_path=settings.photo_ingest_project_path)
+    photo_adapter = PhotoIngestAdapter(
+        base_path=settings.photo_ingest_project_path,
+        bluefolder_api_path=settings.bluefolder_api_path,
+        bluefolder_api_key=settings.bluefolder_api_key,
+        bluefolder_account_name=settings.bluefolder_account_name,
+        bluefolder_base_url=settings.bluefolder_base_url,
+        bluefolder_host_header=settings.bluefolder_host_header,
+        bluefolder_verify_ssl=settings.bluefolder_verify_ssl,
+        bluefolder_timeout_seconds=settings.bluefolder_timeout_seconds,
+        compress_max_dimension=settings.photo_compress_max_dimension,
+        compress_jpeg_quality=settings.photo_compress_jpeg_quality,
+        archive_smtp_host=settings.photo_archive_smtp_host,
+        archive_smtp_port=settings.photo_archive_smtp_port,
+        archive_smtp_username=settings.photo_archive_smtp_username,
+        archive_smtp_password=settings.photo_archive_smtp_password,
+        archive_smtp_use_tls=settings.photo_archive_smtp_use_tls,
+        archive_from_email=settings.photo_archive_from_email,
+        archive_to_email=settings.photo_archive_to_email,
+    )
     dispatch_adapter = DispatchAdapter(
         base_path=settings.dispatch_project_path,
         bluefolder_api_path=settings.bluefolder_api_path,

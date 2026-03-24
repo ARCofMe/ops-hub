@@ -159,6 +159,7 @@ def test_technician_can_write_bluefolder_parts_issue() -> None:
     assert cog._can_write_parts_issue(identity) is True
     assert cog._can_view_parts_context(identity) is True
     assert cog._can_write_parts_update(identity) is False
+    assert cog._can_upload_sr_photo(identity) is True
 
 
 def test_parts_can_write_bluefolder_parts_update() -> None:
@@ -168,3 +169,4 @@ def test_parts_can_write_bluefolder_parts_update() -> None:
     identity = cog._resolve_identity(interaction)
 
     assert cog._can_write_parts_update(identity) is True
+    assert cog._can_upload_sr_photo(identity) is False

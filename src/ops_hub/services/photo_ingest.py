@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 from ops_hub.core.config import Settings
 from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
-from ops_hub.models.requests import PhotoIngestMessage, PhotoIngestResult
+from ops_hub.models.requests import (
+    CommandResult,
+    PhotoAttachmentPayload,
+    PhotoIngestMessage,
+    PhotoIngestResult,
+)
 
 
 @dataclass(slots=True)
@@ -36,3 +41,36 @@ class PhotoIngestService:
                 message="Message is not in the configured photo ingest channel.",
             )
         return await self.adapter.ingest_message(message)
+
+    async def attach_model_serial_photo(
+        self,
+        sr_id: int,
+        *,
+        photo: PhotoAttachmentPayload,
+        requested_by_user_id: int,
+    ) -> CommandResult:
+        """Attach a compressed model/serial photo to a BlueFolder service request."""
+        result = await self.adapter.attach_photo_to_service_request(
+            sr_id,
+            photo=photo,
+            uploaded_by_user_id=requested_by_user_id,
+            label="MDLSN",
+        )
+        return CommandResult(message=result.message)
+
+    async def archive_job_photos(
+        self,
+        sr_id: int,
+        *,
+        photos: list[PhotoAttachmentPayload],
+        requested_by_user_id: int,
+        sr_subject: str | None = None,
+    ) -> CommandResult:
+        """Send a batch of compressed job photos to the configured archive mailbox."""
+        result = await self.adapter.archive_photos_via_email(
+            sr_id,
+            photos=photos,
+            uploaded_by_user_id=requested_by_user_id,
+            sr_subject=sr_subject,
+        )
+        return CommandResult(message=result.message)
