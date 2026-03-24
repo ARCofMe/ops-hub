@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
 from ops_hub.models.requests import (
@@ -79,7 +80,7 @@ class DispatchService:
             subject = assignment.get("subject") or "Unlabeled Service Request"
             city = assignment.get("city")
             state = assignment.get("state")
-            start = assignment.get("start")
+            start = self._format_assignment_time(assignment.get("start"))
             route_label = assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow")
             location = " ".join(part for part in [city, state] if part).strip()
             detail_parts = []
@@ -374,6 +375,19 @@ class DispatchService:
         if assignments:
             return assignments
         return await self.adapter.get_assignments_for_user(bluefolder_user_id)
+
+    def _format_assignment_time(self, value: str | bool | None) -> str | None:
+        """Render BlueFolder assignment timestamps in a compact human-readable form."""
+        if not isinstance(value, str) or not value.strip():
+            return None
+
+        text = value.strip()
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%H:%M"):
+            try:
+                return datetime.strptime(text, fmt).strftime("%I:%M %p").lstrip("0")
+            except ValueError:
+                continue
+        return text
 
     def _parts_context_lines(self, parts_brief: CommandResult | None) -> list[str]:
         """Extract a compact parts snapshot from the BlueFolder parts brief."""

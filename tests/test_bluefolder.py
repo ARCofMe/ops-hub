@@ -107,7 +107,7 @@ def test_dispatch_service_lists_current_assignments_for_mapped_user(tmp_path: Pa
     assert "Current assignments for BlueFolder user `13051`" in result.message
     assert "Assignment count: `2`" in result.message
     assert "Origin: South Paris, ME" in result.message
-    assert "`SR-100` Dryer repair [Portland ME | AM | start 08:00]" in result.message
+    assert "`SR-100` Dryer repair [Portland ME | AM | start 8:00 AM]" in result.message
     assert "`SR-101` Washer repair [Lewiston ME | PM]" in result.message
 
 
@@ -168,8 +168,8 @@ def test_dispatch_service_uses_bluefolder_assignments_when_dispatch_path_is_miss
 
     assert "Current assignments for BlueFolder user `13051`" in result.message
     assert "Assignment count: `2`" in result.message
-    assert "`SR-100` Dryer repair [start 2026-03-24T08:00:00]" in result.message
-    assert "`SR-101` Washer repair [start 2026-03-24T11:00:00]" in result.message
+    assert "`SR-100` Dryer repair [start 8:00 AM]" in result.message
+    assert "`SR-101` Washer repair [start 11:00 AM]" in result.message
 
 
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:

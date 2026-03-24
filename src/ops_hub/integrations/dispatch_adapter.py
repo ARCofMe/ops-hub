@@ -27,6 +27,7 @@ class DispatchAdapter:
     bluefolder_host_header: str | None = None
     bluefolder_verify_ssl: bool | None = None
     bluefolder_timeout_seconds: float | None = None
+    _origin_lookup_unavailable: bool = False
 
     async def get_job(
         self,
@@ -193,6 +194,8 @@ class DispatchAdapter:
 
     async def get_origin_for_user(self, technician_bluefolder_user_id: int) -> str | None:
         """Return the mapped user's origin address when available from the routing wrapper."""
+        if self._origin_lookup_unavailable:
+            return None
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None or not resolved_path.exists():
             return None
@@ -207,6 +210,7 @@ class DispatchAdapter:
                 integration = integration_class()
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
         except Exception as exc:
+            self._origin_lookup_unavailable = True
             logger.warning(
                 "Dispatch wrapper origin unavailable for mapped BlueFolder user %s: %s",
                 technician_bluefolder_user_id,
