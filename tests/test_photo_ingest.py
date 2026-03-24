@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import io
+from email.message import EmailMessage
 import textwrap
 from pathlib import Path
 
@@ -283,6 +284,87 @@ def test_photo_ingest_service_respects_disabled_archive_feature() -> None:
     )
 
     assert result.message == "Photo archive handoff is currently disabled."
+
+
+def test_photo_ingest_service_reports_matching_archived_photos() -> None:
+    import imaplib
+
+    class _DummyMailbox:
+        def login(self, username, password):
+            assert username == "mail-user"
+            assert password == "mail-pass"
+
+        def select(self, folder):
+            assert folder == "INBOX"
+            return "OK", [b""]
+
+        def search(self, charset, *criteria):
+            assert "SUBJECT" in criteria
+            assert "SR-12345" in criteria
+            return "OK", [b"1 2"]
+
+        def fetch(self, message_id, _query):
+            if message_id == b"1":
+                return "OK", [(b"1 (RFC822 {123})", _mk_email("SR-12345 Washer repair", 2))]
+            return "OK", [(b"2 (RFC822 {123})", _mk_email("SR-99999 Other", 1))]
+
+        def close(self):
+            return "OK", [b""]
+
+        def logout(self):
+            return "BYE", [b""]
+
+    original_imap = imaplib.IMAP4_SSL
+    imaplib.IMAP4_SSL = lambda host, port: _DummyMailbox()  # type: ignore[assignment]
+    try:
+        service = PhotoIngestService(
+            settings=_settings(),
+            adapter=PhotoIngestAdapter(
+                mailbox_imap_host="mail.example.com",
+                mailbox_imap_port=993,
+                mailbox_imap_username="mail-user",
+                mailbox_imap_password="mail-pass",
+            ),
+            feature_flags=_feature_flags(photo_mailbox_scan=True),
+        )
+
+        result = asyncio.run(service.get_photo_status(12345))
+    finally:
+        imaplib.IMAP4_SSL = original_imap  # type: ignore[assignment]
+
+    assert "Mailbox status: `present`" in result.message
+    assert "Found `1` matching email(s) with `2` photo attachment(s) for SR-12345." in result.message
+    assert "SR-12345 Washer repair" in result.message
+
+
+def test_photo_ingest_service_reports_disabled_mailbox_scan() -> None:
+    service = PhotoIngestService(
+        settings=_settings(),
+        adapter=PhotoIngestAdapter(),
+        feature_flags=_feature_flags(photo_mailbox_scan=False),
+    )
+
+    result = asyncio.run(service.get_photo_status(12345))
+
+    assert result.message == "Photo mailbox scan is currently disabled."
+
+
+def _mk_email(subject: str, attachment_count: int) -> bytes:
+    """Build a raw email with image attachments."""
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = "tech@example.com"
+    message["To"] = "photos@example.com"
+    message["Date"] = "Tue, 24 Mar 2026 10:00:00 -0400"
+    message.set_content("photo handoff")
+    for index in range(attachment_count):
+        message.add_attachment(
+            _image_bytes("JPEG"),
+            maintype="image",
+            subtype="jpeg",
+            filename=f"photo-{index}.jpg",
+        )
+    return message.as_bytes()
 
 
 def _image_bytes(image_format: str) -> bytes:

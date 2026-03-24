@@ -5,18 +5,29 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from email.message import EmailMessage
+from email import message_from_bytes
+from email.header import decode_header, make_header
 import importlib
 import io
+import imaplib
 import logging
 import os
 from pathlib import Path
 import smtplib
 import sys
 from types import TracebackType
+from datetime import datetime, timedelta
 
 from PIL import Image, ImageOps
 
-from ops_hub.models.requests import PhotoArchiveResult, PhotoAttachmentPayload, PhotoIngestMessage, PhotoIngestResult
+from ops_hub.models.requests import (
+    ArchivedPhotoRecord,
+    PhotoArchiveResult,
+    PhotoAttachmentPayload,
+    PhotoComplianceSummary,
+    PhotoIngestMessage,
+    PhotoIngestResult,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -43,12 +54,20 @@ class PhotoIngestAdapter:
     archive_smtp_use_tls: bool = True
     archive_from_email: str | None = None
     archive_to_email: str | None = None
+    mailbox_imap_host: str | None = None
+    mailbox_imap_port: int | None = None
+    mailbox_imap_username: str | None = None
+    mailbox_imap_password: str | None = None
+    mailbox_imap_use_ssl: bool = True
+    mailbox_folder: str = "INBOX"
+    mailbox_search_days: int = 21
 
     async def healthcheck(self) -> dict[str, str]:
         """Return current photo-ingest integration status."""
         return {
             "status": "configured" if self._resolve_bluefolder_path() else "placeholder",
             "source": "photo_ingest_adapter",
+            "mailbox": "configured" if self._mailbox_scan_configured() else "unconfigured",
         }
 
     async def ingest_message(self, message: PhotoIngestMessage) -> PhotoIngestResult:
@@ -192,6 +211,88 @@ class PhotoIngestAdapter:
             message=f"Emailed `{len(compressed)}` compressed photo(s) for `SR-{sr_id}` to the archive mailbox.",
         )
 
+    async def get_photo_compliance_summary(self, sr_id: int) -> PhotoComplianceSummary:
+        """Read mailbox records whose subject matches the service-request id."""
+        if not self._mailbox_scan_configured():
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="unconfigured",
+                message="Mailbox scan is not configured for photo compliance yet.",
+                matched_records=[],
+                total_photos=0,
+            )
+
+        records: list[ArchivedPhotoRecord] = []
+        try:
+            mailbox = self._open_mailbox()
+            criteria = self._build_mailbox_search_criteria(sr_id)
+            try:
+                mailbox.select(self.mailbox_folder)
+                search_status, data = mailbox.search(None, *criteria)
+                if search_status != "OK":
+                    return PhotoComplianceSummary(
+                        sr_id=sr_id,
+                        mailbox_status="lookup_failed",
+                        message="Mailbox search failed for photo compliance.",
+                        matched_records=[],
+                        total_photos=0,
+                    )
+                for message_id in data[0].split():
+                    fetch_status, message_data = mailbox.fetch(message_id, "(RFC822)")
+                    if fetch_status != "OK":
+                        continue
+                    for part in message_data:
+                        if not isinstance(part, tuple):
+                            continue
+                        parsed = message_from_bytes(part[1])
+                        subject = str(make_header(decode_header(parsed.get("Subject", ""))))
+                        if f"SR-{sr_id}".casefold() not in subject.casefold():
+                            continue
+                        attachment_count = self._count_photo_attachments(parsed)
+                        if attachment_count <= 0:
+                            continue
+                        records.append(
+                            ArchivedPhotoRecord(
+                                subject=subject,
+                                from_email=parsed.get("From"),
+                                received_at=parsed.get("Date"),
+                                attachment_count=attachment_count,
+                            )
+                        )
+            finally:
+                try:
+                    mailbox.close()
+                except Exception:
+                    pass
+                mailbox.logout()
+        except Exception as exc:
+            logger.exception("Photo mailbox lookup failed for SR %s", sr_id)
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="lookup_failed",
+                message=f"Mailbox lookup failed: {exc}",
+                matched_records=[],
+                total_photos=0,
+            )
+
+        records.sort(key=lambda record: record.received_at or "", reverse=True)
+        total_photos = sum(record.attachment_count for record in records)
+        if not records:
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="missing",
+                message=f"No archived photo email was found for SR-{sr_id}.",
+                matched_records=[],
+                total_photos=0,
+            )
+        return PhotoComplianceSummary(
+            sr_id=sr_id,
+            mailbox_status="present",
+            message=f"Found `{len(records)}` matching email(s) with `{total_photos}` photo attachment(s) for SR-{sr_id}.",
+            matched_records=records,
+            total_photos=total_photos,
+        )
+
     def _archive_email_configured(self) -> bool:
         """Return whether archive email settings are configured."""
         return bool(
@@ -199,6 +300,15 @@ class PhotoIngestAdapter:
             and self.archive_smtp_port
             and (self.archive_from_email or "").strip()
             and (self.archive_to_email or "").strip()
+        )
+
+    def _mailbox_scan_configured(self) -> bool:
+        """Return whether mailbox scan settings are configured."""
+        return bool(
+            (self.mailbox_imap_host or "").strip()
+            and self.mailbox_imap_port
+            and (self.mailbox_imap_username or "").strip()
+            and (self.mailbox_imap_password or "").strip()
         )
 
     def _compress_attachment(self, photo: PhotoAttachmentPayload) -> tuple[str, bytes]:
@@ -251,6 +361,32 @@ class PhotoIngestAdapter:
         except Exception:
             logger.exception("Failed to build BlueFolder client for photo ingest")
             return None
+
+    def _open_mailbox(self):
+        """Open an IMAP connection for mailbox scans."""
+        if self.mailbox_imap_use_ssl:
+            mailbox = imaplib.IMAP4_SSL(self.mailbox_imap_host, self.mailbox_imap_port)
+        else:
+            mailbox = imaplib.IMAP4(self.mailbox_imap_host, self.mailbox_imap_port)
+        mailbox.login(self.mailbox_imap_username, self.mailbox_imap_password or "")
+        return mailbox
+
+    def _build_mailbox_search_criteria(self, sr_id: int) -> tuple[str, ...]:
+        """Build an IMAP search window for recent SR photo mail."""
+        since_date = (datetime.now() - timedelta(days=self.mailbox_search_days)).strftime("%d-%b-%Y")
+        return ("SINCE", since_date, "SUBJECT", f"SR-{sr_id}")
+
+    @staticmethod
+    def _count_photo_attachments(message) -> int:
+        """Count image attachments in an email message."""
+        count = 0
+        for part in message.walk():
+            if part.get_content_maintype() != "image":
+                continue
+            if not part.get_filename():
+                continue
+            count += 1
+        return count
 
     def _resolve_bluefolder_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

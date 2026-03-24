@@ -92,6 +92,13 @@ def build_container(settings: Settings) -> ServiceContainer:
         archive_smtp_use_tls=settings.photo_archive_smtp_use_tls,
         archive_from_email=settings.photo_archive_from_email,
         archive_to_email=settings.photo_archive_to_email,
+        mailbox_imap_host=settings.photo_mailbox_imap_host,
+        mailbox_imap_port=settings.photo_mailbox_imap_port,
+        mailbox_imap_username=settings.photo_mailbox_imap_username,
+        mailbox_imap_password=settings.photo_mailbox_imap_password,
+        mailbox_imap_use_ssl=settings.photo_mailbox_imap_use_ssl,
+        mailbox_folder=settings.photo_mailbox_folder,
+        mailbox_search_days=settings.photo_mailbox_search_days,
     )
     dispatch_adapter = DispatchAdapter(
         base_path=settings.dispatch_project_path,

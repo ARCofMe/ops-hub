@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     photo_archive_smtp_use_tls: bool = True
     photo_archive_from_email: str | None = None
     photo_archive_to_email: str | None = None
+    photo_mailbox_imap_host: str | None = None
+    photo_mailbox_imap_port: int | None = None
+    photo_mailbox_imap_username: str | None = None
+    photo_mailbox_imap_password: str | None = None
+    photo_mailbox_imap_use_ssl: bool = True
+    photo_mailbox_folder: str = "INBOX"
+    photo_mailbox_search_days: int = 21
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
 
@@ -121,6 +128,13 @@ class Settings(BaseSettings):
             "photo_archive_smtp_use_tls",
             "photo_archive_from_email",
             "photo_archive_to_email",
+            "photo_mailbox_imap_host",
+            "photo_mailbox_imap_port",
+            "photo_mailbox_imap_username",
+            "photo_mailbox_imap_password",
+            "photo_mailbox_imap_use_ssl",
+            "photo_mailbox_folder",
+            "photo_mailbox_search_days",
             "parts_cannon_project_path",
             "dispatch_project_path",
         }
@@ -243,6 +257,24 @@ class Settings(BaseSettings):
                 errors.append("OPS_HUB_PHOTO_ARCHIVE_FROM_EMAIL is required when archive email is configured.")
             if not (self.photo_archive_to_email or "").strip():
                 errors.append("OPS_HUB_PHOTO_ARCHIVE_TO_EMAIL is required when archive email is configured.")
+
+        mailbox_fields = [
+            self.photo_mailbox_imap_host,
+            self.photo_mailbox_imap_username,
+            self.photo_mailbox_imap_password,
+        ]
+        if any(value is not None and str(value).strip() for value in mailbox_fields):
+            if not (self.photo_mailbox_imap_host or "").strip():
+                errors.append("OPS_HUB_PHOTO_MAILBOX_IMAP_HOST is required when mailbox scan is configured.")
+            if self.photo_mailbox_imap_port is None or self.photo_mailbox_imap_port <= 0:
+                errors.append("OPS_HUB_PHOTO_MAILBOX_IMAP_PORT must be a positive integer when mailbox scan is configured.")
+            if not (self.photo_mailbox_imap_username or "").strip():
+                errors.append("OPS_HUB_PHOTO_MAILBOX_IMAP_USERNAME is required when mailbox scan is configured.")
+            if not (self.photo_mailbox_imap_password or "").strip():
+                errors.append("OPS_HUB_PHOTO_MAILBOX_IMAP_PASSWORD is required when mailbox scan is configured.")
+
+        if self.photo_mailbox_search_days <= 0:
+            errors.append("OPS_HUB_PHOTO_MAILBOX_SEARCH_DAYS must be greater than 0.")
 
         return errors
 

@@ -81,3 +81,20 @@ class PhotoIngestService:
             sr_subject=sr_subject,
         )
         return CommandResult(message=result.message)
+
+    async def get_photo_status(self, sr_id: int) -> CommandResult:
+        """Return a mailbox-backed photo compliance summary for a service request."""
+        if not self.feature_flags.is_enabled("photo_mailbox_scan"):
+            return CommandResult(message="Photo mailbox scan is currently disabled.")
+
+        summary = await self.adapter.get_photo_compliance_summary(sr_id)
+        lines = [f"**Photo Status SR-{sr_id}**", "", f"Mailbox status: `{summary.mailbox_status}`", summary.message]
+        if summary.matched_records:
+            lines.extend(["", "**Recent Matches**"])
+            for idx, record in enumerate(summary.matched_records[:5], start=1):
+                lines.append(
+                    f"{idx}. `{record.received_at or 'unknown'}` from `{record.from_email or 'unknown'}` "
+                    f"with `{record.attachment_count}` photo(s)"
+                )
+                lines.append(record.subject)
+        return CommandResult(message="\n".join(lines))

@@ -219,6 +219,24 @@ def test_validation_errors_require_bluefolder_key_with_account() -> None:
     )
 
 
+def test_validation_errors_require_complete_photo_mailbox_config() -> None:
+    settings = _settings(photo_mailbox_imap_host="mail.example.com")
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_PHOTO_MAILBOX_IMAP_PORT must be a positive integer when mailbox scan is configured." in errors
+    assert "OPS_HUB_PHOTO_MAILBOX_IMAP_USERNAME is required when mailbox scan is configured." in errors
+    assert "OPS_HUB_PHOTO_MAILBOX_IMAP_PASSWORD is required when mailbox scan is configured." in errors
+
+
+def test_validation_errors_reject_non_positive_photo_mailbox_search_days() -> None:
+    settings = _settings(photo_mailbox_search_days=0)
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_PHOTO_MAILBOX_SEARCH_DAYS must be greater than 0." in errors
+
+
 def test_validation_errors_allow_bluefolder_account_and_base_url_together() -> None:
     settings = _settings(
         bluefolder_api_key="key",

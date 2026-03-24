@@ -152,6 +152,15 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="photo_status", description="Check whether archived photos exist for a service request.")
+    async def photo_status(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show mailbox-backed photo compliance for a service request."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.photo_ingest_service.get_photo_status(sr_id)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
     async def part(self, interaction: discord.Interaction, reference: str) -> None:

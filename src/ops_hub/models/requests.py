@@ -234,6 +234,27 @@ class PhotoArchiveResult:
 
 
 @dataclass(slots=True)
+class ArchivedPhotoRecord:
+    """A photo-bearing mailbox record matched to a service request."""
+
+    subject: str
+    from_email: str | None
+    received_at: str | None
+    attachment_count: int
+
+
+@dataclass(slots=True)
+class PhotoComplianceSummary:
+    """Read-only summary of mailbox-backed photo compliance for a service request."""
+
+    sr_id: int
+    mailbox_status: str
+    message: str
+    matched_records: list[ArchivedPhotoRecord]
+    total_photos: int
+
+
+@dataclass(slots=True)
 class PartsWorkflowSummary:
     """Placeholder summary for a future parts workflow wrapper."""
 
