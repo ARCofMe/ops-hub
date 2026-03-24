@@ -119,7 +119,10 @@ class BlueFolderAdapter:
                 client = client_class(base_url=(self.base_url or None))
                 sr_xml = client.service_requests.get_by_id(int(service_request_id))
             except Exception as exc:
-                logger.exception("BlueFolder lookup failed for %s", reference)
+                if isinstance(exc, RuntimeError) and str(exc) == "Invalid XML response":
+                    logger.warning("BlueFolder lookup unavailable for %s: %s", reference, exc)
+                else:
+                    logger.exception("BlueFolder lookup failed for %s", reference)
                 return BlueFolderJobSummary(
                     reference=reference,
                     available=False,

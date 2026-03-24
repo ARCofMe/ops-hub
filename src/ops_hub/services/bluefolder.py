@@ -29,18 +29,43 @@ class BlueFolderService:
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""
         summary = await self.adapter.get_job_summary(f"SR-{sr_id}")
+        snapshot = await self.get_parts_snapshot(sr_id)
         if not summary.available:
-            return CommandResult(
-                message="\n".join(
-                    [
-                        f"**Parts Brief SR-{sr_id}**",
-                        "",
-                        "**BlueFolder**",
-                        f"Status: `{summary.integration_status}`",
-                        f"Detail: {summary.message}",
-                    ]
-                )
+            lines = [
+                f"**Parts Brief SR-{sr_id}**",
+                "",
+                "**BlueFolder**",
+                f"Status: `{summary.integration_status}`",
+                f"Detail: {summary.message}",
+            ]
+            if snapshot is None:
+                return CommandResult(message="\n".join(lines))
+
+            lines.extend(
+                [
+                    "",
+                    "**Parts Status**",
+                    f"Parts stage: `{snapshot.stage_label}`",
+                ]
             )
+            if snapshot.latest_status_at or snapshot.latest_status_author:
+                lines.append(
+                    "Latest status note: "
+                    f"`{snapshot.latest_status_at or 'unknown'}` by `{snapshot.latest_status_author or 'Unknown'}`"
+                )
+            if snapshot.latest_status_text:
+                lines.append(f"Status detail: {snapshot.latest_status_text[:220]}")
+            if snapshot.latest_issue_type:
+                lines.append(
+                    "Latest issue: "
+                    f"`{snapshot.latest_issue_type.replace('_', '-')}` at "
+                    f"`{snapshot.latest_issue_at or 'unknown'}` by `{snapshot.latest_issue_author or 'Unknown'}`"
+                )
+            if snapshot.latest_issue_text:
+                lines.append(f"Issue detail: {snapshot.latest_issue_text[:220]}")
+            lines.append("")
+            lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
+            return CommandResult(message="\n".join(lines))
 
         lines = [
             f"**Parts Brief SR-{summary.service_request_id or sr_id}**",
@@ -51,7 +76,6 @@ class BlueFolderService:
             f"Customer: {summary.customer_name or 'n/a'}",
             f"Address: {self._format_address(summary) or 'n/a'}",
         ]
-        snapshot = await self.get_parts_snapshot(sr_id)
         if snapshot is None:
             lines.extend(
                 [
