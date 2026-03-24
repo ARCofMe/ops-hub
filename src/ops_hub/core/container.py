@@ -61,7 +61,16 @@ def build_container(settings: Settings) -> ServiceContainer:
         file_path=Path(settings.parts_request_file).expanduser() if settings.parts_request_file else None,
     )
     photo_adapter = PhotoIngestAdapter(base_path=settings.photo_ingest_project_path)
-    dispatch_adapter = DispatchAdapter(base_path=settings.dispatch_project_path)
+    dispatch_adapter = DispatchAdapter(
+        base_path=settings.dispatch_project_path,
+        bluefolder_api_path=settings.bluefolder_api_path,
+        bluefolder_api_key=settings.bluefolder_api_key,
+        bluefolder_account_name=settings.bluefolder_account_name,
+        bluefolder_base_url=settings.bluefolder_base_url,
+        bluefolder_host_header=settings.bluefolder_host_header,
+        bluefolder_verify_ssl=settings.bluefolder_verify_ssl,
+        bluefolder_timeout_seconds=settings.bluefolder_timeout_seconds,
+    )
 
     return ServiceContainer(
         settings=settings,

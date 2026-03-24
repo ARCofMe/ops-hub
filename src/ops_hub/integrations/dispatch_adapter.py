@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import logging
+import os
 from pathlib import Path
 import sys
 from types import TracebackType
@@ -19,6 +20,13 @@ class DispatchAdapter:
     """Adapter boundary for dispatch-facing operations."""
 
     base_path: str | None = None
+    bluefolder_api_path: str | None = None
+    bluefolder_api_key: str | None = None
+    bluefolder_account_name: str | None = None
+    bluefolder_base_url: str | None = None
+    bluefolder_host_header: str | None = None
+    bluefolder_verify_ssl: bool | None = None
+    bluefolder_timeout_seconds: float | None = None
 
     async def get_job(
         self,
@@ -48,7 +56,7 @@ class DispatchAdapter:
 
         module_name = "optimized_routing.routing"
         try:
-            with _temporary_sys_path(resolved_path):
+            with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
                 sys.modules.pop("optimized_routing", None)
                 sys.modules.pop(module_name, None)
@@ -94,7 +102,7 @@ class DispatchAdapter:
             "start": "",
         }
         try:
-            with _temporary_sys_path(resolved_path):
+            with self._dispatch_runtime_context(resolved_path):
                 stops = preview_builder([assignment])
         except Exception as exc:
             logger.exception("Failed to build dispatch stop preview for %s", reference)
@@ -122,7 +130,7 @@ class DispatchAdapter:
         technician_origin_address = None
         if technician_bluefolder_user_id is not None:
             try:
-                with _temporary_sys_path(resolved_path):
+                with self._dispatch_runtime_context(resolved_path):
                     importlib.invalidate_caches()
                     sys.modules.pop("optimized_routing.bluefolder_integration", None)
                     integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
@@ -137,9 +145,10 @@ class DispatchAdapter:
                     )
                     technician_origin_address = integration.get_user_origin_address(technician_bluefolder_user_id)
             except Exception as exc:
-                logger.exception(
-                    "Failed to build technician dispatch context for user %s",
+                logger.warning(
+                    "Dispatch technician context unavailable for user %s: %s",
                     technician_bluefolder_user_id,
+                    exc,
                 )
                 technician_assignment_status = f"context_failed: {exc}"
 
@@ -164,7 +173,7 @@ class DispatchAdapter:
             return []
 
         try:
-            with _temporary_sys_path(resolved_path):
+            with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
                 sys.modules.pop("optimized_routing", None)
                 sys.modules.pop("optimized_routing.bluefolder_integration", None)
@@ -172,10 +181,11 @@ class DispatchAdapter:
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 assignments = integration.get_user_assignments_today(technician_bluefolder_user_id) or []
-        except Exception:
-            logger.exception(
-                "Failed to load assignments for mapped BlueFolder user %s",
+        except Exception as exc:
+            logger.warning(
+                "Dispatch wrapper assignments unavailable for mapped BlueFolder user %s: %s",
                 technician_bluefolder_user_id,
+                exc,
             )
             return []
 
@@ -188,7 +198,7 @@ class DispatchAdapter:
             return None
 
         try:
-            with _temporary_sys_path(resolved_path):
+            with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
                 sys.modules.pop("optimized_routing", None)
                 sys.modules.pop("optimized_routing.bluefolder_integration", None)
@@ -196,12 +206,29 @@ class DispatchAdapter:
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
-        except Exception:
-            logger.exception(
-                "Failed to load origin address for mapped BlueFolder user %s",
+        except Exception as exc:
+            logger.warning(
+                "Dispatch wrapper origin unavailable for mapped BlueFolder user %s: %s",
                 technician_bluefolder_user_id,
+                exc,
             )
             return None
+
+    def _dispatch_runtime_context(self, resolved_path: Path) -> "_temporary_dispatch_context":
+        """Build the shared runtime context for dispatch wrapper imports and calls."""
+        bluefolder_path = (
+            Path(self.bluefolder_api_path).expanduser() if self.bluefolder_api_path else None
+        )
+        return _temporary_dispatch_context(
+            dispatch_path=resolved_path,
+            bluefolder_path=bluefolder_path,
+            api_key=self.bluefolder_api_key,
+            account_name=self.bluefolder_account_name,
+            base_url=self.bluefolder_base_url,
+            host_header=self.bluefolder_host_header,
+            verify_ssl=self.bluefolder_verify_ssl,
+            timeout_seconds=self.bluefolder_timeout_seconds,
+        )
 
 
 class _temporary_sys_path:
@@ -224,3 +251,57 @@ class _temporary_sys_path:
             sys.path.remove(self.path)
         except ValueError:
             pass
+
+
+class _temporary_dispatch_context:
+    """Context manager for dispatch-wrapper imports plus BlueFolder runtime env."""
+
+    def __init__(
+        self,
+        *,
+        dispatch_path: Path,
+        bluefolder_path: Path | None,
+        api_key: str | None,
+        account_name: str | None,
+        base_url: str | None,
+        host_header: str | None,
+        verify_ssl: bool | None,
+        timeout_seconds: float | None,
+    ) -> None:
+        self.dispatch_ctx = _temporary_sys_path(dispatch_path)
+        self.bluefolder_ctx = _temporary_sys_path(bluefolder_path) if bluefolder_path else None
+        self.values = {
+            "BLUEFOLDER_API_KEY": api_key or "",
+            "BLUEFOLDER_ACCOUNT_NAME": account_name or "",
+            "BLUEFOLDER_BASE_URL": base_url or "",
+            "BLUEFOLDER_HOST_HEADER": host_header or "",
+            "BLUEFOLDER_VERIFY_SSL": "" if verify_ssl is None else str(verify_ssl).lower(),
+            "BLUEFOLDER_TIMEOUT_SECONDS": "" if timeout_seconds is None else str(timeout_seconds),
+        }
+        self.previous: dict[str, str | None] = {}
+
+    def __enter__(self) -> None:
+        self.dispatch_ctx.__enter__()
+        if self.bluefolder_ctx is not None:
+            self.bluefolder_ctx.__enter__()
+        for key, value in self.values.items():
+            self.previous[key] = os.environ.get(key)
+            if value:
+                os.environ[key] = value
+            else:
+                os.environ.pop(key, None)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        for key, previous_value in self.previous.items():
+            if previous_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous_value
+        if self.bluefolder_ctx is not None:
+            self.bluefolder_ctx.__exit__(exc_type, exc, tb)
+        self.dispatch_ctx.__exit__(exc_type, exc, tb)
