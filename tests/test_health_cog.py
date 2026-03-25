@@ -51,10 +51,14 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
     assert "`/ping`, `/help`" in result
     assert "**Technician**" in result
     assert "/missing_part" in result
+    assert "/customer" in result
     assert "/eta" in result
     assert "/enroute" in result
+    assert "/start" in result
     assert "/no_answer" in result
     assert "/not_home" in result
+    assert "/note" in result
+    assert "/reschedule_needed" in result
     assert "**Dispatch**" in result
     assert "/dispatch_attention" in result
     assert "/dispatch_next" in result

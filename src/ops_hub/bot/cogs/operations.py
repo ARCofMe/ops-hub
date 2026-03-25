@@ -124,61 +124,75 @@ class OperationsCog(commands.Cog):
     @app_commands.command(name="eta", description="Log an ETA update to a service request.")
     async def eta(self, interaction: discord.Interaction, sr_id: int, minutes: int) -> None:
         """Log a technician ETA update."""
-        identity = self._resolve_identity(interaction)
-        if not self._can_upload_sr_photo(identity):
-            raise app_commands.CheckFailure("You do not have permission to use this command.")
-        result = await self.bot.container.bluefolder_service.log_route_update(
-            sr_id,
-            update_type="eta",
-            requested_by_user_id=interaction.user.id,
-            minutes=minutes,
-            notify_dispatch=True,
-        )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_field_event(interaction, sr_id=sr_id, event_type="eta", minutes=minutes, notify_dispatch=True)
 
     @app_commands.command(name="enroute", description="Log that the technician is en route to a service request.")
     async def enroute(self, interaction: discord.Interaction, sr_id: int, minutes: int | None = None) -> None:
         """Log a technician en-route update."""
-        identity = self._resolve_identity(interaction)
-        if not self._can_upload_sr_photo(identity):
-            raise app_commands.CheckFailure("You do not have permission to use this command.")
-        result = await self.bot.container.bluefolder_service.log_route_update(
-            sr_id,
-            update_type="enroute",
-            requested_by_user_id=interaction.user.id,
-            minutes=minutes,
-            notify_dispatch=True,
-        )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_field_event(interaction, sr_id=sr_id, event_type="enroute", minutes=minutes, notify_dispatch=True)
 
     @app_commands.command(name="no_answer", description="Log that the customer did not answer.")
     async def no_answer(self, interaction: discord.Interaction, sr_id: int, details: str | None = None) -> None:
         """Log a no-answer contact issue."""
-        identity = self._resolve_identity(interaction)
-        if not self._can_upload_sr_photo(identity):
-            raise app_commands.CheckFailure("You do not have permission to use this command.")
-        result = await self.bot.container.bluefolder_service.log_contact_issue(
-            sr_id,
-            issue_type="no_answer",
+        await self._send_field_event(
+            interaction,
+            sr_id=sr_id,
+            event_type="no_answer",
             details=details,
-            requested_by_user_id=interaction.user.id,
             notify_dispatch=True,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="not_home", description="Log that the customer was not home.")
     async def not_home(self, interaction: discord.Interaction, sr_id: int, details: str | None = None) -> None:
         """Log a not-home contact issue."""
-        identity = self._resolve_identity(interaction)
-        if not self._can_upload_sr_photo(identity):
-            raise app_commands.CheckFailure("You do not have permission to use this command.")
-        result = await self.bot.container.bluefolder_service.log_contact_issue(
-            sr_id,
-            issue_type="not_home",
+        await self._send_field_event(
+            interaction,
+            sr_id=sr_id,
+            event_type="not_home",
             details=details,
-            requested_by_user_id=interaction.user.id,
             notify_dispatch=True,
         )
+
+    @app_commands.command(name="start", description="Log that work has started on a service request.")
+    @app_commands.describe(details="Optional detail about the work start.")
+    async def start(self, interaction: discord.Interaction, sr_id: int, details: str | None = None) -> None:
+        """Log a technician work-start update."""
+        await self._send_field_event(
+            interaction,
+            sr_id=sr_id,
+            event_type="start",
+            details=details,
+            notify_dispatch=True,
+        )
+
+    @app_commands.command(name="note", description="Add a quick field note to a service request.")
+    async def note(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
+        """Log a lightweight technician field note."""
+        await self._send_field_event(
+            interaction,
+            sr_id=sr_id,
+            event_type="note",
+            details=details,
+        )
+
+    @app_commands.command(name="reschedule_needed", description="Log that the service request needs rescheduling.")
+    async def reschedule_needed(self, interaction: discord.Interaction, sr_id: int, reason: str) -> None:
+        """Log a reschedule-needed update for dispatch follow-up."""
+        await self._send_field_event(
+            interaction,
+            sr_id=sr_id,
+            event_type="reschedule_needed",
+            details=reason,
+            notify_dispatch=True,
+        )
+
+    @app_commands.command(name="customer", description="Show a quick customer and location snapshot for a service request.")
+    async def customer(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show customer and location context for field use."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_use_job_commands(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.get_customer_snapshot(sr_id)
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(name="photo_archive", description="Email one or more compressed job photos to the archive mailbox.")
@@ -581,6 +595,30 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    async def _send_field_event(
+        self,
+        interaction: discord.Interaction,
+        *,
+        sr_id: int,
+        event_type: str,
+        details: str | None = None,
+        minutes: int | None = None,
+        notify_dispatch: bool = False,
+    ) -> None:
+        """Log a standardized field event after access checks."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_log_field_event(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_field_event(
+            sr_id,
+            event_type=event_type,
+            requested_by_user_id=interaction.user.id,
+            details=details,
+            minutes=minutes,
+            notify_dispatch=notify_dispatch,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _can_use_job_commands(self, identity) -> bool:
         """Return whether the user can access job and assignments commands."""
         return identity.is_admin or identity.is_technician or identity.is_dispatcher
@@ -607,6 +645,10 @@ class OperationsCog(commands.Cog):
 
     def _can_upload_sr_photo(self, identity) -> bool:
         """Return whether the user can upload or archive service-request photos."""
+        return identity.is_admin or identity.is_technician
+
+    def _can_log_field_event(self, identity) -> bool:
+        """Return whether the user can log technician field-workflow actions."""
         return identity.is_admin or identity.is_technician
 
     async def _attachment_payload(self, attachment: discord.Attachment) -> PhotoAttachmentPayload:

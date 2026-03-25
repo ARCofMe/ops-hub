@@ -393,6 +393,81 @@ def test_bluefolder_adapter_marks_user_directory_unavailable_after_failure(tmp_p
     assert adapter._active_user_directory_unavailable is True
 
 
+def test_bluefolder_service_logs_field_event_and_notifies() -> None:
+    class AdapterStub:
+        async def add_field_event_comment(self, sr_id, **kwargs):
+            assert sr_id == 100
+            assert kwargs["event_type"] == "start"
+            assert kwargs["details"] == "Beginning diagnosis."
+            return {
+                "ok": True,
+                "note_text": "Technician started work at 8:15 AM. Details: Beginning diagnosis.",
+                "logged_at": "2026-03-25T08:15",
+            }
+
+    class NotificationStub:
+        def __init__(self) -> None:
+            self.records: list[tuple[str, str]] = []
+
+        async def send_notice(self, *, topic: str, message: str) -> None:
+            self.records.append((topic, message))
+
+    notifications = NotificationStub()
+    service = BlueFolderService(adapter=AdapterStub(), notifications=notifications)
+
+    result = asyncio.run(
+        service.log_field_event(
+            100,
+            event_type="start",
+            details="Beginning diagnosis.",
+            requested_by_user_id=42,
+            notify_dispatch=True,
+        )
+    )
+
+    assert "Logged start for `100`" in result.message
+    assert notifications.records == [
+        (
+            "dispatch.field_update",
+            "SR-100 start logged. Technician started work at 8:15 AM. Details: Beginning diagnosis.",
+        )
+    ]
+
+
+def test_bluefolder_service_builds_customer_snapshot() -> None:
+    class AdapterStub:
+        async def get_job_summary(self, reference: str):
+            assert reference == "SR-100"
+            from ops_hub.models.requests import BlueFolderJobSummary
+
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="live_read",
+                message="ok",
+                service_request_id="100",
+                subject="Dryer repair",
+                customer_name="Jane Doe",
+                customer_id="55",
+                customer_location_id="9",
+                address="123 Main St",
+                city="Portland",
+                state="ME",
+                postal_code="04101",
+                service_request_status="Scheduled",
+            )
+
+    service = BlueFolderService(adapter=AdapterStub())
+
+    result = asyncio.run(service.get_customer_snapshot(100))
+
+    assert "**Customer SR-100**" in result.message
+    assert "Subject: Dryer repair" in result.message
+    assert "Customer: Jane Doe" in result.message
+    assert "Status: `Scheduled`" in result.message
+    assert "Address: 123 Main St, Portland ME 04101" in result.message
+
+
 def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()
@@ -1263,7 +1338,7 @@ def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> Non
 
 def test_bluefolder_service_logs_route_update_and_notifies() -> None:
     class _Adapter:
-        async def add_route_update_comment(self, sr_id, *, update_type, requested_by_user_id, minutes=None):
+        async def add_field_event_comment(self, sr_id, *, event_type, requested_by_user_id, details=None, minutes=None):
             return {
                 "ok": True,
                 "logged_at": "2026-03-25T12:30",
@@ -1298,7 +1373,7 @@ def test_bluefolder_service_logs_route_update_and_notifies() -> None:
 
 def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
     class _Adapter:
-        async def add_contact_issue_comment(self, sr_id, *, issue_type, details, requested_by_user_id):
+        async def add_field_event_comment(self, sr_id, *, event_type, requested_by_user_id, details=None, minutes=None):
             return {
                 "ok": True,
                 "logged_at": "2026-03-25T12:30",

@@ -369,37 +369,12 @@ class BlueFolderAdapter:
         requested_by_user_id: int,
     ) -> dict[str, str | bool | None]:
         """Add a standardized contact/arrival issue comment to a service request."""
-        client, _resolved_path = self._build_client()
-        if client is None:
-            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
-
-        detail_text = " ".join((details or "").split()).strip()
-        timestamp = datetime.now().replace(second=0, microsecond=0)
-        if issue_type == "no_answer":
-            prefix = "Customer no-answer"
-        else:
-            prefix = "Customer not home at arrival"
-
-        comment_text = f"{prefix} at {timestamp.strftime('%I:%M %p').lstrip('0')}."
-        if detail_text:
-            comment_text = f"{comment_text} Details: {detail_text}."
-        comment_text = f"{comment_text} Reported by Discord user {requested_by_user_id}."
-
-        try:
-            client.comments.add_to_service_request(
-                sr_id,
-                comment_text,
-                visible_to_customer=False,
-            )
-        except Exception as exc:
-            logger.exception("BlueFolder contact-issue write failed for SR %s", sr_id)
-            return {"ok": False, "error": str(exc)}
-
-        return {
-            "ok": True,
-            "note_text": comment_text,
-            "logged_at": timestamp.isoformat(timespec="minutes"),
-        }
+        return await self.add_field_event_comment(
+            sr_id,
+            event_type=issue_type,
+            requested_by_user_id=requested_by_user_id,
+            details=details,
+        )
 
     async def add_route_update_comment(
         self,
@@ -410,23 +385,43 @@ class BlueFolderAdapter:
         minutes: int | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized route-status comment to a service request."""
+        return await self.add_field_event_comment(
+            sr_id,
+            event_type=update_type,
+            requested_by_user_id=requested_by_user_id,
+            minutes=minutes,
+        )
+
+    async def add_field_event_comment(
+        self,
+        sr_id: int,
+        *,
+        event_type: str,
+        requested_by_user_id: int,
+        details: str | None = None,
+        minutes: int | None = None,
+    ) -> dict[str, str | bool | None]:
+        """Add a standardized field-workflow comment to a service request."""
         client, _resolved_path = self._build_client()
         if client is None:
             return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
 
         timestamp = datetime.now().replace(second=0, microsecond=0)
-        if update_type == "eta":
-            if minutes is None or minutes <= 0:
+        comment_text = self._build_field_event_comment_text(
+            event_type=event_type,
+            timestamp=timestamp,
+            requested_by_user_id=requested_by_user_id,
+            details=details,
+            minutes=minutes,
+        )
+        if comment_text is None:
+            if event_type == "eta":
                 return {"ok": False, "error": "ETA minutes must be greater than 0."}
-            comment_text = f"ETA update: arriving in {minutes} minutes."
-        else:
-            comment_text = f"Technician en route at {timestamp.strftime('%I:%M %p').lstrip('0')}."
-            if minutes is not None:
-                if minutes <= 0:
-                    return {"ok": False, "error": "ETA minutes must be greater than 0 when provided."}
-                comment_text = f"{comment_text} ETA update: arriving in {minutes} minutes."
-
-        comment_text = f"{comment_text} Reported by Discord user {requested_by_user_id}."
+            if event_type == "enroute":
+                return {"ok": False, "error": "ETA minutes must be greater than 0 when provided."}
+            if event_type in {"note", "reschedule_needed"}:
+                return {"ok": False, "error": "Details are required."}
+            return {"ok": False, "error": f"Unsupported field event `{event_type}`."}
 
         try:
             client.comments.add_to_service_request(
@@ -435,7 +430,7 @@ class BlueFolderAdapter:
                 visible_to_customer=False,
             )
         except Exception as exc:
-            logger.exception("BlueFolder route-update write failed for SR %s", sr_id)
+            logger.exception("BlueFolder field-event write failed for SR %s", sr_id)
             return {"ok": False, "error": str(exc)}
 
         return {
@@ -443,6 +438,54 @@ class BlueFolderAdapter:
             "note_text": comment_text,
             "logged_at": timestamp.isoformat(timespec="minutes"),
         }
+
+    def _build_field_event_comment_text(
+        self,
+        *,
+        event_type: str,
+        timestamp: datetime,
+        requested_by_user_id: int,
+        details: str | None,
+        minutes: int | None,
+    ) -> str | None:
+        """Render a standardized field-workflow comment body."""
+        detail_text = " ".join((details or "").split()).strip()
+        event_time = timestamp.strftime("%I:%M %p").lstrip("0")
+
+        if event_type == "eta":
+            if minutes is None or minutes <= 0:
+                return None
+            body = f"ETA update: arriving in {minutes} minutes."
+        elif event_type == "enroute":
+            body = f"Technician en route at {event_time}."
+            if minutes is not None:
+                if minutes <= 0:
+                    return None
+                body = f"{body} ETA update: arriving in {minutes} minutes."
+        elif event_type == "no_answer":
+            body = f"Customer no-answer at {event_time}."
+            if detail_text:
+                body = f"{body} Details: {detail_text}."
+        elif event_type == "not_home":
+            body = f"Customer not home at arrival at {event_time}."
+            if detail_text:
+                body = f"{body} Details: {detail_text}."
+        elif event_type == "start":
+            body = f"Technician started work at {event_time}."
+            if detail_text:
+                body = f"{body} Details: {detail_text}."
+        elif event_type == "note":
+            if not detail_text:
+                return None
+            body = f"Technician field note at {event_time}. Details: {detail_text}."
+        elif event_type == "reschedule_needed":
+            if not detail_text:
+                return None
+            body = f"Reschedule needed noted at {event_time}. Reason: {detail_text}."
+        else:
+            return None
+
+        return f"{body} Reported by Discord user {requested_by_user_id}."
 
     async def get_active_user_directory(self) -> dict[int, str]:
         """Return a BlueFolder active-user directory keyed by user id."""

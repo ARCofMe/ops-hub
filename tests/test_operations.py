@@ -169,6 +169,7 @@ def test_technician_can_use_route_status_commands() -> None:
     identity = cog._resolve_identity(interaction)
 
     assert cog._can_upload_sr_photo(identity) is True
+    assert cog._can_log_field_event(identity) is True
 
 
 def test_parts_can_write_bluefolder_parts_update() -> None:

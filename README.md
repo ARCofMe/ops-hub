@@ -43,6 +43,7 @@ Technician / dispatch / admin:
 
 - `/job`
 - `/assignments`
+- `/customer`
 
 Dispatch / admin:
 
@@ -59,10 +60,24 @@ Technician / parts / admin:
 - `/missing_part`
 - `/damaged_part`
 
+Technician / admin:
+
+- `/route_map`
+- `/eta`
+- `/enroute`
+- `/start`
+- `/no_answer`
+- `/not_home`
+- `/reschedule_needed`
+- `/note`
+- `/mdlsn`
+- `/photo_archive`
+
 Technician / parts / dispatch / admin:
 
 - `/parts_brief`
 - `/parts_notes`
+- `/photo_status`
 
 Parts / admin:
 
@@ -100,7 +115,22 @@ Admin only:
 - `/job` supports direct SR lookup
 - `/job` also supports mapped self-context when no reference is provided
 - `/assignments` shows the current mapped technician assignment view
+- `/customer` gives a quick SR customer/location snapshot in the field
 - dispatch has dedicated one-tech, team-board, triage, and next-action views
+
+### Technician Field Updates
+
+Ops Hub can log fast field updates directly back to BlueFolder and route notices to dispatch when needed:
+
+- `/eta`
+- `/enroute`
+- `/start`
+- `/no_answer`
+- `/not_home`
+- `/reschedule_needed`
+- `/note`
+
+These commands are intentionally shaped as workflow events so future side effects like customer SMS can be added without changing the command model.
 
 ### BlueFolder-Native Parts Flow
 

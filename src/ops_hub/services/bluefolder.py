@@ -258,32 +258,12 @@ class BlueFolderService:
         notify_dispatch: bool = True,
     ) -> CommandResult:
         """Add a standardized BlueFolder contact issue comment and optionally notify dispatch."""
-        result = await self.adapter.add_contact_issue_comment(
+        return await self.log_field_event(
             sr_id,
-            issue_type=issue_type,
-            details=details,
+            event_type=issue_type,
             requested_by_user_id=requested_by_user_id,
-        )
-        if not result.get("ok"):
-            return CommandResult(
-                message=(
-                    f"Could not log {issue_type.replace('_', '-')} for `{sr_id}`: "
-                    f"{result.get('error') or 'unknown error'}"
-                )
-            )
-        if notify_dispatch and self.notifications is not None:
-            await self.notifications.send_notice(
-                topic="dispatch.contact_issue",
-                message=f"SR-{sr_id} {issue_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
-            )
-        return CommandResult(
-            message="\n".join(
-                [
-                    f"Logged {issue_type.replace('_', '-')} for `{sr_id}`",
-                    f"Logged at: `{result.get('logged_at') or 'unknown'}`",
-                    f"BlueFolder note: {result.get('note_text') or ''}",
-                ]
-            )
+            details=details,
+            notify_dispatch=notify_dispatch,
         )
 
     async def log_route_update(
@@ -296,33 +276,86 @@ class BlueFolderService:
         notify_dispatch: bool = False,
     ) -> CommandResult:
         """Add a standardized BlueFolder route-status comment and optionally notify dispatch."""
-        result = await self.adapter.add_route_update_comment(
+        return await self.log_field_event(
             sr_id,
-            update_type=update_type,
+            event_type=update_type,
             requested_by_user_id=requested_by_user_id,
+            minutes=minutes,
+            notify_dispatch=notify_dispatch,
+        )
+
+    async def log_field_event(
+        self,
+        sr_id: int,
+        *,
+        event_type: str,
+        requested_by_user_id: int,
+        details: str | None = None,
+        minutes: int | None = None,
+        notify_dispatch: bool = False,
+    ) -> CommandResult:
+        """Add a standardized field-workflow comment and optionally notify dispatch."""
+        result = await self.adapter.add_field_event_comment(
+            sr_id,
+            event_type=event_type,
+            requested_by_user_id=requested_by_user_id,
+            details=details,
             minutes=minutes,
         )
         if not result.get("ok"):
             return CommandResult(
                 message=(
-                    f"Could not log {update_type.replace('_', '-')} for `{sr_id}`: "
+                    f"Could not log {event_type.replace('_', '-')} for `{sr_id}`: "
                     f"{result.get('error') or 'unknown error'}"
                 )
             )
         if notify_dispatch and self.notifications is not None:
             await self.notifications.send_notice(
-                topic="dispatch.route_update",
-                message=f"SR-{sr_id} {update_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
+                topic=self._field_event_topic(event_type),
+                message=f"SR-{sr_id} {event_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
             )
         return CommandResult(
             message="\n".join(
                 [
-                    f"Logged {update_type.replace('_', '-')} for `{sr_id}`",
+                    f"Logged {event_type.replace('_', '-')} for `{sr_id}`",
                     f"Logged at: `{result.get('logged_at') or 'unknown'}`",
                     f"BlueFolder note: {result.get('note_text') or ''}",
                 ]
             )
         )
+
+    async def get_customer_snapshot(self, sr_id: int) -> CommandResult:
+        """Return a concise customer and location snapshot for field use."""
+        summary = await self.adapter.get_job_summary(f"SR-{sr_id}")
+        if not summary.available:
+            return CommandResult(
+                message="\n".join(
+                    [
+                        f"**Customer SR-{sr_id}**",
+                        "",
+                        "**BlueFolder**",
+                        f"Status: `{summary.integration_status}`",
+                        f"Detail: {summary.message}",
+                    ]
+                )
+            )
+
+        lines = [
+            f"**Customer SR-{summary.service_request_id or sr_id}**",
+            f"Subject: {summary.subject or 'Unlabeled Service Request'}",
+            f"Customer: {summary.customer_name or 'n/a'}",
+        ]
+        if summary.service_request_status:
+            lines.append(f"Status: `{summary.service_request_status}`")
+        if address := self._format_address(summary):
+            lines.append(f"Address: {address}")
+        if summary.customer_id or summary.customer_location_id:
+            lines.extend(["", "**BlueFolder**"])
+            if summary.customer_id:
+                lines.append(f"Customer ID: `{summary.customer_id}`")
+            if summary.customer_location_id:
+                lines.append(f"Location ID: `{summary.customer_location_id}`")
+        return CommandResult(message="\n".join(lines))
 
     def _format_address(self, summary: BlueFolderJobSummary) -> str:
         """Format a readable address from the BlueFolder job summary."""
@@ -352,6 +385,14 @@ class BlueFolderService:
         if snapshot.stage == "part_ready":
             return "Dispatch should contact the customer and move the SR toward scheduling."
         return "Review the latest BlueFolder parts notes and determine the next update needed."
+
+    def _field_event_topic(self, event_type: str) -> str:
+        """Resolve the dispatch notice topic for a field event."""
+        if event_type in {"eta", "enroute"}:
+            return "dispatch.route_update"
+        if event_type in {"no_answer", "not_home"}:
+            return "dispatch.contact_issue"
+        return "dispatch.field_update"
 
     def _build_parts_lifecycle_snapshot(self, comments: list[PartsCommentRecord]) -> PartsLifecycleSnapshot:
         """Derive a normalized parts stage and relevant details from recent comments."""
