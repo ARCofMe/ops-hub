@@ -12,6 +12,7 @@ from ops_hub.models.requests import (
     PhotoAttachmentPayload,
     PhotoIngestMessage,
     PhotoIngestResult,
+    TechnicianMappingRecord,
 )
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
@@ -172,6 +173,65 @@ class PhotoIngestService:
         ]
         if notice_sent:
             lines.extend(["", "Reminder notice sent."])
+        return CommandResult(message="\n".join(lines))
+
+    async def build_photo_compliance_board(
+        self,
+        mappings: list[TechnicianMappingRecord],
+        *,
+        actionable_only: bool = True,
+    ) -> CommandResult:
+        """Build a dispatcher-facing board of photo-compliance status for current assignments."""
+        if self.bluefolder_service is None:
+            return CommandResult(message="Photo compliance board requires BlueFolder service access.")
+        if not mappings:
+            return CommandResult(message="Photo compliance board requires at least one technician mapping.")
+
+        lines = ["**Photo Compliance Board**"]
+        scanned = 0
+        actionable = 0
+        entries: list[str] = []
+
+        for mapping in mappings:
+            assignments = await self.bluefolder_service.get_assignments_for_user_today(mapping.bluefolder_user_id)
+            technician_label = self._technician_mention(mapping.discord_user_id) or "Unknown technician"
+            for assignment in assignments[:10]:
+                sr_id_text = str(assignment.get("serviceRequestId") or "").strip()
+                if not sr_id_text.isdigit():
+                    continue
+                scanned += 1
+                sr_id = int(sr_id_text)
+                summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+                compliance = await self.adapter.get_photo_compliance_summary(sr_id)
+                matched_required_status = self._matches_required_status(summary.service_request_status)
+                is_actionable = matched_required_status and (compliance.total_photos <= 0 or bool(compliance.missing_tags))
+                if actionable_only and not is_actionable:
+                    continue
+                if is_actionable:
+                    actionable += 1
+
+                subject = summary.subject or assignment.get("subject") or "Unlabeled Service Request"
+                entries.extend(
+                    [
+                        "",
+                        f"`SR-{sr_id}` {subject}",
+                        f"Technician: {technician_label}",
+                        f"Status: `{summary.service_request_status or 'unknown'}`",
+                        f"Photos present: `{'yes' if compliance.total_photos > 0 else 'no'}`",
+                        "Missing tags: "
+                        + (", ".join(f"`{tag}`" for tag in compliance.missing_tags) if compliance.missing_tags else "none"),
+                        f"Actionable: `{'yes' if is_actionable else 'no'}`",
+                    ]
+                )
+
+        lines.append(f"Scanned jobs: `{scanned}`")
+        lines.append(f"Actionable jobs: `{actionable}`")
+        if actionable_only:
+            lines.append("Showing only jobs that match the photo-required status policy and still need photos.")
+        if not entries:
+            lines.append("No current jobs matched the requested photo compliance view.")
+            return CommandResult(message="\n".join(lines))
+        lines.extend(entries[:140])
         return CommandResult(message="\n".join(lines))
 
     def _matches_required_status(self, service_request_status: str | None) -> bool:

@@ -283,7 +283,7 @@ class AdminCog(commands.Cog):
                 "`/photo_reminder_check`: dispatchers, admins",
                 "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins",
                 "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins",
-                "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`: dispatchers, admins",
+                "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/photo_compliance_board`: dispatchers, admins",
                 "`/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`: parts, admins",
                 "`/ping`: open to anyone who can invoke the bot",
             ]

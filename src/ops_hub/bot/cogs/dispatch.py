@@ -96,6 +96,22 @@ class DispatchCog(commands.Cog):
         result = await self.bot.container.bluefolder_service.get_parts_next_action(sr_id)
         await interaction.followup.send(result.message, ephemeral=True)
 
+    @app_commands.command(name="photo_compliance_board", description="Show current jobs that still need required photos.")
+    @app_commands.describe(actionable_only="Only show jobs that are in a photo-required status and still missing photos.")
+    async def photo_compliance_board(
+        self,
+        interaction: discord.Interaction,
+        actionable_only: bool = True,
+    ) -> None:
+        """Dispatcher-facing board for current photo compliance gaps."""
+        mappings = await self._technician_dispatch_mappings(interaction)
+        await interaction.response.defer(ephemeral=True)
+        result = await self.bot.container.photo_ingest_service.build_photo_compliance_board(
+            mappings,
+            actionable_only=actionable_only,
+        )
+        await interaction.followup.send(result.message, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)

@@ -54,6 +54,7 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
     assert "**Dispatch**" in result
     assert "/dispatch_attention" in result
     assert "/dispatch_next" in result
+    assert "/photo_compliance_board" in result
     assert "/part_reconcile" in result
     assert "/part_tracking" in result
     assert "/technician_mappings" in result

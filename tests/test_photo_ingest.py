@@ -461,6 +461,83 @@ def test_photo_ingest_service_skips_reminder_when_status_not_required() -> None:
     assert "Should notify: `no`" in result.message
 
 
+def test_photo_ingest_service_builds_photo_compliance_board() -> None:
+    class _Adapter(PhotoIngestAdapter):
+        async def get_photo_compliance_summary(self, sr_id: int):
+            from ops_hub.models.requests import PhotoComplianceSummary
+
+            if sr_id == 12345:
+                return PhotoComplianceSummary(
+                    sr_id=sr_id,
+                    mailbox_status="present",
+                    message="Found one email.",
+                    matched_records=[],
+                    total_photos=1,
+                    found_tags=["model"],
+                    missing_tags=["serial"],
+                )
+            return PhotoComplianceSummary(
+                sr_id=sr_id,
+                mailbox_status="present",
+                message="Found one email.",
+                matched_records=[],
+                total_photos=2,
+                found_tags=["model", "serial"],
+                missing_tags=[],
+            )
+
+    class _BlueFolderStub:
+        async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str]]:
+            if user_id == 13051:
+                return [
+                    {"serviceRequestId": "12345", "subject": "Washer repair"},
+                    {"serviceRequestId": "12346", "subject": "Dryer repair"},
+                ]
+            return []
+
+        async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
+            if reference == "SR-12345":
+                return BlueFolderJobSummary(
+                    reference=reference,
+                    available=True,
+                    integration_status="live_read",
+                    message="ok",
+                    service_request_id="12345",
+                    subject="Washer repair",
+                    service_request_status="Completed",
+                )
+            return BlueFolderJobSummary(
+                reference=reference,
+                available=True,
+                integration_status="live_read",
+                message="ok",
+                service_request_id="12346",
+                subject="Dryer repair",
+                service_request_status="Completed",
+            )
+
+    service = PhotoIngestService(
+        settings=_settings(photo_required_sr_statuses=["Completed"]),
+        adapter=_Adapter(),
+        feature_flags=_feature_flags(photo_mailbox_scan=True),
+        bluefolder_service=_BlueFolderStub(),  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        service.build_photo_compliance_board(
+            [type("Mapping", (), {"discord_user_id": 42, "bluefolder_user_id": 13051})()],
+            actionable_only=True,
+        )
+    )
+
+    assert "**Photo Compliance Board**" in result.message
+    assert "Scanned jobs: `2`" in result.message
+    assert "Actionable jobs: `1`" in result.message
+    assert "`SR-12345` Washer repair" in result.message
+    assert "Missing tags: `serial`" in result.message
+    assert "`SR-12346`" not in result.message
+
+
 def _mk_email(subject: str, attachment_names: list[str]) -> bytes:
     """Build a raw email with image attachments."""
     message = EmailMessage()
