@@ -345,6 +345,8 @@ class BlueFolderService:
             f"Subject: {summary.subject or 'Unlabeled Service Request'}",
             f"Customer: {summary.customer_name or 'n/a'}",
         ]
+        if summary.customer_phone:
+            lines.append(f"Phone: {summary.customer_phone}")
         if summary.service_request_status:
             lines.append(f"Status: `{summary.service_request_status}`")
         if address := self._format_address(summary):

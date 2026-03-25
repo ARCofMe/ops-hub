@@ -448,6 +448,7 @@ def test_bluefolder_service_builds_customer_snapshot() -> None:
                 service_request_id="100",
                 subject="Dryer repair",
                 customer_name="Jane Doe",
+                customer_phone="207-555-1212",
                 customer_id="55",
                 customer_location_id="9",
                 address="123 Main St",
@@ -464,6 +465,7 @@ def test_bluefolder_service_builds_customer_snapshot() -> None:
     assert "**Customer SR-100**" in result.message
     assert "Subject: Dryer repair" in result.message
     assert "Customer: Jane Doe" in result.message
+    assert "Phone: 207-555-1212" in result.message
     assert "Status: `Scheduled`" in result.message
     assert "Address: 123 Main St, Portland ME 04101" in result.message
 

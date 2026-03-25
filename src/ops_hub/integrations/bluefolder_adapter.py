@@ -152,6 +152,7 @@ class BlueFolderAdapter:
             or "Unlabeled Service Request"
         )
         customer_name = sr.findtext("customerName") or sr.findtext(".//customerName")
+        customer_phone: str | None = None
         customer_id = sr.findtext("customerId")
         customer_location_id = sr.findtext("customerLocationId")
         address: str | None = None
@@ -192,6 +193,12 @@ class BlueFolderAdapter:
                         city = location.findtext("addressCity")
                         state = location.findtext("addressState")
                         postal_code = location.findtext("addressPostalCode")
+                try:
+                    contacts = client.customer_contacts.list_for_customer(int(customer_id))
+                except Exception:
+                    logger.exception("BlueFolder contact lookup failed for customer=%s", customer_id)
+                else:
+                    customer_phone = self._select_customer_phone(contacts or [], customer_location_id)
 
         return BlueFolderJobSummary(
             reference=reference,
@@ -202,6 +209,7 @@ class BlueFolderAdapter:
             service_request_id=service_request_id,
             subject=subject,
             customer_name=customer_name,
+            customer_phone=customer_phone,
             customer_id=customer_id,
             customer_location_id=customer_location_id,
             address=address,
@@ -210,6 +218,27 @@ class BlueFolderAdapter:
             postal_code=postal_code,
             service_request_status=service_request_status,
         )
+
+    def _select_customer_phone(self, contacts: list[dict[str, object]], customer_location_id: str | None) -> str | None:
+        """Choose the best available customer phone for the SR location."""
+        preferred = [
+            contact
+            for contact in contacts
+            if str(contact.get("locationId") or "") == str(customer_location_id or "")
+        ]
+        ordered = preferred + [contact for contact in contacts if contact not in preferred]
+        primary = next((contact for contact in ordered if bool(contact.get("isPrimary"))), None)
+        if primary is not None and (phone := self._clean_phone(primary.get("phone"))):
+            return phone
+        for contact in ordered:
+            if phone := self._clean_phone(contact.get("phone")):
+                return phone
+        return None
+
+    def _clean_phone(self, value: object) -> str | None:
+        """Normalize a candidate phone value into a printable string."""
+        text = str(value or "").strip()
+        return text or None
 
     async def get_recent_parts_comments(self, sr_id: int, *, limit: int = 6) -> list[PartsCommentRecord]:
         """Return recent service-request history entries that look parts-related."""

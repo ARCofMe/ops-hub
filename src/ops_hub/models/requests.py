@@ -162,6 +162,7 @@ class BlueFolderJobSummary:
     service_request_id: str | None = None
     subject: str | None = None
     customer_name: str | None = None
+    customer_phone: str | None = None
     customer_id: str | None = None
     customer_location_id: str | None = None
     address: str | None = None
