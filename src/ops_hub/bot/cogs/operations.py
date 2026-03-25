@@ -95,7 +95,14 @@ class OperationsCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         await interaction.response.defer(ephemeral=True)
-        result = await self.bot.container.dispatch_service.lookup_route_map(request)
+        try:
+            result = await self.bot.container.dispatch_service.lookup_route_map(request)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Route map is temporarily unavailable: {exc}",
+                ephemeral=True,
+            )
+            return
         embed = None
         if result.image_url:
             embed = discord.Embed(title="Route Preview")
