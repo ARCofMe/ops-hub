@@ -118,7 +118,10 @@ def build_container(settings: Settings) -> ServiceContainer:
         notification_service=notification_service,
         technician_directory_service=technician_directory_service,
         photo_feature_flags_service=photo_feature_flags_service,
-        bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
+        bluefolder_service=BlueFolderService(
+            adapter=bluefolder_adapter,
+            notifications=notification_service,
+        ),
         parts_cannon_service=PartsCannonService(
             adapter=parts_adapter,
             notifications=notification_service,
@@ -129,7 +132,10 @@ def build_container(settings: Settings) -> ServiceContainer:
             settings=settings,
             adapter=photo_adapter,
             feature_flags=photo_feature_flags_service,
-            bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
+            bluefolder_service=BlueFolderService(
+                adapter=bluefolder_adapter,
+                notifications=notification_service,
+            ),
             technician_directory_service=technician_directory_service,
             notifications=notification_service,
         ),

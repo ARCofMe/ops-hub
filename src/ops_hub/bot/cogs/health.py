@@ -36,6 +36,7 @@ class HealthCog(commands.Cog):
                 "",
                 "**Technician**",
                 "`/job`, `/assignments`, `/route_map`",
+                "`/eta`, `/enroute`, `/no_answer`, `/not_home`",
                 "`/mdlsn`, `/photo_archive`, `/photo_status`",
                 "`/part_request`, `/my_part_requests`",
                 "`/missing_part`, `/damaged_part`",

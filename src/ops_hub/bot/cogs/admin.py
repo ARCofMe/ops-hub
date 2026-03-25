@@ -278,6 +278,7 @@ class AdminCog(commands.Cog):
                 "Command Access",
                 "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
                 "`/job`, `/assignments`: technicians, dispatchers, admins",
+                "`/eta`, `/enroute`, `/no_answer`, `/not_home`: technicians, admins",
                 "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)",
                 "`/photo_status`: technicians, parts, dispatchers, admins (if mailbox scan is enabled)",
                 "`/photo_reminder_check`: dispatchers, admins",

@@ -360,6 +360,90 @@ class BlueFolderAdapter:
             "logged_at": timestamp.isoformat(timespec="minutes"),
         }
 
+    async def add_contact_issue_comment(
+        self,
+        sr_id: int,
+        *,
+        issue_type: str,
+        details: str | None,
+        requested_by_user_id: int,
+    ) -> dict[str, str | bool | None]:
+        """Add a standardized contact/arrival issue comment to a service request."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
+
+        detail_text = " ".join((details or "").split()).strip()
+        timestamp = datetime.now().replace(second=0, microsecond=0)
+        if issue_type == "no_answer":
+            prefix = "Customer no-answer"
+        else:
+            prefix = "Customer not home at arrival"
+
+        comment_text = f"{prefix} at {timestamp.strftime('%I:%M %p').lstrip('0')}."
+        if detail_text:
+            comment_text = f"{comment_text} Details: {detail_text}."
+        comment_text = f"{comment_text} Reported by Discord user {requested_by_user_id}."
+
+        try:
+            client.comments.add_to_service_request(
+                sr_id,
+                comment_text,
+                visible_to_customer=False,
+            )
+        except Exception as exc:
+            logger.exception("BlueFolder contact-issue write failed for SR %s", sr_id)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "note_text": comment_text,
+            "logged_at": timestamp.isoformat(timespec="minutes"),
+        }
+
+    async def add_route_update_comment(
+        self,
+        sr_id: int,
+        *,
+        update_type: str,
+        requested_by_user_id: int,
+        minutes: int | None = None,
+    ) -> dict[str, str | bool | None]:
+        """Add a standardized route-status comment to a service request."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
+
+        timestamp = datetime.now().replace(second=0, microsecond=0)
+        if update_type == "eta":
+            if minutes is None or minutes <= 0:
+                return {"ok": False, "error": "ETA minutes must be greater than 0."}
+            comment_text = f"ETA update: arriving in {minutes} minutes."
+        else:
+            comment_text = f"Technician en route at {timestamp.strftime('%I:%M %p').lstrip('0')}."
+            if minutes is not None:
+                if minutes <= 0:
+                    return {"ok": False, "error": "ETA minutes must be greater than 0 when provided."}
+                comment_text = f"{comment_text} ETA update: arriving in {minutes} minutes."
+
+        comment_text = f"{comment_text} Reported by Discord user {requested_by_user_id}."
+
+        try:
+            client.comments.add_to_service_request(
+                sr_id,
+                comment_text,
+                visible_to_customer=False,
+            )
+        except Exception as exc:
+            logger.exception("BlueFolder route-update write failed for SR %s", sr_id)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "note_text": comment_text,
+            "logged_at": timestamp.isoformat(timespec="minutes"),
+        }
+
     async def get_active_user_directory(self) -> dict[int, str]:
         """Return a BlueFolder active-user directory keyed by user id."""
         if self._active_user_directory_cache:

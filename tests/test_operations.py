@@ -162,6 +162,15 @@ def test_technician_can_write_bluefolder_parts_issue() -> None:
     assert cog._can_upload_sr_photo(identity) is True
 
 
+def test_technician_can_use_route_status_commands() -> None:
+    cog = _build_cog(technician_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_upload_sr_photo(identity) is True
+
+
 def test_parts_can_write_bluefolder_parts_update() -> None:
     cog = _build_cog(parts_user_ids=[42])
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))

@@ -1259,3 +1259,73 @@ def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> Non
 
     assert result.integration_status == "unsupported_reference"
     assert result.available is False
+
+
+def test_bluefolder_service_logs_route_update_and_notifies() -> None:
+    class _Adapter:
+        async def add_route_update_comment(self, sr_id, *, update_type, requested_by_user_id, minutes=None):
+            return {
+                "ok": True,
+                "logged_at": "2026-03-25T12:30",
+                "note_text": "ETA update: arriving in 15 minutes. Reported by Discord user 42.",
+            }
+
+    class _Notifications:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def send_notice(self, *, topic: str, message: str) -> None:
+            self.calls.append((topic, message))
+
+    notifications = _Notifications()
+    service = BlueFolderService(adapter=_Adapter(), notifications=notifications)  # type: ignore[arg-type]
+
+    result = asyncio.run(
+        service.log_route_update(
+            12345,
+            update_type="eta",
+            requested_by_user_id=42,
+            minutes=15,
+            notify_dispatch=True,
+        )
+    )
+
+    assert "Logged eta for `12345`" in result.message
+    assert notifications.calls == [
+        ("dispatch.route_update", "SR-12345 eta logged. ETA update: arriving in 15 minutes. Reported by Discord user 42.")
+    ]
+
+
+def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
+    class _Adapter:
+        async def add_contact_issue_comment(self, sr_id, *, issue_type, details, requested_by_user_id):
+            return {
+                "ok": True,
+                "logged_at": "2026-03-25T12:30",
+                "note_text": "Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Discord user 42.",
+            }
+
+    class _Notifications:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def send_notice(self, *, topic: str, message: str) -> None:
+            self.calls.append((topic, message))
+
+    notifications = _Notifications()
+    service = BlueFolderService(adapter=_Adapter(), notifications=notifications)  # type: ignore[arg-type]
+
+    result = asyncio.run(
+        service.log_contact_issue(
+            12345,
+            issue_type="no_answer",
+            details="knocked twice",
+            requested_by_user_id=42,
+            notify_dispatch=True,
+        )
+    )
+
+    assert "Logged no-answer for `12345`" in result.message
+    assert notifications.calls == [
+        ("dispatch.contact_issue", "SR-12345 no-answer logged. Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Discord user 42.")
+    ]

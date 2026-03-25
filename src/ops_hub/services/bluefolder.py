@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.models.requests import BlueFolderJobSummary, CommandResult, PartsCommentRecord, PartsLifecycleSnapshot
+from ops_hub.services.notifications import NotificationService
 
 
 @dataclass(slots=True)
@@ -13,6 +14,7 @@ class BlueFolderService:
     """Service wrapper around BlueFolder-related operations."""
 
     adapter: BlueFolderAdapter
+    notifications: NotificationService | None = None
 
     async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
         """Delegate job-summary lookup to the adapter layer."""
@@ -240,6 +242,82 @@ class BlueFolderService:
             message="\n".join(
                 [
                     f"Logged {update_type.replace('_', '-')} update for `{sr_id}`",
+                    f"Logged at: `{result.get('logged_at') or 'unknown'}`",
+                    f"BlueFolder note: {result.get('note_text') or ''}",
+                ]
+            )
+        )
+
+    async def log_contact_issue(
+        self,
+        sr_id: int,
+        *,
+        issue_type: str,
+        details: str | None,
+        requested_by_user_id: int,
+        notify_dispatch: bool = True,
+    ) -> CommandResult:
+        """Add a standardized BlueFolder contact issue comment and optionally notify dispatch."""
+        result = await self.adapter.add_contact_issue_comment(
+            sr_id,
+            issue_type=issue_type,
+            details=details,
+            requested_by_user_id=requested_by_user_id,
+        )
+        if not result.get("ok"):
+            return CommandResult(
+                message=(
+                    f"Could not log {issue_type.replace('_', '-')} for `{sr_id}`: "
+                    f"{result.get('error') or 'unknown error'}"
+                )
+            )
+        if notify_dispatch and self.notifications is not None:
+            await self.notifications.send_notice(
+                topic="dispatch.contact_issue",
+                message=f"SR-{sr_id} {issue_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
+            )
+        return CommandResult(
+            message="\n".join(
+                [
+                    f"Logged {issue_type.replace('_', '-')} for `{sr_id}`",
+                    f"Logged at: `{result.get('logged_at') or 'unknown'}`",
+                    f"BlueFolder note: {result.get('note_text') or ''}",
+                ]
+            )
+        )
+
+    async def log_route_update(
+        self,
+        sr_id: int,
+        *,
+        update_type: str,
+        requested_by_user_id: int,
+        minutes: int | None = None,
+        notify_dispatch: bool = False,
+    ) -> CommandResult:
+        """Add a standardized BlueFolder route-status comment and optionally notify dispatch."""
+        result = await self.adapter.add_route_update_comment(
+            sr_id,
+            update_type=update_type,
+            requested_by_user_id=requested_by_user_id,
+            minutes=minutes,
+        )
+        if not result.get("ok"):
+            return CommandResult(
+                message=(
+                    f"Could not log {update_type.replace('_', '-')} for `{sr_id}`: "
+                    f"{result.get('error') or 'unknown error'}"
+                )
+            )
+        if notify_dispatch and self.notifications is not None:
+            await self.notifications.send_notice(
+                topic="dispatch.route_update",
+                message=f"SR-{sr_id} {update_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
+            )
+        return CommandResult(
+            message="\n".join(
+                [
+                    f"Logged {update_type.replace('_', '-')} for `{sr_id}`",
                     f"Logged at: `{result.get('logged_at') or 'unknown'}`",
                     f"BlueFolder note: {result.get('note_text') or ''}",
                 ]

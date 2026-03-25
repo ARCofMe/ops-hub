@@ -121,6 +121,66 @@ class OperationsCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="eta", description="Log an ETA update to a service request.")
+    async def eta(self, interaction: discord.Interaction, sr_id: int, minutes: int) -> None:
+        """Log a technician ETA update."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_route_update(
+            sr_id,
+            update_type="eta",
+            requested_by_user_id=interaction.user.id,
+            minutes=minutes,
+            notify_dispatch=True,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="enroute", description="Log that the technician is en route to a service request.")
+    async def enroute(self, interaction: discord.Interaction, sr_id: int, minutes: int | None = None) -> None:
+        """Log a technician en-route update."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_route_update(
+            sr_id,
+            update_type="enroute",
+            requested_by_user_id=interaction.user.id,
+            minutes=minutes,
+            notify_dispatch=True,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="no_answer", description="Log that the customer did not answer.")
+    async def no_answer(self, interaction: discord.Interaction, sr_id: int, details: str | None = None) -> None:
+        """Log a no-answer contact issue."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_contact_issue(
+            sr_id,
+            issue_type="no_answer",
+            details=details,
+            requested_by_user_id=interaction.user.id,
+            notify_dispatch=True,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(name="not_home", description="Log that the customer was not home.")
+    async def not_home(self, interaction: discord.Interaction, sr_id: int, details: str | None = None) -> None:
+        """Log a not-home contact issue."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_upload_sr_photo(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.bluefolder_service.log_contact_issue(
+            sr_id,
+            issue_type="not_home",
+            details=details,
+            requested_by_user_id=interaction.user.id,
+            notify_dispatch=True,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     @app_commands.command(name="photo_archive", description="Email one or more compressed job photos to the archive mailbox.")
     @app_commands.describe(
         image_1="First required photo.",
