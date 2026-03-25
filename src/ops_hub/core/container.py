@@ -85,6 +85,8 @@ def build_container(settings: Settings) -> ServiceContainer:
         bluefolder_timeout_seconds=settings.bluefolder_timeout_seconds,
         compress_max_dimension=settings.photo_compress_max_dimension,
         compress_jpeg_quality=settings.photo_compress_jpeg_quality,
+        compress_max_mb=settings.photo_compress_max_mb,
+        required_tags=tuple(settings.photo_required_tags),
         archive_smtp_host=settings.photo_archive_smtp_host,
         archive_smtp_port=settings.photo_archive_smtp_port,
         archive_smtp_username=settings.photo_archive_smtp_username,

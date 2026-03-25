@@ -13,6 +13,7 @@ import imaplib
 import logging
 import os
 from pathlib import Path
+import re
 import smtplib
 import sys
 from types import TracebackType
@@ -47,6 +48,7 @@ class PhotoIngestAdapter:
     bluefolder_timeout_seconds: float | None = None
     compress_max_dimension: int = 1800
     compress_jpeg_quality: int = 82
+    compress_max_mb: int = 5
     archive_smtp_host: str | None = None
     archive_smtp_port: int | None = None
     archive_smtp_username: str | None = None
@@ -61,6 +63,7 @@ class PhotoIngestAdapter:
     mailbox_imap_use_ssl: bool = True
     mailbox_folder: str = "INBOX"
     mailbox_search_days: int = 21
+    required_tags: tuple[str, ...] = ("model", "serial")
 
     async def healthcheck(self) -> dict[str, str]:
         """Return current photo-ingest integration status."""
@@ -221,6 +224,8 @@ class PhotoIngestAdapter:
                 message="Mailbox scan is not configured for photo compliance yet.",
                 matched_records=[],
                 total_photos=0,
+                found_tags=[],
+                missing_tags=[],
             )
 
         records: list[ArchivedPhotoRecord] = []
@@ -237,6 +242,8 @@ class PhotoIngestAdapter:
                         message="Mailbox search failed for photo compliance.",
                         matched_records=[],
                         total_photos=0,
+                        found_tags=[],
+                        missing_tags=[],
                     )
                 for message_id in data[0].split():
                     fetch_status, message_data = mailbox.fetch(message_id, "(RFC822)")
@@ -247,9 +254,10 @@ class PhotoIngestAdapter:
                             continue
                         parsed = message_from_bytes(part[1])
                         subject = str(make_header(decode_header(parsed.get("Subject", ""))))
-                        if f"SR-{sr_id}".casefold() not in subject.casefold():
+                        if self._extract_service_request_id(subject) != str(sr_id):
                             continue
-                        attachment_count = self._count_photo_attachments(parsed)
+                        attachment_names = self._image_attachment_names(parsed)
+                        attachment_count = len(attachment_names)
                         if attachment_count <= 0:
                             continue
                         records.append(
@@ -258,6 +266,7 @@ class PhotoIngestAdapter:
                                 from_email=parsed.get("From"),
                                 received_at=parsed.get("Date"),
                                 attachment_count=attachment_count,
+                                attachment_names=attachment_names,
                             )
                         )
             finally:
@@ -274,10 +283,14 @@ class PhotoIngestAdapter:
                 message=f"Mailbox lookup failed: {exc}",
                 matched_records=[],
                 total_photos=0,
+                found_tags=[],
+                missing_tags=[],
             )
 
         records.sort(key=lambda record: record.received_at or "", reverse=True)
         total_photos = sum(record.attachment_count for record in records)
+        found_tags = self._extract_found_tags(records)
+        missing_tags = self._missing_required_tags(found_tags)
         if not records:
             return PhotoComplianceSummary(
                 sr_id=sr_id,
@@ -285,6 +298,8 @@ class PhotoIngestAdapter:
                 message=f"No archived photo email was found for SR-{sr_id}.",
                 matched_records=[],
                 total_photos=0,
+                found_tags=[],
+                missing_tags=list(self.required_tags),
             )
         return PhotoComplianceSummary(
             sr_id=sr_id,
@@ -292,6 +307,8 @@ class PhotoIngestAdapter:
             message=f"Found `{len(records)}` matching email(s) with `{total_photos}` photo attachment(s) for SR-{sr_id}.",
             matched_records=records,
             total_photos=total_photos,
+            found_tags=found_tags,
+            missing_tags=missing_tags,
         )
 
     def _archive_email_configured(self) -> bool:
@@ -324,15 +341,9 @@ class PhotoIngestAdapter:
                 image = image.convert("RGB")
 
             image.thumbnail((self.compress_max_dimension, self.compress_max_dimension))
-            output = io.BytesIO()
-            image.save(
-                output,
-                format="JPEG",
-                optimize=True,
-                quality=self.compress_jpeg_quality,
-            )
+            jpeg_bytes = self._encode_jpeg(image)
             stem = Path(photo.filename).stem or "photo"
-            return f"{stem}.jpg", output.getvalue()
+            return f"{stem}.jpg", jpeg_bytes
 
     def _build_bluefolder_client(self) -> object | None:
         """Construct a BlueFolder client for attachment operations."""
@@ -375,19 +386,67 @@ class PhotoIngestAdapter:
     def _build_mailbox_search_criteria(self, sr_id: int) -> tuple[str, ...]:
         """Build an IMAP search window for recent SR photo mail."""
         since_date = (datetime.now() - timedelta(days=self.mailbox_search_days)).strftime("%d-%b-%Y")
-        return ("SINCE", since_date, "SUBJECT", f"SR-{sr_id}")
+        return ("SINCE", since_date)
 
     @staticmethod
-    def _count_photo_attachments(message) -> int:
-        """Count image attachments in an email message."""
-        count = 0
+    def _image_attachment_names(message) -> list[str]:
+        """Return image attachment filenames from an email message."""
+        names: list[str] = []
         for part in message.walk():
             if part.get_content_maintype() != "image":
                 continue
-            if not part.get_filename():
+            filename = part.get_filename()
+            if not filename:
                 continue
-            count += 1
-        return count
+            names.append(filename)
+        return names
+
+    def _encode_jpeg(self, image: Image.Image) -> bytes:
+        """Encode a JPEG while stepping down quality toward the target size."""
+        max_bytes = self.compress_max_mb * 1024 * 1024
+        qualities: list[int] = []
+        for quality in [self.compress_jpeg_quality, 85, 75, 65, 55, 45, 35, 25]:
+            if quality not in qualities:
+                qualities.append(quality)
+
+        best = b""
+        for quality in qualities:
+            output = io.BytesIO()
+            image.save(output, format="JPEG", optimize=True, quality=quality)
+            data = output.getvalue()
+            best = data
+            if len(data) <= max_bytes:
+                break
+        return best
+
+    @staticmethod
+    def _extract_service_request_id(subject: str | None) -> str | None:
+        """Extract the first 4+ digit SR id from a subject line."""
+        if not subject:
+            return None
+        match = re.search(r"(\d{4,})", subject)
+        return match.group(1) if match else None
+
+    def _extract_found_tags(self, records: list[ArchivedPhotoRecord]) -> list[str]:
+        """Return normalized required tags found in attachment filenames."""
+        found: list[str] = []
+        normalized_required = [self._normalize_tag(tag) for tag in self.required_tags]
+        for record in records:
+            for attachment_name in record.attachment_names:
+                normalized_name = self._normalize_tag(attachment_name)
+                for original_tag, normalized_tag in zip(self.required_tags, normalized_required):
+                    if normalized_tag in normalized_name and original_tag not in found:
+                        found.append(original_tag)
+        return found
+
+    def _missing_required_tags(self, found_tags: list[str]) -> list[str]:
+        """Return configured required tags that are still missing."""
+        return [tag for tag in self.required_tags if tag not in found_tags]
+
+    @staticmethod
+    def _normalize_tag(value: str) -> str:
+        """Normalize text for loose tag matching."""
+        return value.casefold().replace(" ", "").replace("_", "")
 
     def _resolve_bluefolder_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

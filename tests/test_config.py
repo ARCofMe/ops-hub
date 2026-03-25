@@ -237,6 +237,14 @@ def test_validation_errors_reject_non_positive_photo_mailbox_search_days() -> No
     assert "OPS_HUB_PHOTO_MAILBOX_SEARCH_DAYS must be greater than 0." in errors
 
 
+def test_validation_errors_reject_non_positive_photo_compress_max_mb() -> None:
+    settings = _settings(photo_compress_max_mb=0)
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_PHOTO_COMPRESS_MAX_MB must be greater than 0." in errors
+
+
 def test_validation_errors_allow_bluefolder_account_and_base_url_together() -> None:
     settings = _settings(
         bluefolder_api_key="key",

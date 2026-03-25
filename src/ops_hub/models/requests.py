@@ -242,6 +242,7 @@ class ArchivedPhotoRecord:
     from_email: str | None
     received_at: str | None
     attachment_count: int
+    attachment_names: list[str]
 
 
 @dataclass(slots=True)
@@ -253,6 +254,8 @@ class PhotoComplianceSummary:
     message: str
     matched_records: list[ArchivedPhotoRecord]
     total_photos: int
+    found_tags: list[str]
+    missing_tags: list[str]
 
 
 @dataclass(slots=True)

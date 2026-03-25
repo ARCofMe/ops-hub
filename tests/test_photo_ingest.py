@@ -302,14 +302,13 @@ def test_photo_ingest_service_reports_matching_archived_photos() -> None:
             return "OK", [b""]
 
         def search(self, charset, *criteria):
-            assert "SUBJECT" in criteria
-            assert "SR-12345" in criteria
+            assert "SINCE" in criteria
             return "OK", [b"1 2"]
 
         def fetch(self, message_id, _query):
             if message_id == b"1":
-                return "OK", [(b"1 (RFC822 {123})", _mk_email("SR-12345 Washer repair", 2))]
-            return "OK", [(b"2 (RFC822 {123})", _mk_email("SR-99999 Other", 1))]
+                return "OK", [(b"1 (RFC822 {123})", _mk_email("Re: 12345 Washer repair", ["model_tag.jpg", "serial_tag.jpg"]))]
+            return "OK", [(b"2 (RFC822 {123})", _mk_email("SR-99999 Other", ["before.jpg"]))]
 
         def close(self):
             return "OK", [b""]
@@ -337,7 +336,9 @@ def test_photo_ingest_service_reports_matching_archived_photos() -> None:
 
     assert "Mailbox status: `present`" in result.message
     assert "Found `1` matching email(s) with `2` photo attachment(s) for SR-12345." in result.message
-    assert "SR-12345 Washer repair" in result.message
+    assert "Re: 12345 Washer repair" in result.message
+    assert "Found required tags: `model`, `serial`" in result.message
+    assert "Missing required tags: none" in result.message
 
 
 def test_photo_ingest_service_reports_disabled_mailbox_scan() -> None:
@@ -363,6 +364,8 @@ def test_photo_ingest_service_evaluates_missing_photo_reminder() -> None:
                 message="No archived photo email was found for SR-12345.",
                 matched_records=[],
                 total_photos=0,
+                found_tags=[],
+                missing_tags=["model", "serial"],
             )
 
     class _BlueFolderStub:
@@ -421,6 +424,8 @@ def test_photo_ingest_service_skips_reminder_when_status_not_required() -> None:
                 message="No archived photo email was found for SR-12345.",
                 matched_records=[],
                 total_photos=0,
+                found_tags=[],
+                missing_tags=["model", "serial"],
             )
 
     class _BlueFolderStub:
@@ -456,7 +461,7 @@ def test_photo_ingest_service_skips_reminder_when_status_not_required() -> None:
     assert "Should notify: `no`" in result.message
 
 
-def _mk_email(subject: str, attachment_count: int) -> bytes:
+def _mk_email(subject: str, attachment_names: list[str]) -> bytes:
     """Build a raw email with image attachments."""
     message = EmailMessage()
     message["Subject"] = subject
@@ -464,12 +469,12 @@ def _mk_email(subject: str, attachment_count: int) -> bytes:
     message["To"] = "photos@example.com"
     message["Date"] = "Tue, 24 Mar 2026 10:00:00 -0400"
     message.set_content("photo handoff")
-    for index in range(attachment_count):
+    for filename in attachment_names:
         message.add_attachment(
             _image_bytes("JPEG"),
             maintype="image",
             subtype="jpeg",
-            filename=f"photo-{index}.jpg",
+            filename=filename,
         )
     return message.as_bytes()
 

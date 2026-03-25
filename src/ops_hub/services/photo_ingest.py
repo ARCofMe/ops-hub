@@ -96,6 +96,14 @@ class PhotoIngestService:
 
         summary = await self.adapter.get_photo_compliance_summary(sr_id)
         lines = [f"**Photo Status SR-{sr_id}**", "", f"Mailbox status: `{summary.mailbox_status}`", summary.message]
+        if summary.found_tags or summary.missing_tags:
+            lines.extend(
+                [
+                    "",
+                    f"Found required tags: {', '.join(f'`{tag}`' for tag in summary.found_tags) if summary.found_tags else 'none'}",
+                    f"Missing required tags: {', '.join(f'`{tag}`' for tag in summary.missing_tags) if summary.missing_tags else 'none'}",
+                ]
+            )
         if summary.matched_records:
             lines.extend(["", "**Recent Matches**"])
             for idx, record in enumerate(summary.matched_records[:5], start=1):
@@ -104,6 +112,8 @@ class PhotoIngestService:
                     f"with `{record.attachment_count}` photo(s)"
                 )
                 lines.append(record.subject)
+                if record.attachment_names:
+                    lines.append("Attachments: " + ", ".join(f"`{name}`" for name in record.attachment_names[:6]))
         return CommandResult(message="\n".join(lines))
 
     async def evaluate_photo_reminder(
@@ -120,7 +130,7 @@ class PhotoIngestService:
         service_request_status = status_override or (summary.service_request_status if summary is not None else None)
         matched_required_status = self._matches_required_status(service_request_status)
         compliance = await self.adapter.get_photo_compliance_summary(sr_id)
-        missing_photos = compliance.total_photos <= 0
+        missing_photos = compliance.total_photos <= 0 or bool(compliance.missing_tags)
         technician_discord_user_id = await self._resolve_assigned_technician(sr_id)
 
         evaluation = PhotoReminderEvaluation(
@@ -201,7 +211,7 @@ class PhotoIngestService:
         if not matched_required_status:
             return "Current service request status is not in the configured photo-required list."
         if not missing_photos:
-            return "Archived photos were already found for this service request."
+            return "Archived photos already satisfy the current required-tag policy for this service request."
         if technician_discord_user_id is None:
             return "No mapped technician assignment could be resolved for this service request today."
         return "The SR is in a photo-required status, no archived photos were found, and a technician is mapped."

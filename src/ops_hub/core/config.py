@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     enable_photo_archive_handoff: bool = True
     enable_photo_mailbox_scan: bool = False
     enable_weekly_missing_photo_notices: bool = False
+    photo_compress_max_mb: int = 5
 
     bluefolder_api_path: str | None = None
     bluefolder_api_key: str | None = None
@@ -62,6 +63,7 @@ class Settings(BaseSettings):
     photo_mailbox_folder: str = "INBOX"
     photo_mailbox_search_days: int = 21
     photo_required_sr_statuses: list[str] = []
+    photo_required_tags: list[str] = ["model", "serial"]
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
 
@@ -96,6 +98,7 @@ class Settings(BaseSettings):
             "dispatcher_user_ids",
             "dispatcher_role_ids",
             "photo_required_sr_statuses",
+            "photo_required_tags",
             "operator_user_ids",
             "operator_role_ids",
         }
@@ -114,6 +117,7 @@ class Settings(BaseSettings):
             "photo_compress_max_dimension",
             "photo_compress_jpeg_quality",
             "photo_feature_flags_file",
+            "photo_compress_max_mb",
             "bluefolder_api_path",
             "bluefolder_api_key",
             "bluefolder_account_name",
@@ -242,6 +246,8 @@ class Settings(BaseSettings):
 
         if self.photo_compress_jpeg_quality <= 0 or self.photo_compress_jpeg_quality > 95:
             errors.append("OPS_HUB_PHOTO_COMPRESS_JPEG_QUALITY must be between 1 and 95.")
+        if self.photo_compress_max_mb <= 0:
+            errors.append("OPS_HUB_PHOTO_COMPRESS_MAX_MB must be greater than 0.")
 
         archive_fields = [
             self.photo_archive_smtp_host,
