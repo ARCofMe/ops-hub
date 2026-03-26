@@ -365,17 +365,26 @@ class DispatchAdapter:
         if cache_key in self._geocode_cache:
             return self._geocode_cache[cache_key]
 
+        params = {
+            "text": address,
+            "limit": 1,
+            "format": "json",
+            "apiKey": api_key,
+        }
+
         try:
-            response = requests.get(
-                "https://api.geoapify.com/v1/geocode/search",
-                params={
-                    "text": address,
-                    "limit": 1,
-                    "format": "json",
-                    "apiKey": api_key,
-                },
-                timeout=6,
-            )
+            try:
+                response = requests.get(
+                    "https://api.geoapify.com/v1/geocode/search",
+                    params=params,
+                    timeout=6,
+                )
+            except requests.exceptions.ReadTimeout:
+                response = requests.get(
+                    "https://api.geoapify.com/v1/geocode/search",
+                    params=params,
+                    timeout=12,
+                )
             response.raise_for_status()
             payload = response.json()
             results = payload.get("results") if isinstance(payload, dict) else None
@@ -393,7 +402,6 @@ class DispatchAdapter:
             return value
         except Exception as exc:
             logger.warning("Geoapify geocode unavailable for '%s': %s", address, exc)
-            self._geocode_cache[cache_key] = None
             return None
 
     def _dispatch_runtime_context(self, resolved_path: Path) -> "_temporary_dispatch_context":

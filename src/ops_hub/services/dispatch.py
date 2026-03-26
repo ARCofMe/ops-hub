@@ -276,7 +276,10 @@ class DispatchService:
             sr_id = assignment.get("serviceRequestId")
             if not isinstance(sr_id, str) or not sr_id.strip():
                 continue
-            summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+            summary = await self.bluefolder_service.get_job_summary(
+                f"SR-{sr_id}",
+                include_customer_contacts=False,
+            )
             if not summary.available or not summary.address:
                 missing_address_count += 1
                 continue

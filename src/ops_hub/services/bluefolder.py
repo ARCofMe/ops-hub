@@ -22,9 +22,14 @@ class BlueFolderService:
     adapter: BlueFolderAdapter
     notifications: NotificationService | None = None
 
-    async def get_job_summary(self, reference: str) -> BlueFolderJobSummary:
+    async def get_job_summary(
+        self,
+        reference: str,
+        *,
+        include_customer_contacts: bool = True,
+    ) -> BlueFolderJobSummary:
         """Delegate job-summary lookup to the adapter layer."""
-        return await self.adapter.get_job_summary(reference)
+        return await self.adapter.get_job_summary(reference, include_customer_contacts=include_customer_contacts)
 
     async def get_active_user_directory(self) -> dict[int, str]:
         """Return active BlueFolder users keyed by user id."""
