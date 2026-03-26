@@ -312,6 +312,7 @@ class OperationsCog(commands.Cog):
             issue_type="missing_part",
             details=details,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -326,6 +327,7 @@ class OperationsCog(commands.Cog):
             issue_type="damaged_part",
             details=details,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -600,6 +602,7 @@ class OperationsCog(commands.Cog):
             update_type=update_type,
             details=details,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
             metadata=metadata,
         )
         await interaction.response.send_message(result.message, ephemeral=True)

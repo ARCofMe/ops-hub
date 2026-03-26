@@ -195,6 +195,7 @@ class BlueFolderService:
         issue_type: str,
         details: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
     ) -> CommandResult:
         """Add a standardized BlueFolder parts comment for a technician-facing issue."""
         result = await self.adapter.add_parts_comment(
@@ -202,6 +203,7 @@ class BlueFolderService:
             issue_type=issue_type,
             details=details,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
         )
         if not result.get("ok"):
             return CommandResult(
@@ -227,6 +229,7 @@ class BlueFolderService:
         update_type: str,
         details: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> CommandResult:
         """Add a standardized BlueFolder parts-status update comment."""
@@ -235,6 +238,7 @@ class BlueFolderService:
             update_type=update_type,
             details=details,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             metadata=metadata,
         )
         if not result.get("ok"):

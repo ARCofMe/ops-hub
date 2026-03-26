@@ -397,6 +397,7 @@ class BlueFolderAdapter:
         issue_type: str,
         details: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized parts-related comment to a service request."""
         client, _resolved_path = self._build_client()
@@ -408,15 +409,16 @@ class BlueFolderAdapter:
             return {"ok": False, "error": "Part details are required."}
 
         timestamp = datetime.now().replace(second=0, microsecond=0)
+        reported_by = self._reported_by_text(requested_by_label, requested_by_user_id)
         if issue_type == "missing_part":
             comment_text = (
                 f"Missing part reported at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
-                f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+                f"Details: {detail_text}. Reported by {reported_by}."
             )
         else:
             comment_text = (
                 f"Damaged part reported at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
-                f"Details: {detail_text}. Reported by Discord user {requested_by_user_id}."
+                f"Details: {detail_text}. Reported by {reported_by}."
             )
 
         try:
@@ -442,6 +444,7 @@ class BlueFolderAdapter:
         update_type: str,
         details: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized parts-status update comment to a service request."""
@@ -463,9 +466,10 @@ class BlueFolderAdapter:
         }
         prefix = prefixes.get(update_type, "Parts update")
         structured_details = self._build_parts_update_detail_text(update_type, detail_text, metadata or {})
+        reported_by = self._reported_by_text(requested_by_label, requested_by_user_id)
         comment_text = (
             f"{prefix} at {timestamp.strftime('%I:%M %p').lstrip('0')}. "
-            f"{structured_details} Reported by Discord user {requested_by_user_id}."
+            f"{structured_details} Reported by {reported_by}."
         )
 
         try:
