@@ -224,7 +224,7 @@ class PhotoIngestMessage:
 
 @dataclass(slots=True)
 class PhotoIngestResult:
-    """Placeholder result for photo-ingest message handling."""
+    """Result for photo-ingest message handling."""
 
     handled: bool
     status: str

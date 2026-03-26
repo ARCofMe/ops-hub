@@ -13,6 +13,7 @@ from ops_hub.models.requests import (
     PartsReceiptRecord,
     PartsWorkflowSummary,
 )
+from ops_hub.services.file_store_utils import atomic_write_text
 
 @dataclass(slots=True)
 class PartsCannonAdapter:
@@ -21,10 +22,7 @@ class PartsCannonAdapter:
     base_path: str | None = None
 
     async def get_part_status(self, reference: str) -> PartsWorkflowSummary:
-        """Return a placeholder parts lookup result.
-
-        TODO: Wrap existing parts-related projects and workflows gradually.
-        """
+        """Return current parts handoff integration status."""
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None:
             return PartsWorkflowSummary(
@@ -47,8 +45,8 @@ class PartsCannonAdapter:
         return PartsWorkflowSummary(
             reference=reference,
             available=True,
-            integration_status="placeholder_ready",
-            message="Parts workflow wrapper path is available. Wrapper behavior is not implemented yet.",
+            integration_status="handoff_ready",
+            message="Parts handoff directory is available for request export and receipt import.",
             source_path=resolved_path,
         )
 
@@ -74,10 +72,9 @@ class PartsCannonAdapter:
             )
 
         export_path = resolved_path / "ops_hub_exports" / "parts_requests.json"
-        export_path.parent.mkdir(parents=True, exist_ok=True)
-        export_path.write_text(
+        atomic_write_text(
+            export_path,
             json.dumps([asdict(record) for record in records], indent=2),
-            encoding="utf-8",
         )
         return PartsExportSummary(
             available=True,
@@ -122,6 +119,8 @@ class PartsCannonAdapter:
             )
 
         payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"Parts receipt file must contain a JSON array: {receipt_path}")
         receipts = [PartsReceiptRecord(**item) for item in payload]
         return PartsImportSummary(
             available=True,

@@ -109,7 +109,11 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "Parts Cannon: `unconfigured`" in result
     assert "Parts queue open: `0` of `0` total" in result
     assert "Parts queue synced: `0`" in result
-    assert "Photo ingest: `placeholder`" in result
+    assert "Photo ingest: `unconfigured`" in result
+    assert "Photo ingest listener: `configured`" in result
+    assert "Photo ingest upload: `unconfigured`" in result
+    assert "Photo ingest archive: `unconfigured`" in result
+    assert "Photo ingest mailbox: `unconfigured`" in result
     assert "Photo features:" in result
     assert "`mdlsn_upload`: `enabled` via `env`" in result
     assert "Notifications: `dry_run` via `logger`" in result

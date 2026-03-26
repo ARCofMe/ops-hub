@@ -67,14 +67,19 @@ class PhotoIngestAdapter:
 
     async def healthcheck(self) -> dict[str, str]:
         """Return current photo-ingest integration status."""
+        upload_ready = self._bluefolder_upload_configured()
+        archive_ready = self._archive_email_configured()
+        mailbox_ready = self._mailbox_scan_configured()
         return {
-            "status": "configured" if self._resolve_bluefolder_path() else "placeholder",
+            "status": "ready" if (upload_ready or archive_ready or mailbox_ready) else "unconfigured",
             "source": "photo_ingest_adapter",
-            "mailbox": "configured" if self._mailbox_scan_configured() else "unconfigured",
+            "upload": "configured" if upload_ready else "unconfigured",
+            "archive": "configured" if archive_ready else "unconfigured",
+            "mailbox": "configured" if mailbox_ready else "unconfigured",
         }
 
     async def ingest_message(self, message: PhotoIngestMessage) -> PhotoIngestResult:
-        """Return a placeholder photo-ingest handling result."""
+        """Report listener-observed messages until attachment wiring is implemented."""
         if message.attachment_count <= 0:
             return PhotoIngestResult(
                 handled=False,
@@ -83,9 +88,12 @@ class PhotoIngestAdapter:
             )
 
         return PhotoIngestResult(
-            handled=True,
-            status="placeholder_ready",
-            message="Photo ingest listener received an attachment-bearing message.",
+            handled=False,
+            status="listener_unimplemented",
+            message=(
+                "Photo ingest listener observed an attachment-bearing message, "
+                "but direct Discord attachment ingestion is not wired yet."
+            ),
         )
 
     async def attach_photo_to_service_request(
@@ -345,6 +353,16 @@ class PhotoIngestAdapter:
             and self.archive_smtp_port
             and (self.archive_from_email or "").strip()
             and (self.archive_to_email or "").strip()
+        )
+
+    def _bluefolder_upload_configured(self) -> bool:
+        """Return whether BlueFolder upload prerequisites are configured."""
+        resolved_path = self._resolve_bluefolder_path()
+        return bool(
+            resolved_path
+            and resolved_path.exists()
+            and (self.bluefolder_api_key or "").strip()
+            and ((self.bluefolder_account_name or "").strip() or (self.bluefolder_base_url or "").strip())
         )
 
     def _mailbox_scan_configured(self) -> bool:

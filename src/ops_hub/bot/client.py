@@ -88,7 +88,7 @@ class OpsHubBot(commands.Bot):
         logger.info("Application command completed", extra=context)
 
     async def on_message(self, message: discord.Message) -> None:
-        """Route message events into placeholder listeners without affecting existing projects."""
+        """Route message events into Ops Hub listeners without affecting existing projects."""
         if message.author.bot:
             return
 
@@ -104,6 +104,15 @@ class OpsHubBot(commands.Bot):
         if photo_result.handled:
             logger.info(
                 "Photo ingest listener handled message",
+                extra={
+                    "channel_id": message.channel.id,
+                    "message_id": message.id,
+                    "status": photo_result.status,
+                },
+            )
+        elif photo_result.status not in {"ignored_channel", "ignored_no_attachments"}:
+            logger.info(
+                "Photo ingest listener observed message",
                 extra={
                     "channel_id": message.channel.id,
                     "message_id": message.id,

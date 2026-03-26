@@ -32,8 +32,9 @@ class PhotoIngestService:
     notifications: NotificationService | None = None
 
     async def status(self) -> dict[str, str]:
-        """Return placeholder photo-ingest status."""
+        """Return photo-ingest integration status."""
         status = await self.adapter.healthcheck()
+        status["listener"] = "configured" if self.settings.photo_ingest_channel_id is not None else "unconfigured"
         status["features"] = ", ".join(self.feature_flags.status_lines())
         return status
 
@@ -44,7 +45,6 @@ class PhotoIngestService:
 
     async def handle_message(self, message: PhotoIngestMessage) -> PhotoIngestResult:
         """Handle a message routed from the Discord listener layer."""
-        # TODO: Add message-to-ingest translation and compliance workflow wiring.
         if not self.should_process_channel(message.channel_id):
             return PhotoIngestResult(
                 handled=False,

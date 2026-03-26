@@ -25,7 +25,7 @@ def test_parts_adapter_reports_ready_status_for_existing_path(tmp_path: Path) ->
 
     result = asyncio.run(adapter.get_part_status("SR-200"))
 
-    assert result.integration_status == "placeholder_ready"
+    assert result.integration_status == "handoff_ready"
     assert result.available is True
     assert result.source_path == tmp_path
 
@@ -44,8 +44,8 @@ def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> Non
 
     assert "**Part Lookup SR-200**" in result.message
     assert "**Parts System**" in result.message
-    assert "Status: `placeholder_ready`" in result.message
-    assert "Details: Parts workflow wrapper path is available. Wrapper behavior is not implemented yet." in result.message
+    assert "Status: `handoff_ready`" in result.message
+    assert "Details: Parts handoff directory is available for request export and receipt import." in result.message
     assert "**Context**" in result.message
     assert "Notifications: `dry_run`" in result.message
     assert len(notifications.records) == 1

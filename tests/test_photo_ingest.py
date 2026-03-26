@@ -93,7 +93,7 @@ def test_photo_ingest_service_ignores_other_channels() -> None:
     assert result.status == "ignored_channel"
 
 
-def test_photo_ingest_service_handles_attachment_messages_in_configured_channel() -> None:
+def test_photo_ingest_service_reports_unimplemented_attachment_ingest_in_configured_channel() -> None:
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=123),
         adapter=PhotoIngestAdapter(base_path=None),
@@ -112,8 +112,8 @@ def test_photo_ingest_service_handles_attachment_messages_in_configured_channel(
         )
     )
 
-    assert result.handled is True
-    assert result.status == "placeholder_ready"
+    assert result.handled is False
+    assert result.status == "listener_unimplemented"
 
 
 def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_path: Path) -> None:
