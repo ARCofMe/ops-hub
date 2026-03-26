@@ -79,6 +79,8 @@ class OperationsCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         bluefolder_user_id: int | None = None,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
     ) -> None:
         """Show a route preview map for the current day's assignments."""
         identity = self._resolve_identity(interaction)
@@ -93,6 +95,8 @@ class OperationsCog(commands.Cog):
             technician_bluefolder_user_id=identity.bluefolder_user_id,
             target_bluefolder_user_id=bluefolder_user_id,
             requester_is_admin=identity.is_admin,
+            route_origin_address=origin_address,
+            route_destination_address=destination_address,
         )
         await interaction.response.defer(ephemeral=True)
         try:

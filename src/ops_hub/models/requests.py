@@ -15,6 +15,8 @@ class JobLookupRequest:
     technician_bluefolder_user_id: int | None = None
     target_bluefolder_user_id: int | None = None
     requester_is_admin: bool = False
+    route_origin_address: str | None = None
+    route_destination_address: str | None = None
 
 
 @dataclass(slots=True)

@@ -300,7 +300,17 @@ class DispatchService:
                 )
             )
 
-        route_url, image_url = await self.adapter.build_route_map_urls(stops)
+        route_origin_address = self._clean_route_endpoint(request.route_origin_address)
+        route_destination_address = self._clean_route_endpoint(request.route_destination_address)
+
+        try:
+            route_url, image_url = await self.adapter.build_route_map_urls(
+                stops,
+                origin_address=route_origin_address,
+                destination_address=route_destination_address,
+            )
+        except TypeError:
+            route_url, image_url = await self.adapter.build_route_map_urls(stops)
         lines = [
             f"**Route Map for {technician_label}**",
             f"Assignments considered: `{len(assignments)}`",
@@ -310,6 +320,10 @@ class DispatchService:
             lines.append(f"Skipped without address: `{missing_address_count}`")
         if len(assignments) > 10:
             lines.append(f"Map limited to first `{len(stops)}` of `{len(assignments)}` assignments.")
+        if route_origin_address:
+            lines.append(f"Custom origin: {route_origin_address}")
+        if route_destination_address:
+            lines.append(f"Custom destination: {route_destination_address}")
 
         preview_stops = stops[:8]
         for index, stop in enumerate(preview_stops, start=1):
@@ -318,6 +332,11 @@ class DispatchService:
             lines.extend(["", f"Open route: {route_url}"])
 
         return RouteMapResult(message="\n".join(lines), route_url=route_url, image_url=image_url)
+
+    def _clean_route_endpoint(self, value: str | None) -> str | None:
+        """Normalize optional custom route endpoints from command input."""
+        text = (value or "").strip()
+        return text or None
 
     def _format_job_message(
         self,

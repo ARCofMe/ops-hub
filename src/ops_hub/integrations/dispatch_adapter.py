@@ -239,6 +239,9 @@ class DispatchAdapter:
     async def build_route_map_urls(
         self,
         stops: list[dict[str, str]],
+        *,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
     ) -> tuple[str | None, str | None]:
         """Build an OpenStreetMap route link and Geoapify static image URL for a list of stops."""
         if not stops:
@@ -246,7 +249,7 @@ class DispatchAdapter:
 
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         env_values = self._load_dispatch_project_env(resolved_path)
-        default_origin = env_values.get("DEFAULT_ORIGIN") or None
+        default_origin = origin_address or env_values.get("DEFAULT_ORIGIN") or None
         geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
 
         addresses = [stop["address"] for stop in stops if stop.get("address")]
@@ -265,6 +268,13 @@ class DispatchAdapter:
                 coord = self._geocode_address_geoapify(address, api_key=geoapify_api_key)
                 if coord is not None:
                     geocoded_points.append((address, coord))
+            destination_coord = (
+                self._geocode_address_geoapify(destination_address, api_key=geoapify_api_key)
+                if destination_address
+                else None
+            )
+            if destination_coord is not None and destination_address:
+                geocoded_points.append((destination_address, destination_coord))
 
         if len(geocoded_points) >= 2:
             route_url = "https://map.project-osrm.org/?" + "&".join(
@@ -285,10 +295,18 @@ class DispatchAdapter:
             )
             point_index = 1
 
-        for index, (_address, (lon, lat)) in enumerate(geocoded_points[point_index:point_index + 8], start=1):
+        destination_marker_index = len(geocoded_points) - 1 if destination_address and geocoded_points else None
+        stop_counter = 1
+        for index, (_address, (lon, lat)) in enumerate(geocoded_points[point_index:point_index + 9], start=point_index):
+            if destination_marker_index is not None and index == destination_marker_index:
+                marker_defs.append(
+                    f"lonlat:{lon},{lat};type:material;color:#1a73e8;size:small;text:D"
+                )
+                continue
             marker_defs.append(
-                f"lonlat:{lon},{lat};type:material;color:#d93025;size:small;text:{index}"
+                f"lonlat:{lon},{lat};type:material;color:#d93025;size:small;text:{stop_counter}"
             )
+            stop_counter += 1
 
         query_items: list[tuple[str, str]] = [
             ("style", "osm-bright"),
