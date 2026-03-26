@@ -400,6 +400,7 @@ class BlueFolderAdapter:
         details: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized parts-related comment to a service request."""
         client, _resolved_path = self._build_client()
@@ -424,10 +425,11 @@ class BlueFolderAdapter:
             )
 
         try:
-            client.comments.add_to_service_request(
+            client.service_requests.add_comment(
                 sr_id,
                 comment_text,
-                visible_to_customer=False,
+                user_id=bluefolder_user_id,
+                comment_is_public=False,
             )
         except Exception as exc:
             logger.exception("BlueFolder comment write failed for SR %s", sr_id)
@@ -447,6 +449,7 @@ class BlueFolderAdapter:
         details: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         metadata: dict[str, str] | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized parts-status update comment to a service request."""
@@ -475,10 +478,11 @@ class BlueFolderAdapter:
         )
 
         try:
-            client.comments.add_to_service_request(
+            client.service_requests.add_comment(
                 sr_id,
                 comment_text,
-                visible_to_customer=False,
+                user_id=bluefolder_user_id,
+                comment_is_public=False,
             )
         except Exception as exc:
             logger.exception("BlueFolder update write failed for SR %s", sr_id)
@@ -498,6 +502,7 @@ class BlueFolderAdapter:
         details: str | None,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized contact/arrival issue comment to a service request."""
         return await self.add_field_event_comment(
@@ -505,6 +510,7 @@ class BlueFolderAdapter:
             event_type=issue_type,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             details=details,
         )
 
@@ -515,6 +521,7 @@ class BlueFolderAdapter:
         update_type: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         minutes: int | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized route-status comment to a service request."""
@@ -523,6 +530,7 @@ class BlueFolderAdapter:
             event_type=update_type,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             minutes=minutes,
         )
 
@@ -533,6 +541,7 @@ class BlueFolderAdapter:
         event_type: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         details: str | None = None,
         minutes: int | None = None,
     ) -> dict[str, str | bool | None]:
@@ -560,10 +569,11 @@ class BlueFolderAdapter:
             return {"ok": False, "error": f"Unsupported field event `{event_type}`."}
 
         try:
-            client.comments.add_to_service_request(
+            client.service_requests.add_comment(
                 sr_id,
                 comment_text,
-                visible_to_customer=False,
+                user_id=bluefolder_user_id,
+                comment_is_public=False,
             )
         except Exception as exc:
             logger.exception("BlueFolder field-event write failed for SR %s", sr_id)

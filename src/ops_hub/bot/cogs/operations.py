@@ -313,6 +313,7 @@ class OperationsCog(commands.Cog):
             details=details,
             requested_by_user_id=interaction.user.id,
             requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            bluefolder_user_id=identity.bluefolder_user_id,
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -328,6 +329,7 @@ class OperationsCog(commands.Cog):
             details=details,
             requested_by_user_id=interaction.user.id,
             requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            bluefolder_user_id=identity.bluefolder_user_id,
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -603,6 +605,7 @@ class OperationsCog(commands.Cog):
             details=details,
             requested_by_user_id=interaction.user.id,
             requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            bluefolder_user_id=identity.bluefolder_user_id,
             metadata=metadata,
         )
         await interaction.response.send_message(result.message, ephemeral=True)
@@ -626,6 +629,7 @@ class OperationsCog(commands.Cog):
             event_type=event_type,
             requested_by_user_id=interaction.user.id,
             requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            bluefolder_user_id=identity.bluefolder_user_id,
             details=details,
             minutes=minutes,
             notify_dispatch=notify_dispatch,

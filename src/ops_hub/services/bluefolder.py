@@ -196,6 +196,7 @@ class BlueFolderService:
         details: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
     ) -> CommandResult:
         """Add a standardized BlueFolder parts comment for a technician-facing issue."""
         result = await self.adapter.add_parts_comment(
@@ -204,6 +205,7 @@ class BlueFolderService:
             details=details,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
         )
         if not result.get("ok"):
             return CommandResult(
@@ -230,6 +232,7 @@ class BlueFolderService:
         details: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         metadata: dict[str, str] | None = None,
     ) -> CommandResult:
         """Add a standardized BlueFolder parts-status update comment."""
@@ -239,6 +242,7 @@ class BlueFolderService:
             details=details,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             metadata=metadata,
         )
         if not result.get("ok"):
@@ -266,6 +270,7 @@ class BlueFolderService:
         details: str | None,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         notify_dispatch: bool = True,
     ) -> CommandResult:
         """Add a standardized BlueFolder contact issue comment and optionally notify dispatch."""
@@ -274,6 +279,7 @@ class BlueFolderService:
             event_type=issue_type,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             details=details,
             notify_dispatch=notify_dispatch,
         )
@@ -285,6 +291,7 @@ class BlueFolderService:
         update_type: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         minutes: int | None = None,
         notify_dispatch: bool = False,
     ) -> CommandResult:
@@ -294,6 +301,7 @@ class BlueFolderService:
             event_type=update_type,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             minutes=minutes,
             notify_dispatch=notify_dispatch,
         )
@@ -305,6 +313,7 @@ class BlueFolderService:
         event_type: str,
         requested_by_user_id: int,
         requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
         details: str | None = None,
         minutes: int | None = None,
         notify_dispatch: bool = False,
@@ -315,6 +324,7 @@ class BlueFolderService:
             event_type=event_type,
             requested_by_user_id=requested_by_user_id,
             requested_by_label=requested_by_label,
+            bluefolder_user_id=bluefolder_user_id,
             details=details,
             minutes=minutes,
         )

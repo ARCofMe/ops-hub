@@ -1327,20 +1327,20 @@ def test_bluefolder_service_logs_parts_issue_comment(tmp_path: Path) -> None:
     (package_dir / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
+            class _ServiceRequests:
                 def __init__(self):
                     self.calls = []
 
-                def add_to_service_request(self, service_request_id: int, text: str, visible_to_customer: bool = False):
-                    self.calls.append((service_request_id, text, visible_to_customer))
+                def add_comment(self, service_request_id: int, text: str, comment_is_public: bool = False, user_id: int | None = None):
+                    self.calls.append((service_request_id, text, comment_is_public, user_id))
                     return {"ok": True}
 
-            _shared_comments = _Comments()
+            _shared_service_requests = _ServiceRequests()
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _shared_comments
+                    self.service_requests = _shared_service_requests
             """
         ),
         encoding="utf-8",
@@ -1374,20 +1374,20 @@ def test_bluefolder_service_logs_parts_update_comment(tmp_path: Path) -> None:
     (package_dir / "client.py").write_text(
         textwrap.dedent(
             """
-            class _Comments:
+            class _ServiceRequests:
                 def __init__(self):
                     self.calls = []
 
-                def add_to_service_request(self, service_request_id: int, text: str, visible_to_customer: bool = False):
-                    self.calls.append((service_request_id, text, visible_to_customer))
+                def add_comment(self, service_request_id: int, text: str, comment_is_public: bool = False, user_id: int | None = None):
+                    self.calls.append((service_request_id, text, comment_is_public, user_id))
                     return {"ok": True}
 
-            _shared_comments = _Comments()
+            _shared_service_requests = _ServiceRequests()
 
             class BlueFolderClient:
                 def __init__(self, base_url: str | None = None):
                     self.base_url = base_url
-                    self.comments = _shared_comments
+                    self.service_requests = _shared_service_requests
             """
         ),
         encoding="utf-8",
@@ -1439,6 +1439,7 @@ def test_bluefolder_service_logs_route_update_and_notifies() -> None:
             event_type,
             requested_by_user_id,
             requested_by_label=None,
+            bluefolder_user_id=None,
             details=None,
             minutes=None,
         ):
@@ -1484,6 +1485,7 @@ def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
             event_type,
             requested_by_user_id,
             requested_by_label=None,
+            bluefolder_user_id=None,
             details=None,
             minutes=None,
         ):
