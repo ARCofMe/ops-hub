@@ -134,6 +134,14 @@ class PhotoIngestAdapter:
                 message=f"Could not attach photo to SR-{sr_id}: {exc}",
             )
 
+        logger.info(
+            "BlueFolder photo attached",
+            extra={
+                "sr_id": sr_id,
+                "status": "uploaded",
+            },
+        )
+
         return PhotoArchiveResult(
             ok=True,
             status="uploaded",
@@ -212,6 +220,14 @@ class PhotoIngestAdapter:
                 status="archive_send_failed",
                 message=f"Could not send archive email for SR-{sr_id}: {exc}",
             )
+
+        logger.info(
+            "Photo archive email sent",
+            extra={
+                "sr_id": sr_id,
+                "status": "archived",
+            },
+        )
 
         return PhotoArchiveResult(
             ok=True,

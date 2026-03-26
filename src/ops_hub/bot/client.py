@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import discord
 from discord.ext import commands
@@ -64,6 +65,21 @@ class OpsHubBot(commands.Bot):
             },
         )
 
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Log application-command lifecycle with stable request context."""
+        is_app_command = interaction.type == discord.InteractionType.application_command
+        started_at = time.monotonic()
+        if is_app_command:
+            logger.info("Application command received", extra=self._interaction_context(interaction))
+        try:
+            await super().on_interaction(interaction)
+        finally:
+            if is_app_command:
+                duration_ms = int((time.monotonic() - started_at) * 1000)
+                context = self._interaction_context(interaction)
+                context["duration_ms"] = duration_ms
+                logger.info("Application command completed", extra=context)
+
     async def on_message(self, message: discord.Message) -> None:
         """Route message events into placeholder listeners without affecting existing projects."""
         if message.author.bot:
@@ -114,6 +130,7 @@ class OpsHubBot(commands.Bot):
         """Build a consistent log context for Discord interaction handlers."""
         return {
             "command": getattr(getattr(interaction, "command", None), "name", None),
+            "interaction_id": getattr(interaction, "id", None),
             "user_id": getattr(getattr(interaction, "user", None), "id", None),
             "guild_id": getattr(interaction, "guild_id", None),
             "channel_id": getattr(interaction, "channel_id", None),

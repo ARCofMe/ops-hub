@@ -48,7 +48,15 @@ class NotificationService:
 
         record = NotificationRecord(topic=topic, message=message, delivery=delivery)
         self.records.append(record)
-        logger.info("Notification placeholder", extra={"topic": topic, "notice_message": message})
+        logger.info(
+            "Notification recorded",
+            extra={
+                "topic": topic,
+                "delivery": delivery,
+                "channel_id": target_channel_id,
+                "status": "sent",
+            },
+        )
 
     async def status(self) -> NotificationStatus:
         """Return the current notification-service state."""

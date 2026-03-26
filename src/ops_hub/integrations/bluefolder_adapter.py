@@ -579,6 +579,15 @@ class BlueFolderAdapter:
             logger.exception("BlueFolder field-event write failed for SR %s", sr_id)
             return {"ok": False, "error": str(exc)}
 
+        logger.info(
+            "BlueFolder field-event note written",
+            extra={
+                "sr_id": sr_id,
+                "bluefolder_user_id": bluefolder_user_id,
+                "status": event_type,
+            },
+        )
+
         return {
             "ok": True,
             "note_text": comment_text,
