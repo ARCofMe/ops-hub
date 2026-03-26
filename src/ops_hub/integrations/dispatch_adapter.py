@@ -297,7 +297,7 @@ class DispatchAdapter:
 
         destination_marker_index = len(geocoded_points) - 1 if destination_address and geocoded_points else None
         stop_counter = 1
-        for index, (_address, (lon, lat)) in enumerate(geocoded_points[point_index:point_index + 9], start=point_index):
+        for index, (_address, (lon, lat)) in enumerate(geocoded_points[point_index:], start=point_index):
             if destination_marker_index is not None and index == destination_marker_index:
                 marker_defs.append(
                     f"lonlat:{lon},{lat};type:material;color:#1a73e8;size:small;text:D"

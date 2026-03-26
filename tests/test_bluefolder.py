@@ -261,6 +261,53 @@ def test_dispatch_service_builds_route_map_preview(tmp_path: Path) -> None:
     assert "maps.geoapify.com/v1/staticmap" in result.image_url
 
 
+def test_dispatch_adapter_route_map_includes_all_stops_and_custom_endpoints(monkeypatch) -> None:
+    adapter = DispatchAdapter(base_path=None)
+
+    def fake_env(_resolved_path):
+        return {"GEOAPIFY_API_KEY": "geo-key", "DEFAULT_ORIGIN": "Shop"}
+
+    coords = {
+        "Custom Start": (-70.50, 44.25),
+        "Stop 1": (-70.25, 43.65),
+        "Stop 2": (-70.21, 44.10),
+        "Stop 3": (-70.12, 44.20),
+        "Custom End": (-70.05, 44.30),
+    }
+
+    def fake_geocode(address, *, api_key):
+        assert api_key == "geo-key"
+        return coords.get(address)
+
+    monkeypatch.setattr(DispatchAdapter, "_load_dispatch_project_env", lambda self, resolved_path: fake_env(resolved_path))
+    monkeypatch.setattr(
+        DispatchAdapter,
+        "_geocode_address_geoapify",
+        lambda self, address, *, api_key: fake_geocode(address, api_key=api_key),
+    )
+
+    route_url, image_url = asyncio.run(
+        adapter.build_route_map_urls(
+            [
+                {"address": "Stop 1"},
+                {"address": "Stop 2"},
+                {"address": "Stop 3"},
+            ],
+            origin_address="Custom Start",
+            destination_address="Custom End",
+        )
+    )
+
+    assert route_url is not None
+    assert route_url.count("loc=") == 5
+    assert image_url is not None
+    assert "text%3AO" in image_url
+    assert "text%3A1" in image_url
+    assert "text%3A2" in image_url
+    assert "text%3A3" in image_url
+    assert "text%3AD" in image_url
+
+
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()
