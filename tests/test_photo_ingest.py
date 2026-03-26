@@ -163,6 +163,7 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
                 data=_image_bytes("PNG"),
             ),
             requested_by_user_id=99,
+            requested_by_label="Mike Smith",
         )
     )
 
@@ -175,7 +176,7 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
     assert "Attached `photo.jpg` to `SR-12345`" in result.message
     assert LAST_UPLOAD["service_request_id"] == 12345
     assert LAST_UPLOAD["file_name"] == "photo.jpg"
-    assert "Discord user 99" in LAST_UPLOAD["description"]
+    assert "MDLSN upload from Mike Smith" == LAST_UPLOAD["description"]
     assert LAST_UPLOAD["content_type"] == "image/jpeg"
     assert LAST_UPLOAD["size"] > 0
 
@@ -238,6 +239,7 @@ def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
                     ),
                 ],
                 requested_by_user_id=77,
+                requested_by_label="Mike Smith",
                 sr_subject="Washer repair",
             )
         )
@@ -248,6 +250,7 @@ def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
     assert len(sent_messages) == 1
     message = sent_messages[0]
     assert message["Subject"] == "SR-12345 Washer repair"
+    assert "Uploaded by Mike Smith" in message.get_body(preferencelist=("plain",)).get_content()
     attachments = list(message.iter_attachments())
     assert len(attachments) == 2
     assert all(part.get_filename().endswith(".jpg") for part in attachments)

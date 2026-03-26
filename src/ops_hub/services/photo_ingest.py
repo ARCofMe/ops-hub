@@ -59,6 +59,7 @@ class PhotoIngestService:
         *,
         photo: PhotoAttachmentPayload,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
     ) -> CommandResult:
         """Attach a compressed model/serial photo to a BlueFolder service request."""
         if not self.feature_flags.is_enabled("mdlsn_upload"):
@@ -67,6 +68,7 @@ class PhotoIngestService:
             sr_id,
             photo=photo,
             uploaded_by_user_id=requested_by_user_id,
+            uploaded_by_label=requested_by_label,
             label="MDLSN",
         )
         return CommandResult(message=result.message)
@@ -77,6 +79,7 @@ class PhotoIngestService:
         *,
         photos: list[PhotoAttachmentPayload],
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         sr_subject: str | None = None,
     ) -> CommandResult:
         """Send a batch of compressed job photos to the configured archive mailbox."""
@@ -86,6 +89,7 @@ class PhotoIngestService:
             sr_id,
             photos=photos,
             uploaded_by_user_id=requested_by_user_id,
+            uploaded_by_label=requested_by_label,
             sr_subject=sr_subject,
         )
         return CommandResult(message=result.message)

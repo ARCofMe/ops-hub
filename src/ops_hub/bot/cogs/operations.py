@@ -125,6 +125,7 @@ class OperationsCog(commands.Cog):
             sr_id,
             photo=payload,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
@@ -229,6 +230,7 @@ class OperationsCog(commands.Cog):
             sr_id,
             photos=payloads,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
             sr_subject=summary.subject if summary.available else None,
         )
         await interaction.response.send_message(result.message, ephemeral=True)

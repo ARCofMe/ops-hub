@@ -94,6 +94,7 @@ class PhotoIngestAdapter:
         *,
         photo: PhotoAttachmentPayload,
         uploaded_by_user_id: int,
+        uploaded_by_label: str | None = None,
         label: str = "MDLSN",
     ) -> PhotoArchiveResult:
         """Compress and attach a single image to a BlueFolder service request."""
@@ -115,7 +116,8 @@ class PhotoIngestAdapter:
                 message=f"Could not compress the uploaded image: {exc}",
             )
 
-        description = f"{label} upload from Discord user {uploaded_by_user_id}"
+        uploaded_by = self._uploaded_by_text(uploaded_by_label, uploaded_by_user_id)
+        description = f"{label} upload from {uploaded_by}"
         try:
             client.attachments.add_to_service_request(
                 sr_id,
@@ -147,6 +149,7 @@ class PhotoIngestAdapter:
         *,
         photos: list[PhotoAttachmentPayload],
         uploaded_by_user_id: int,
+        uploaded_by_label: str | None = None,
         sr_subject: str | None = None,
     ) -> PhotoArchiveResult:
         """Compress and email one or more photos to the configured archive mailbox."""
@@ -175,6 +178,7 @@ class PhotoIngestAdapter:
                     message=f"Could not compress `{photo.filename}`: {exc}",
                 )
 
+        uploaded_by = self._uploaded_by_text(uploaded_by_label, uploaded_by_user_id)
         message = EmailMessage()
         subject = f"SR-{sr_id}"
         if sr_subject:
@@ -186,7 +190,7 @@ class PhotoIngestAdapter:
             "\n".join(
                 [
                     f"Ops Hub photo archive handoff for SR-{sr_id}",
-                    f"Uploaded by Discord user {uploaded_by_user_id}",
+                    f"Uploaded by {uploaded_by}",
                     f"Attachment count: {len(compressed)}",
                 ]
             )
@@ -214,6 +218,13 @@ class PhotoIngestAdapter:
             status="archived",
             message=f"Emailed `{len(compressed)}` compressed photo(s) for `SR-{sr_id}` to the archive mailbox.",
         )
+
+    def _uploaded_by_text(self, uploaded_by_label: str | None, uploaded_by_user_id: int) -> str:
+        """Return a readable uploader label for BlueFolder notes and archive emails."""
+        text = (uploaded_by_label or "").strip()
+        if text:
+            return text
+        return f"Discord user {uploaded_by_user_id}"
 
     async def get_photo_compliance_summary(self, sr_id: int) -> PhotoComplianceSummary:
         """Read mailbox records whose subject matches the service-request id."""
