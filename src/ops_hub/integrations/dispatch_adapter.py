@@ -7,6 +7,7 @@ import importlib
 import logging
 import os
 from pathlib import Path
+import time
 from urllib.parse import urlencode
 import sys
 from types import TracebackType
@@ -328,6 +329,56 @@ class DispatchAdapter:
         image_url = "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
         return route_url, image_url
 
+    async def build_heat_map_url(
+        self,
+        hotspots: list[dict[str, object]],
+    ) -> str | None:
+        """Build a lightweight hotspot map using aggregated assignment locations."""
+        if not hotspots:
+            return None
+
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        env_values = self._load_dispatch_project_env(resolved_path)
+        geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
+        if not geoapify_api_key:
+            return None
+
+        geocoded_hotspots: list[tuple[str, int, tuple[float, float]]] = []
+        for hotspot in hotspots:
+            address = str(hotspot.get("address") or "").strip()
+            if not address:
+                continue
+            coord = self._geocode_address_geoapify(address, api_key=geoapify_api_key)
+            if coord is None:
+                continue
+            count = int(hotspot.get("count") or 1)
+            geocoded_hotspots.append((address, count, coord))
+
+        if not geocoded_hotspots:
+            return None
+
+        marker_defs: list[str] = []
+        for address, count, (lon, lat) in geocoded_hotspots[:12]:
+            color = "#f9ab00"
+            if count >= 3:
+                color = "#d93025"
+            elif count == 2:
+                color = "#f29900"
+            text = str(count) if count < 10 else "*"
+            marker_defs.append(
+                f"lonlat:{lon},{lat};type:material;color:{color};size:medium;text:{text}"
+            )
+
+        query_items: list[tuple[str, str]] = [
+            ("style", "osm-bright"),
+            ("width", "800"),
+            ("height", "420"),
+            ("scaleFactor", "2"),
+            ("apiKey", geoapify_api_key),
+            ("marker", "|".join(marker_defs)),
+        ]
+        return "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
+
     def _load_dispatch_project_env(self, resolved_path: Path | None) -> dict[str, str]:
         """Load selected env values from the dispatch project .env when available."""
         if resolved_path is None:
@@ -372,34 +423,42 @@ class DispatchAdapter:
             "apiKey": api_key,
         }
 
+        attempts = 3
         try:
-            try:
-                response = requests.get(
-                    "https://api.geoapify.com/v1/geocode/search",
-                    params=params,
-                    timeout=6,
-                )
-            except requests.exceptions.ReadTimeout:
-                response = requests.get(
-                    "https://api.geoapify.com/v1/geocode/search",
-                    params=params,
-                    timeout=12,
-                )
-            response.raise_for_status()
-            payload = response.json()
-            results = payload.get("results") if isinstance(payload, dict) else None
-            first = results[0] if results else None
-            if not isinstance(first, dict):
-                self._geocode_cache[cache_key] = None
-                return None
-            lon = first.get("lon")
-            lat = first.get("lat")
-            if lon is None or lat is None:
-                self._geocode_cache[cache_key] = None
-                return None
-            value = (float(lon), float(lat))
-            self._geocode_cache[cache_key] = value
-            return value
+            for attempt in range(1, attempts + 1):
+                try:
+                    response = requests.get(
+                        "https://api.geoapify.com/v1/geocode/search",
+                        params=params,
+                        timeout=6 * attempt,
+                    )
+                except requests.exceptions.ReadTimeout:
+                    logger.warning("Geoapify geocode timed out for '%s' (attempt %d/%d)", address, attempt, attempts)
+                    time.sleep(0.5 * attempt)
+                    continue
+
+                if response.status_code == 429:
+                    logger.warning("Geoapify geocode rate limited for '%s' (attempt %d/%d)", address, attempt, attempts)
+                    time.sleep(1.0 * attempt)
+                    continue
+
+                response.raise_for_status()
+                payload = response.json()
+                results = payload.get("results") if isinstance(payload, dict) else None
+                first = results[0] if results else None
+                if not isinstance(first, dict):
+                    time.sleep(0.25 * attempt)
+                    continue
+                lon = first.get("lon")
+                lat = first.get("lat")
+                if lon is None or lat is None:
+                    time.sleep(0.25 * attempt)
+                    continue
+                value = (float(lon), float(lat))
+                self._geocode_cache[cache_key] = value
+                return value
+            self._geocode_cache[cache_key] = None
+            return None
         except Exception as exc:
             logger.warning("Geoapify geocode unavailable for '%s': %s", address, exc)
             return None

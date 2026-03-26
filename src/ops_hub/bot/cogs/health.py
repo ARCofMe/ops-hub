@@ -46,7 +46,7 @@ class HealthCog(commands.Cog):
                 "**Dispatch**",
                 "`/job`, `/assignments`, `/route_map`, `/customer`",
                 "`/tech_assignments`, `/tech_job`",
-                "`/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/photo_compliance_board`",
+                "`/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/dispatch_heatmap`, `/photo_compliance_board`",
                 "`/parts_brief`, `/parts_notes`, `/photo_status`, `/photo_reminder_check`",
                 "",
                 "**Parts**",

@@ -308,6 +308,119 @@ def test_dispatch_adapter_route_map_includes_all_stops_and_custom_endpoints(monk
     assert "text%3AD" in image_url
 
 
+def test_dispatch_adapter_builds_heat_map_url(monkeypatch) -> None:
+    adapter = DispatchAdapter(base_path=None)
+
+    monkeypatch.setattr(
+        DispatchAdapter,
+        "_load_dispatch_project_env",
+        lambda self, resolved_path: {"GEOAPIFY_API_KEY": "geo-key"},
+    )
+    monkeypatch.setattr(
+        DispatchAdapter,
+        "_geocode_address_geoapify",
+        lambda self, address, *, api_key: {
+            "A": (-70.1, 44.1),
+            "B": (-70.2, 44.2),
+        }.get(address),
+    )
+
+    image_url = asyncio.run(
+        adapter.build_heat_map_url(
+            [
+                {"address": "A", "count": 3},
+                {"address": "B", "count": 1},
+            ]
+        )
+    )
+
+    assert image_url is not None
+    assert "maps.geoapify.com/v1/staticmap" in image_url
+    assert "text%3A3" in image_url
+    assert "text%3A1" in image_url
+
+
+def test_dispatch_service_builds_assignment_heatmap(tmp_path: Path) -> None:
+    class HeatMapDispatchAdapter(DummyDispatchAdapter):
+        async def build_heat_map_url(self, hotspots):
+            assert len(hotspots) == 1
+            assert hotspots[0]["count"] == 3
+            return "https://maps.geoapify.com/v1/staticmap?style=osm-bright"
+
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _Assignments:
+                def list_for_user_range(self, user_id, start_date, end_date, date_range_type=None):
+                    return [
+                        {"serviceRequestId": "100", "start": "2026-03-24T08:00:00"},
+                        {"serviceRequestId": "101", "start": "2026-03-24T11:00:00"},
+                        {"serviceRequestId": "102", "start": "2026-03-24T13:00:00"},
+                    ]
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = f"Job {service_request_id}"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: str, location_id: str):
+                    root = ET.Element("response")
+                    location = ET.SubElement(root, "customerLocation")
+                    ET.SubElement(location, "addressStreet").text = (
+                        "123 Main St" if location_id == "9" else "44 Oak St"
+                    )
+                    ET.SubElement(location, "addressCity").text = (
+                        "Portland" if location_id == "9" else "Lewiston"
+                    )
+                    ET.SubElement(location, "addressState").text = "ME"
+                    ET.SubElement(location, "addressPostalCode").text = (
+                        "04101" if location_id == "9" else "04240"
+                    )
+                    return root
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.assignments = _Assignments()
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+            """
+        ),
+        encoding="utf-8",
+    )
+    service = DispatchService(
+        adapter=HeatMapDispatchAdapter(base_path=None),
+        bluefolder_service=BlueFolderService(
+            adapter=BlueFolderAdapter(
+                base_path=str(tmp_path),
+                api_key="key",
+                account_name="acme",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        service.lookup_assignment_heatmap(
+            [TechnicianMappingRecord(discord_user_id=1, bluefolder_user_id=13051)]
+        )
+    )
+
+    assert "**Dispatch Heatmap**" in result.message
+    assert "Scanned jobs: `3`" in result.message
+    assert "Unique mapped locations: `1`" in result.message
+    assert result.image_url is not None
+
+
 def test_dispatch_service_reports_origin_when_no_assignments_exist(tmp_path: Path) -> None:
     dispatch_package = tmp_path / "optimized_routing"
     dispatch_package.mkdir()

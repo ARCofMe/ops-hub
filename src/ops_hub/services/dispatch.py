@@ -336,6 +336,74 @@ class DispatchService:
 
         return RouteMapResult(message="\n".join(lines), route_url=route_url, image_url=image_url)
 
+    async def lookup_assignment_heatmap(
+        self,
+        mappings: list[TechnicianMappingRecord],
+        *,
+        technician_bluefolder_user_id: int | None = None,
+    ) -> RouteMapResult:
+        """Return a lightweight assignment heatmap across mapped technician jobs."""
+        if not mappings:
+            return RouteMapResult(message="Dispatch heatmap requires at least one technician mapping.")
+
+        if technician_bluefolder_user_id is not None:
+            mappings = [record for record in mappings if record.bluefolder_user_id == technician_bluefolder_user_id]
+            if not mappings:
+                return RouteMapResult(
+                    message=(
+                        "Dispatch heatmap could not find a technician mapping for "
+                        f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}."
+                    )
+                )
+
+        hotspot_counts: dict[str, int] = {}
+        address_labels: dict[str, str] = {}
+        scanned_jobs = 0
+        for record in mappings:
+            assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            for assignment in assignments[:10]:
+                sr_id = assignment.get("serviceRequestId")
+                if not isinstance(sr_id, str) or not sr_id.strip():
+                    continue
+                scanned_jobs += 1
+                summary = await self.bluefolder_service.get_job_summary(
+                    f"SR-{sr_id}",
+                    include_customer_contacts=False,
+                )
+                address = self._format_summary_address(summary)
+                if not summary.available or not address:
+                    continue
+                hotspot_counts[address] = hotspot_counts.get(address, 0) + 1
+                address_labels.setdefault(address, summary.city or summary.address or address)
+
+        if not hotspot_counts:
+            return RouteMapResult(message="No mappable assignment addresses were available for the current heatmap.")
+
+        hotspots = [
+            {"address": address, "count": count}
+            for address, count in sorted(hotspot_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        image_url = await self.adapter.build_heat_map_url(hotspots)
+
+        lines = [
+            "**Dispatch Heatmap**",
+            f"Scanned jobs: `{scanned_jobs}`",
+            f"Unique mapped locations: `{len(hotspots)}`",
+        ]
+        if technician_bluefolder_user_id is not None:
+            lines.append(
+                "Technician filter: "
+                f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"
+            )
+        lines.append("")
+        lines.append("Top hotspots")
+        for index, hotspot in enumerate(hotspots[:8], start=1):
+            address = str(hotspot["address"])
+            count = int(hotspot["count"])
+            lines.append(f"{index}. `{count}` job(s) - {address_labels.get(address, address)}")
+
+        return RouteMapResult(message="\n".join(lines), image_url=image_url)
+
     def _clean_route_endpoint(self, value: str | None) -> str | None:
         """Normalize optional custom route endpoints from command input."""
         text = (value or "").strip()

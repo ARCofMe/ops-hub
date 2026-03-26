@@ -112,6 +112,26 @@ class DispatchCog(commands.Cog):
         )
         await interaction.followup.send(result.message, ephemeral=True)
 
+    @app_commands.command(name="dispatch_heatmap", description="Show a mini-map of current assignment hotspots.")
+    @app_commands.describe(bluefolder_user_id="Optional BlueFolder technician user id to narrow the heatmap.")
+    async def dispatch_heatmap(
+        self,
+        interaction: discord.Interaction,
+        bluefolder_user_id: int | None = None,
+    ) -> None:
+        """Dispatcher-facing mini heatmap of current mapped assignments."""
+        mappings = await self._technician_dispatch_mappings(interaction)
+        await interaction.response.defer(ephemeral=True)
+        result = await self.bot.container.dispatch_service.lookup_assignment_heatmap(
+            mappings,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        embed = None
+        if result.image_url:
+            embed = discord.Embed(title="Assignment Heatmap")
+            embed.set_image(url=result.image_url)
+        await interaction.followup.send(result.message, embed=embed, ephemeral=True)
+
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)
