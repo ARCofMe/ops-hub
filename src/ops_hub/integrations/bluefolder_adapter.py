@@ -199,24 +199,26 @@ class BlueFolderAdapter:
                         city = location.findtext("addressCity")
                         state = location.findtext("addressState")
                         postal_code = location.findtext("addressPostalCode")
-                if not customer_phone:
-                    try:
-                        contacts = client.customer_contacts.list_for_customer(int(customer_id))
-                    except Exception as exc:
-                        logger.warning("BlueFolder contact lookup unavailable for customer=%s: %s", customer_id, exc)
-                    else:
-                        customer_contacts = self._build_customer_contacts(contacts or [], customer_location_id)
+                contacts: list[dict[str, object]] | None = None
+                try:
+                    contacts = client.customer_contacts.list_for_customer(int(customer_id))
+                except Exception as exc:
+                    logger.warning("BlueFolder contact lookup unavailable for customer=%s: %s", customer_id, exc)
+                else:
+                    customer_contacts = self._build_customer_contacts(contacts or [], customer_location_id)
+                    if not customer_phone:
                         customer_phone = self._select_customer_phone(contacts or [], customer_location_id)
-                if not customer_phone:
+                if not customer_phone or not customer_contacts:
                     try:
                         customer_xml = client.customers.get_by_id(int(customer_id))
                     except Exception as exc:
                         logger.warning("BlueFolder customer fallback lookup unavailable for customer=%s: %s", customer_id, exc)
                     else:
-                        customer_phone = self._clean_phone(
-                            customer_xml.findtext(".//customerContactPhone")
-                            or customer_xml.findtext(".//phone")
-                        )
+                        if not customer_phone:
+                            customer_phone = self._clean_phone(
+                                customer_xml.findtext(".//customerContactPhone")
+                                or customer_xml.findtext(".//phone")
+                            )
                         if not customer_contacts:
                             customer_contacts = self._build_customer_contacts_from_customer_xml(customer_xml)
 

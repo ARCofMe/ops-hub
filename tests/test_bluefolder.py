@@ -393,6 +393,79 @@ def test_bluefolder_adapter_marks_user_directory_unavailable_after_failure(tmp_p
     assert adapter._active_user_directory_unavailable is True
 
 
+def test_bluefolder_adapter_builds_customer_contacts_from_fallback_customer_xml(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = "Dryer repair"
+                    ET.SubElement(sr, "customerName").text = "Jane Owner"
+                    ET.SubElement(sr, "customerContactPhone").text = "207-555-1111"
+                    ET.SubElement(sr, "customerId").text = "55"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: int, location_id: int):
+                    root = ET.Element("response")
+                    location = ET.SubElement(root, "customerLocation")
+                    ET.SubElement(location, "addressStreet").text = "123 Main St"
+                    ET.SubElement(location, "addressCity").text = "Portland"
+                    ET.SubElement(location, "addressState").text = "ME"
+                    ET.SubElement(location, "addressPostalCode").text = "04101"
+                    return root
+
+                def get_by_id(self, customer_id: int):
+                    root = ET.Element("response")
+                    contact1 = ET.SubElement(root, "customerContact")
+                    ET.SubElement(contact1, "firstName").text = "Jane"
+                    ET.SubElement(contact1, "lastName").text = "Owner"
+                    ET.SubElement(contact1, "phone").text = "207-555-1111"
+                    ET.SubElement(contact1, "isPrimary").text = "1"
+                    contact2 = ET.SubElement(root, "customerContact")
+                    ET.SubElement(contact2, "firstName").text = "Tim"
+                    ET.SubElement(contact2, "lastName").text = "Tenant"
+                    ET.SubElement(contact2, "phone").text = "207-555-2222"
+                    ET.SubElement(contact2, "isPrimary").text = "0"
+                    return root
+
+            class _CustomerContacts:
+                def list_for_customer(self, customer_id: int):
+                    raise RuntimeError("customer contacts unavailable")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+                    self.customer_contacts = _CustomerContacts()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_job_summary("SR-100"))
+
+    assert result.customer_phone == "207-555-1111"
+    assert len(result.customer_contacts) == 2
+    assert result.customer_contacts[0].name == "Jane Owner"
+    assert result.customer_contacts[1].name == "Tim Tenant"
+    assert result.customer_contacts[1].phone == "207-555-2222"
+
+
 def test_bluefolder_service_logs_field_event_and_notifies() -> None:
     class AdapterStub:
         async def add_field_event_comment(self, sr_id, **kwargs):
