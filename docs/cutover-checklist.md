@@ -4,7 +4,7 @@ Use this checklist when replacing the current beta Discord bot with Ops Hub in t
 
 ## Before Cutover
 
-- Confirm [`.env`](/home/ner0tic/Documents/Projects/ARCoM/ops-hub/.env) is complete:
+- Confirm `.env` is complete:
   - `OPS_HUB_DISCORD_TOKEN`
   - `OPS_HUB_GUILD_ID`
   - BlueFolder credentials and path

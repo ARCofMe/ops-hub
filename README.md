@@ -4,6 +4,17 @@ Ops Hub is a unified Discord operations bot for the appliance repair business.
 
 It gives the team one Discord-facing surface for technician, dispatch, parts, and admin workflows while keeping the internals modular and testable.
 
+## Who This Is For
+
+Ops Hub is for:
+
+- technicians in the field
+- dispatch staff coordinating jobs and follow-up
+- parts staff tracking part status and updates
+- admins supporting mappings, config, and runtime health
+
+If someone is new to Discord or slash commands, start with the guides in `docs/`.
+
 ## What It Does
 
 Ops Hub currently focuses on:
@@ -16,6 +27,21 @@ Ops Hub currently focuses on:
 - admin/debug visibility for runtime, config, mappings, and service state
 
 BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process.
+
+## Start Here
+
+If you are using the bot day to day:
+
+- `docs/user-guide.md`
+- `docs/technician-guide.md`
+- `docs/dispatch-guide.md`
+- `docs/parts-guide.md`
+- `docs/admin-guide.md`
+
+If you are operating or deploying the bot:
+
+- `docs/cutover-checklist.md`
+- `docs/troubleshooting.md`
 
 ## Current Roles
 
@@ -32,7 +58,7 @@ Current implementation note:
 - `OPS_HUB_DISPATCHER_*` settings are dispatch-facing
 - `OPS_HUB_PARTS_*` settings are parts-facing
 
-## Current Commands
+## Command Overview
 
 Open utility commands:
 
@@ -108,7 +134,7 @@ Admin only:
 - `/remove_technician_mapping`
 - `/command_access`
 
-## Key Workflows
+## Main Workflows
 
 ### Job And Assignment Lookup
 
@@ -169,6 +195,13 @@ Ops Hub also has an internal tracked parts queue for coordination where it helps
 - `/part_reconcile`
 
 That queue is supplemental. The long-term direction is still BlueFolder-centered operations.
+
+## How The Bot Works In Discord
+
+- Commands are used with slash commands like `/job` or `/customer`
+- Most replies are ephemeral, which means only the person who ran the command sees the reply
+- BlueFolder is still the main operational record
+- Ops Hub helps the team move faster inside Discord while still writing the important updates back to BlueFolder
 
 ## Quick Start
 
@@ -235,7 +268,16 @@ The codebase is structured to keep bot behavior, service logic, and integration 
 
 ## Docs
 
-Longer-form project and planning docs live in `docs/`:
+User and operator docs live in `docs/`:
+
+- `docs/user-guide.md`
+- `docs/technician-guide.md`
+- `docs/dispatch-guide.md`
+- `docs/parts-guide.md`
+- `docs/admin-guide.md`
+- `docs/troubleshooting.md`
+
+Internal planning docs:
 
 - `docs/milestones.md`
 - `docs/photo-ingest-scope.md`
