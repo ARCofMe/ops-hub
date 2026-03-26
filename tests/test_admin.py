@@ -247,7 +247,7 @@ def test_import_technician_mappings_merges_into_file_store(tmp_path) -> None:
         technician_mapping_file=str(mapping_file),
     )
 
-    result = cog._build_import_technician_mappings(str(import_path), mode="merge")
+    result = cog._build_import_technician_mappings(str(import_path), mode="merge", confirm=True)
 
     assert "Imported `1` technician mappings" in result
     assert "Current merged mapping count: `2`" in result
@@ -262,11 +262,25 @@ def test_import_technician_mappings_replace_overwrites_file_store(tmp_path) -> N
     mapping_file.write_text('{"42":13051}', encoding="utf-8")
     cog = _build_cog(technician_mapping_file=str(mapping_file))
 
-    result = cog._build_import_technician_mappings(str(import_path), mode="replace")
+    result = cog._build_import_technician_mappings(str(import_path), mode="replace", confirm=True)
 
     assert "Imported `1` technician mappings" in result
-    assert "using `replace` mode" in result
+    assert "Mode: `replace`" in result
     assert json.loads(mapping_file.read_text(encoding="utf-8")) == {"84": 14001}
+
+
+def test_import_technician_mappings_preview_does_not_write(tmp_path) -> None:
+    import_path = tmp_path / "suggested.json"
+    import_path.write_text('{"suggested_discord_tech_map":{"84":14001}}', encoding="utf-8")
+    mapping_file = tmp_path / "technician_mappings.json"
+    mapping_file.write_text('{"42":13051}', encoding="utf-8")
+    cog = _build_cog(technician_mapping_file=str(mapping_file))
+
+    result = cog._build_import_technician_mappings(str(import_path), mode="merge")
+
+    assert "Preview only. Re-run with `confirm:true` to write these mappings." in result
+    assert "Additions: `1`" in result
+    assert json.loads(mapping_file.read_text(encoding="utf-8")) == {"42": 13051}
 
 
 def test_set_photo_feature_persists_override() -> None:

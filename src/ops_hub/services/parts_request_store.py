@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ops_hub.models.requests import PartRequestRecord
+from ops_hub.services.file_store_utils import atomic_write_text
 
 
 @dataclass(slots=True)
@@ -22,6 +23,8 @@ class PartsRequestStore:
             return list(self.records)
 
         raw = json.loads(self.file_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            raise RuntimeError(f"Parts request file must contain a JSON array: {self.file_path}")
         self.records = [PartRequestRecord(**item) for item in raw]
         return list(self.records)
 
@@ -31,9 +34,8 @@ class PartsRequestStore:
         if self.file_path is None:
             return None
 
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.file_path.write_text(
+        atomic_write_text(
+            self.file_path,
             json.dumps([asdict(record) for record in self.records], indent=2),
-            encoding="utf-8",
         )
         return self.file_path

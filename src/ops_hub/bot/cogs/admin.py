@@ -197,6 +197,56 @@ def _parse_mapping_import_text(text: str) -> dict[int, int]:
     raise ValueError("Mapping import file must contain a JSON object.")
 
 
+def _summarize_mapping_import(
+    current: dict[int, int],
+    incoming: dict[int, int],
+    *,
+    mode: str,
+) -> dict[str, object]:
+    """Return a concise preview of what a mapping import would change."""
+    if mode not in {"merge", "replace"}:
+        raise ValueError("Import mode must be merge or replace.")
+
+    added = 0
+    updated = 0
+    unchanged = 0
+    removed = 0
+    sample_lines: list[str] = []
+
+    for discord_user_id, bluefolder_user_id in sorted(incoming.items()):
+        current_value = current.get(discord_user_id)
+        if current_value is None:
+            added += 1
+            if len(sample_lines) < 8:
+                sample_lines.append(f"add: <@{discord_user_id}> -> BlueFolder `{bluefolder_user_id}`")
+        elif current_value == bluefolder_user_id:
+            unchanged += 1
+        else:
+            updated += 1
+            if len(sample_lines) < 8:
+                sample_lines.append(
+                    f"update: <@{discord_user_id}> BlueFolder `{current_value}` -> `{bluefolder_user_id}`"
+                )
+
+    if mode == "replace":
+        for discord_user_id, bluefolder_user_id in sorted(current.items()):
+            if discord_user_id not in incoming:
+                removed += 1
+                if len(sample_lines) < 8:
+                    sample_lines.append(f"remove: <@{discord_user_id}> -> BlueFolder `{bluefolder_user_id}`")
+
+    return {
+        "mode": mode,
+        "incoming_count": len(incoming),
+        "current_count": len(current),
+        "added": added,
+        "updated": updated,
+        "unchanged": unchanged,
+        "removed": removed,
+        "sample_lines": sample_lines,
+    }
+
+
 class AdminCog(commands.Cog):
     """Operational visibility commands for bot admins and maintainers."""
 
@@ -283,6 +333,7 @@ class AdminCog(commands.Cog):
     @app_commands.describe(
         path="Path to a JSON or .env-style mapping artifact.",
         mode="Merge into current mappings or replace the file-backed set.",
+        confirm="Preview only unless true.",
     )
     @app_commands.choices(
         mode=[
@@ -295,10 +346,11 @@ class AdminCog(commands.Cog):
         interaction: discord.Interaction,
         path: str,
         mode: str = "merge",
+        confirm: bool = False,
     ) -> None:
         """Import technician mappings from disk into the configured file-backed store."""
         await interaction.response.send_message(
-            self._build_import_technician_mappings(path, mode=mode),
+            self._build_import_technician_mappings(path, mode=mode, confirm=confirm),
             ephemeral=True,
         )
 
@@ -604,7 +656,7 @@ class AdminCog(commands.Cog):
             return "Technician mapping export is not configured. Set OPS_HUB_TECHNICIAN_MAPPING_FILE first."
         return f"Exported technician mappings to `{path}`."
 
-    def _build_import_technician_mappings(self, path: str, *, mode: str = "merge") -> str:
+    def _build_import_technician_mappings(self, path: str, *, mode: str = "merge", confirm: bool = False) -> str:
         """Import technician mappings from a JSON or env-style artifact on disk."""
         if mode not in {"merge", "replace"}:
             return "Import mode must be `merge` or `replace`."
@@ -620,6 +672,33 @@ class AdminCog(commands.Cog):
         except (OSError, ValueError) as exc:
             return f"Could not import technician mappings: {exc}"
 
+        current = self.bot.container.technician_directory_service.mappings()
+        summary = _summarize_mapping_import(current, imported, mode=mode)
+        lines = [
+            f"Technician mapping import preview for `{file_path}`",
+            f"Mode: `{mode}`",
+            f"Incoming mappings: `{summary['incoming_count']}`",
+            f"Current merged mappings: `{summary['current_count']}`",
+            f"Additions: `{summary['added']}`",
+            f"Updates: `{summary['updated']}`",
+            f"Unchanged: `{summary['unchanged']}`",
+        ]
+        if mode == "replace":
+            lines.append(f"Removals from current merged set: `{summary['removed']}`")
+        sample_lines = list(summary["sample_lines"])
+        if sample_lines:
+            lines.append("")
+            lines.append("Examples:")
+            lines.extend(sample_lines)
+        if not confirm:
+            lines.extend(
+                [
+                    "",
+                    "Preview only. Re-run with `confirm:true` to write these mappings.",
+                ]
+            )
+            return "\n".join(lines)
+
         persisted_path = self.bot.container.technician_directory_service.import_mappings(
             imported,
             replace=(mode == "replace"),
@@ -628,11 +707,15 @@ class AdminCog(commands.Cog):
             return "Technician mapping import is not configured. Set OPS_HUB_TECHNICIAN_MAPPING_FILE first."
 
         total = len(self.bot.container.technician_directory_service.mappings())
-        return (
-            f"Imported `{len(imported)}` technician mappings from `{file_path}` using `{mode}` mode. "
-            f"Current merged mapping count: `{total}`. "
-            f"Persisted to `{persisted_path}`."
+        lines.extend(
+            [
+                "",
+                f"Imported `{len(imported)}` technician mappings.",
+                f"Current merged mapping count: `{total}`.",
+                f"Persisted to `{persisted_path}`.",
+            ]
         )
+        return "\n".join(lines)
 
     def _build_reload_technician_mappings(self) -> str:
         """Reload file-backed mappings and report the result."""

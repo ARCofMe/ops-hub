@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ops_hub.models.requests import TechnicianMappingRecord
+from ops_hub.services.file_store_utils import atomic_write_text
 
 
 @dataclass(slots=True)
@@ -22,6 +23,8 @@ class OperatorMappingStore:
             return dict(self.records)
 
         raw = json.loads(self.file_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise RuntimeError(f"Technician mapping file must contain a JSON object: {self.file_path}")
         self.records = {int(k): int(v) for k, v in raw.items()}
         return dict(self.records)
 
@@ -31,10 +34,9 @@ class OperatorMappingStore:
         if self.file_path is None:
             return None
 
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.file_path.write_text(
+        atomic_write_text(
+            self.file_path,
             json.dumps({str(k): v for k, v in sorted(records.items())}, indent=2),
-            encoding="utf-8",
         )
         return self.file_path
 

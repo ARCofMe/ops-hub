@@ -65,6 +65,20 @@ def test_technician_directory_exports_mappings(tmp_path: Path) -> None:
     assert file_path.read_text(encoding="utf-8").strip() == '{\n  "42": 13051\n}'
 
 
+def test_technician_directory_export_creates_backup_on_overwrite(tmp_path: Path) -> None:
+    file_path = tmp_path / "technician-mappings.json"
+    file_path.write_text('{"41": 12000}', encoding="utf-8")
+    service = TechnicianDirectoryService(
+        settings=_settings(technician_bluefolder_user_map={42: 13051}),
+        store=OperatorMappingStore(file_path=file_path),
+    )
+
+    service.export_mappings()
+
+    assert file_path.read_text(encoding="utf-8").strip() == '{\n  "41": 12000,\n  "42": 13051\n}'
+    assert file_path.with_name("technician-mappings.json.bak").read_text(encoding="utf-8") == '{"41": 12000}'
+
+
 def test_technician_directory_set_mapping_updates_runtime_without_file() -> None:
     service = TechnicianDirectoryService(
         settings=_settings(),

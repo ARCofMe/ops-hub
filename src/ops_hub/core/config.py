@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import model_validator
@@ -288,6 +289,50 @@ class Settings(BaseSettings):
         if self.photo_mailbox_search_days <= 0:
             errors.append("OPS_HUB_PHOTO_MAILBOX_SEARCH_DAYS must be greater than 0.")
 
+        for env_name, path_value in [
+            ("OPS_HUB_BLUEFOLDER_API_PATH", self.bluefolder_api_path),
+            ("OPS_HUB_BLUEBOT_DISCORD_EXTENSION_PATH", self.bluebot_discord_extension_path),
+            ("OPS_HUB_PHOTO_INGEST_PROJECT_PATH", self.photo_ingest_project_path),
+            ("OPS_HUB_PARTS_CANNON_PROJECT_PATH", self.parts_cannon_project_path),
+            ("OPS_HUB_DISPATCH_PROJECT_PATH", self.dispatch_project_path),
+        ]:
+            errors.extend(self._directory_path_errors(env_name, path_value))
+
+        for env_name, path_value in [
+            ("OPS_HUB_TECHNICIAN_MAPPING_FILE", self.technician_mapping_file),
+            ("OPS_HUB_MEMBER_EXPORT_PATH", self.member_export_path),
+            ("OPS_HUB_PARTS_REQUEST_FILE", self.parts_request_file),
+            ("OPS_HUB_PHOTO_FEATURE_FLAGS_FILE", self.photo_feature_flags_file),
+        ]:
+            errors.extend(self._file_target_path_errors(env_name, path_value))
+
+        return errors
+
+    def _directory_path_errors(self, env_name: str, path_value: str | None) -> list[str]:
+        """Validate configured project/library directories."""
+        if not (path_value or "").strip():
+            return []
+
+        path = Path(path_value).expanduser()
+        if not path.exists():
+            return [f"{env_name} does not exist: {path}"]
+        if not path.is_dir():
+            return [f"{env_name} must point to a directory: {path}"]
+        return []
+
+    def _file_target_path_errors(self, env_name: str, path_value: str | None) -> list[str]:
+        """Validate configured file targets and their parent directories."""
+        if not (path_value or "").strip():
+            return []
+
+        path = Path(path_value).expanduser()
+        errors: list[str] = []
+        if path.exists() and path.is_dir():
+            errors.append(f"{env_name} must point to a file path, not a directory: {path}")
+
+        parent = path.parent
+        if parent.exists() and not parent.is_dir():
+            errors.append(f"{env_name} parent path is not a directory: {parent}")
         return errors
 
     def validate_or_raise(self) -> None:

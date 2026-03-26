@@ -1,5 +1,7 @@
 """Configuration tests for Ops Hub."""
 
+from pathlib import Path
+
 from ops_hub.core.config import Settings
 
 
@@ -255,3 +257,21 @@ def test_validation_errors_allow_bluefolder_account_and_base_url_together() -> N
     errors = settings.validation_errors()
 
     assert errors == []
+
+
+def test_validation_errors_reject_missing_configured_project_paths(tmp_path: Path) -> None:
+    settings = _settings(bluefolder_api_path=str(tmp_path / "missing-bluefolder-api"))
+
+    errors = settings.validation_errors()
+
+    assert any(error.startswith("OPS_HUB_BLUEFOLDER_API_PATH does not exist:") for error in errors)
+
+
+def test_validation_errors_reject_directory_for_file_target(tmp_path: Path) -> None:
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    settings = _settings(member_export_path=str(export_dir))
+
+    errors = settings.validation_errors()
+
+    assert any(error.startswith("OPS_HUB_MEMBER_EXPORT_PATH must point to a file path") for error in errors)
