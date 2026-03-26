@@ -622,6 +622,7 @@ class OperationsCog(commands.Cog):
             sr_id,
             event_type=event_type,
             requested_by_user_id=interaction.user.id,
+            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
             details=details,
             minutes=minutes,
             notify_dispatch=notify_dispatch,

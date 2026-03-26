@@ -491,12 +491,14 @@ class BlueFolderAdapter:
         issue_type: str,
         details: str | None,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized contact/arrival issue comment to a service request."""
         return await self.add_field_event_comment(
             sr_id,
             event_type=issue_type,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             details=details,
         )
 
@@ -506,6 +508,7 @@ class BlueFolderAdapter:
         *,
         update_type: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         minutes: int | None = None,
     ) -> dict[str, str | bool | None]:
         """Add a standardized route-status comment to a service request."""
@@ -513,6 +516,7 @@ class BlueFolderAdapter:
             sr_id,
             event_type=update_type,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             minutes=minutes,
         )
 
@@ -522,6 +526,7 @@ class BlueFolderAdapter:
         *,
         event_type: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         details: str | None = None,
         minutes: int | None = None,
     ) -> dict[str, str | bool | None]:
@@ -535,6 +540,7 @@ class BlueFolderAdapter:
             event_type=event_type,
             timestamp=timestamp,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             details=details,
             minutes=minutes,
         )
@@ -569,12 +575,14 @@ class BlueFolderAdapter:
         event_type: str,
         timestamp: datetime,
         requested_by_user_id: int,
+        requested_by_label: str | None,
         details: str | None,
         minutes: int | None,
     ) -> str | None:
         """Render a standardized field-workflow comment body."""
         detail_text = " ".join((details or "").split()).strip()
         event_time = timestamp.strftime("%I:%M %p").lstrip("0")
+        reported_by = self._reported_by_text(requested_by_label, requested_by_user_id)
 
         if event_type == "eta":
             if minutes is None or minutes <= 0:
@@ -609,7 +617,14 @@ class BlueFolderAdapter:
         else:
             return None
 
-        return f"{body} Reported by Discord user {requested_by_user_id}."
+        return f"{body} Reported by {reported_by}."
+
+    def _reported_by_text(self, requested_by_label: str | None, requested_by_user_id: int) -> str:
+        """Return a readable actor label for BlueFolder note attribution."""
+        text = (requested_by_label or "").strip()
+        if text:
+            return text
+        return f"Discord user {requested_by_user_id}"
 
     async def get_active_user_directory(self) -> dict[int, str]:
         """Return a BlueFolder active-user directory keyed by user id."""

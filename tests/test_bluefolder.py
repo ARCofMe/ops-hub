@@ -399,6 +399,7 @@ def test_bluefolder_service_logs_field_event_and_notifies() -> None:
             assert sr_id == 100
             assert kwargs["event_type"] == "start"
             assert kwargs["details"] == "Beginning diagnosis."
+            assert kwargs["requested_by_label"] == "Mike Smith"
             return {
                 "ok": True,
                 "note_text": "Technician started work at 8:15 AM. Details: Beginning diagnosis.",
@@ -421,6 +422,7 @@ def test_bluefolder_service_logs_field_event_and_notifies() -> None:
             event_type="start",
             details="Beginning diagnosis.",
             requested_by_user_id=42,
+            requested_by_label="Mike Smith",
             notify_dispatch=True,
         )
     )
@@ -1357,11 +1359,20 @@ def test_bluefolder_adapter_rejects_non_numeric_reference(tmp_path: Path) -> Non
 
 def test_bluefolder_service_logs_route_update_and_notifies() -> None:
     class _Adapter:
-        async def add_field_event_comment(self, sr_id, *, event_type, requested_by_user_id, details=None, minutes=None):
+        async def add_field_event_comment(
+            self,
+            sr_id,
+            *,
+            event_type,
+            requested_by_user_id,
+            requested_by_label=None,
+            details=None,
+            minutes=None,
+        ):
             return {
                 "ok": True,
                 "logged_at": "2026-03-25T12:30",
-                "note_text": "ETA update: arriving in 15 minutes. Reported by Discord user 42.",
+                "note_text": "ETA update: arriving in 15 minutes. Reported by Mike Smith.",
             }
 
     class _Notifications:
@@ -1375,28 +1386,38 @@ def test_bluefolder_service_logs_route_update_and_notifies() -> None:
     service = BlueFolderService(adapter=_Adapter(), notifications=notifications)  # type: ignore[arg-type]
 
     result = asyncio.run(
-        service.log_route_update(
-            12345,
-            update_type="eta",
-            requested_by_user_id=42,
-            minutes=15,
-            notify_dispatch=True,
+            service.log_route_update(
+                12345,
+                update_type="eta",
+                requested_by_user_id=42,
+                requested_by_label="Mike Smith",
+                minutes=15,
+                notify_dispatch=True,
+            )
         )
-    )
 
     assert "Logged eta for `12345`" in result.message
     assert notifications.calls == [
-        ("dispatch.route_update", "SR-12345 eta logged. ETA update: arriving in 15 minutes. Reported by Discord user 42.")
+        ("dispatch.route_update", "SR-12345 eta logged. ETA update: arriving in 15 minutes. Reported by Mike Smith.")
     ]
 
 
 def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
     class _Adapter:
-        async def add_field_event_comment(self, sr_id, *, event_type, requested_by_user_id, details=None, minutes=None):
+        async def add_field_event_comment(
+            self,
+            sr_id,
+            *,
+            event_type,
+            requested_by_user_id,
+            requested_by_label=None,
+            details=None,
+            minutes=None,
+        ):
             return {
                 "ok": True,
                 "logged_at": "2026-03-25T12:30",
-                "note_text": "Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Discord user 42.",
+                "note_text": "Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Mike Smith.",
             }
 
     class _Notifications:
@@ -1410,16 +1431,17 @@ def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
     service = BlueFolderService(adapter=_Adapter(), notifications=notifications)  # type: ignore[arg-type]
 
     result = asyncio.run(
-        service.log_contact_issue(
-            12345,
-            issue_type="no_answer",
-            details="knocked twice",
-            requested_by_user_id=42,
-            notify_dispatch=True,
+            service.log_contact_issue(
+                12345,
+                issue_type="no_answer",
+                details="knocked twice",
+                requested_by_user_id=42,
+                requested_by_label="Mike Smith",
+                notify_dispatch=True,
+            )
         )
-    )
 
     assert "Logged no-answer for `12345`" in result.message
     assert notifications.calls == [
-        ("dispatch.contact_issue", "SR-12345 no-answer logged. Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Discord user 42.")
+        ("dispatch.contact_issue", "SR-12345 no-answer logged. Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Mike Smith.")
     ]

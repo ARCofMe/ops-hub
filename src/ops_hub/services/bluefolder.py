@@ -261,6 +261,7 @@ class BlueFolderService:
         issue_type: str,
         details: str | None,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         notify_dispatch: bool = True,
     ) -> CommandResult:
         """Add a standardized BlueFolder contact issue comment and optionally notify dispatch."""
@@ -268,6 +269,7 @@ class BlueFolderService:
             sr_id,
             event_type=issue_type,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             details=details,
             notify_dispatch=notify_dispatch,
         )
@@ -278,6 +280,7 @@ class BlueFolderService:
         *,
         update_type: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         minutes: int | None = None,
         notify_dispatch: bool = False,
     ) -> CommandResult:
@@ -286,6 +289,7 @@ class BlueFolderService:
             sr_id,
             event_type=update_type,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             minutes=minutes,
             notify_dispatch=notify_dispatch,
         )
@@ -296,6 +300,7 @@ class BlueFolderService:
         *,
         event_type: str,
         requested_by_user_id: int,
+        requested_by_label: str | None = None,
         details: str | None = None,
         minutes: int | None = None,
         notify_dispatch: bool = False,
@@ -305,6 +310,7 @@ class BlueFolderService:
             sr_id,
             event_type=event_type,
             requested_by_user_id=requested_by_user_id,
+            requested_by_label=requested_by_label,
             details=details,
             minutes=minutes,
         )
