@@ -17,6 +17,12 @@ from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
 logger = logging.getLogger(__name__)
 
+
+def _is_known_origin_lookup_miss(exc: Exception) -> bool:
+    """Return True for the routing-wrapper user lookup failure this tenant cannot satisfy."""
+    text = str(exc)
+    return "users/list.aspx" in text or "Site Not Found" in text
+
 @dataclass(slots=True)
 class DispatchAdapter:
     """Adapter boundary for dispatch-facing operations."""
@@ -214,11 +220,20 @@ class DispatchAdapter:
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
         except Exception as exc:
             self._origin_lookup_unavailable = True
-            logger.warning(
-                "Dispatch wrapper origin unavailable for mapped BlueFolder user %s: %s",
-                technician_bluefolder_user_id,
-                exc,
-            )
+            if _is_known_origin_lookup_miss(exc):
+                logger.info(
+                    "Dispatch wrapper origin lookup disabled for this tenant",
+                    extra={
+                        "bluefolder_user_id": technician_bluefolder_user_id,
+                        "status": "origin_lookup_disabled",
+                    },
+                )
+            else:
+                logger.warning(
+                    "Dispatch wrapper origin unavailable for mapped BlueFolder user %s: %s",
+                    technician_bluefolder_user_id,
+                    exc,
+                )
             return None
 
     async def build_route_map_urls(
