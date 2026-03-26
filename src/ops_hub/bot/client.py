@@ -6,6 +6,7 @@ import logging
 import time
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from ops_hub.bot.extensions import EXTENSIONS
@@ -17,6 +18,15 @@ from ops_hub.models.requests import PhotoIngestMessage
 logger = logging.getLogger(__name__)
 
 
+class LoggingCommandTree(app_commands.CommandTree["OpsHubBot"]):
+    """Command tree that records app-command start timing for logging."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if isinstance(self.client, OpsHubBot):
+            self.client._record_app_command_start(interaction)
+        return await super().interaction_check(interaction)
+
+
 class OpsHubBot(commands.Bot):
     """Discord bot for unified operations workflows."""
 
@@ -26,9 +36,10 @@ class OpsHubBot(commands.Bot):
         intents.members = True
         intents.messages = True
         intents.message_content = settings.enable_message_content_intent
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, tree_cls=LoggingCommandTree)
         self.settings = settings
         self.container = container
+        self._interaction_started_at: dict[int, float] = {}
 
     async def setup_hook(self) -> None:
         """Load extensions and sync commands."""
@@ -65,20 +76,16 @@ class OpsHubBot(commands.Bot):
             },
         )
 
-    async def on_interaction(self, interaction: discord.Interaction) -> None:
-        """Log application-command lifecycle with stable request context."""
-        is_app_command = interaction.type == discord.InteractionType.application_command
-        started_at = time.monotonic()
-        if is_app_command:
-            logger.info("Application command received", extra=self._interaction_context(interaction))
-        try:
-            await super().on_interaction(interaction)
-        finally:
-            if is_app_command:
-                duration_ms = int((time.monotonic() - started_at) * 1000)
-                context = self._interaction_context(interaction)
-                context["duration_ms"] = duration_ms
-                logger.info("Application command completed", extra=context)
+    async def on_app_command_completion(
+        self,
+        interaction: discord.Interaction,
+        command: app_commands.Command[object, ..., object] | app_commands.ContextMenu,
+    ) -> None:
+        """Log successful application-command completion."""
+        context = self._interaction_context(interaction)
+        context["command"] = getattr(command, "qualified_name", None) or getattr(command, "name", None)
+        context["duration_ms"] = self._pop_interaction_duration(interaction)
+        logger.info("Application command completed", extra=context)
 
     async def on_message(self, message: discord.Message) -> None:
         """Route message events into placeholder listeners without affecting existing projects."""
@@ -112,7 +119,9 @@ class OpsHubBot(commands.Bot):
         error: discord.app_commands.AppCommandError,
     ) -> None:
         """Return a minimal user-facing error and log the full context."""
-        logger.exception("Application command failed", exc_info=error, extra=self._interaction_context(interaction))
+        context = self._interaction_context(interaction)
+        context["duration_ms"] = self._pop_interaction_duration(interaction)
+        logger.exception("Application command failed", exc_info=error, extra=context)
 
         message = "Ops Hub hit an unexpected error."
         try:
@@ -135,6 +144,25 @@ class OpsHubBot(commands.Bot):
             "guild_id": getattr(interaction, "guild_id", None),
             "channel_id": getattr(interaction, "channel_id", None),
         }
+
+    def _record_app_command_start(self, interaction: discord.Interaction) -> None:
+        """Track application-command start and emit the initial receipt log."""
+        if interaction.type != discord.InteractionType.application_command:
+            return
+        interaction_id = getattr(interaction, "id", None)
+        if interaction_id is not None:
+            self._interaction_started_at[interaction_id] = time.monotonic()
+        logger.info("Application command received", extra=self._interaction_context(interaction))
+
+    def _pop_interaction_duration(self, interaction: discord.Interaction) -> int | None:
+        """Return elapsed command time in milliseconds when a start was recorded."""
+        interaction_id = getattr(interaction, "id", None)
+        if interaction_id is None:
+            return None
+        started_at = self._interaction_started_at.pop(interaction_id, None)
+        if started_at is None:
+            return None
+        return int((time.monotonic() - started_at) * 1000)
 
     async def _send_notice_to_channel(self, channel_id: int, topic: str, message: str) -> None:
         """Route Ops Hub notices into a configured Discord channel."""
