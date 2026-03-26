@@ -6,7 +6,7 @@ import textwrap
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import JobLookupRequest, TechnicianMappingRecord
+from ops_hub.models.requests import CustomerContactSummary, JobLookupRequest, TechnicianMappingRecord
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 
@@ -456,6 +456,20 @@ def test_bluefolder_service_builds_customer_snapshot() -> None:
                 state="ME",
                 postal_code="04101",
                 service_request_status="Scheduled",
+                customer_contacts=(
+                    CustomerContactSummary(
+                        name="Jane Doe",
+                        title="Owner",
+                        phone="207-555-1212",
+                        email="jane@example.com",
+                        is_primary=True,
+                    ),
+                    CustomerContactSummary(
+                        name="John Doe",
+                        phone="207-555-2323",
+                        is_primary=False,
+                    ),
+                ),
             )
 
     service = BlueFolderService(adapter=AdapterStub())
@@ -468,6 +482,9 @@ def test_bluefolder_service_builds_customer_snapshot() -> None:
     assert "Phone: 207-555-1212" in result.message
     assert "Status: `Scheduled`" in result.message
     assert "Address: 123 Main St, Portland ME 04101" in result.message
+    assert "**Contacts**" in result.message
+    assert "Primary: Jane Doe | Owner | 207-555-1212 | jane@example.com" in result.message
+    assert "Contact: John Doe | 207-555-2323" in result.message
 
 
 def test_dispatch_service_builds_dispatch_board_summary(tmp_path: Path) -> None:

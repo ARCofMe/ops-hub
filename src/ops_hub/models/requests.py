@@ -170,6 +170,18 @@ class BlueFolderJobSummary:
     state: str | None = None
     postal_code: str | None = None
     service_request_status: str | None = None
+    customer_contacts: tuple["CustomerContactSummary", ...] = ()
+
+
+@dataclass(slots=True)
+class CustomerContactSummary:
+    """A customer contact option for an SR/customer."""
+
+    name: str
+    title: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    is_primary: bool = False
 
 
 @dataclass(slots=True)

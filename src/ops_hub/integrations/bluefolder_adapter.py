@@ -14,7 +14,7 @@ from types import TracebackType
 
 from datetime import date, datetime
 
-from ops_hub.models.requests import BlueFolderJobSummary, PartsCommentRecord
+from ops_hub.models.requests import BlueFolderJobSummary, CustomerContactSummary, PartsCommentRecord
 
 
 logger = logging.getLogger(__name__)
@@ -158,6 +158,7 @@ class BlueFolderAdapter:
             or sr.findtext("phone")
             or sr.findtext(".//phone")
         )
+        customer_contacts: tuple[CustomerContactSummary, ...] = ()
         customer_id = sr.findtext("customerId")
         customer_location_id = sr.findtext("customerLocationId")
         address: str | None = None
@@ -204,6 +205,7 @@ class BlueFolderAdapter:
                     except Exception as exc:
                         logger.warning("BlueFolder contact lookup unavailable for customer=%s: %s", customer_id, exc)
                     else:
+                        customer_contacts = self._build_customer_contacts(contacts or [], customer_location_id)
                         customer_phone = self._select_customer_phone(contacts or [], customer_location_id)
                 if not customer_phone:
                     try:
@@ -215,6 +217,8 @@ class BlueFolderAdapter:
                             customer_xml.findtext(".//customerContactPhone")
                             or customer_xml.findtext(".//phone")
                         )
+                        if not customer_contacts:
+                            customer_contacts = self._build_customer_contacts_from_customer_xml(customer_xml)
 
         return BlueFolderJobSummary(
             reference=reference,
@@ -233,6 +237,7 @@ class BlueFolderAdapter:
             state=state,
             postal_code=postal_code,
             service_request_status=service_request_status,
+            customer_contacts=customer_contacts,
         )
 
     def _select_customer_phone(self, contacts: list[dict[str, object]], customer_location_id: str | None) -> str | None:
@@ -253,6 +258,80 @@ class BlueFolderAdapter:
 
     def _clean_phone(self, value: object) -> str | None:
         """Normalize a candidate phone value into a printable string."""
+        text = str(value or "").strip()
+        return text or None
+
+    def _build_customer_contacts(
+        self,
+        contacts: list[dict[str, object]],
+        customer_location_id: str | None,
+    ) -> tuple[CustomerContactSummary, ...]:
+        """Build ordered customer contact summaries for a location-aware SR."""
+        filtered = [
+            contact
+            for contact in contacts
+            if not customer_location_id
+            or str(contact.get("locationId") or "") in {"", str(customer_location_id)}
+        ]
+        if not filtered:
+            filtered = contacts
+
+        summaries: list[CustomerContactSummary] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for contact in sorted(
+            filtered,
+            key=lambda item: (
+                not bool(item.get("isPrimary")),
+                str(item.get("firstName") or "").casefold(),
+                str(item.get("lastName") or "").casefold(),
+            ),
+        ):
+            name = " ".join(
+                part for part in [str(contact.get("firstName") or "").strip(), str(contact.get("lastName") or "").strip()] if part
+            ).strip() or "Unknown"
+            summary = CustomerContactSummary(
+                name=name,
+                title=self._clean_text(contact.get("title")),
+                phone=self._clean_phone(contact.get("phone")),
+                email=self._clean_text(contact.get("email")),
+                is_primary=bool(contact.get("isPrimary")),
+            )
+            key = (summary.name, summary.title or "", summary.phone or "", summary.email or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            summaries.append(summary)
+        return tuple(summaries[:5])
+
+    def _build_customer_contacts_from_customer_xml(self, customer_xml) -> tuple[CustomerContactSummary, ...]:
+        """Build contact summaries from the broader customer record as a fallback."""
+        summaries: list[CustomerContactSummary] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for contact in customer_xml.findall(".//customerContact"):
+            summary = CustomerContactSummary(
+                name=" ".join(
+                    part
+                    for part in [
+                        (contact.findtext("firstName") or "").strip(),
+                        (contact.findtext("lastName") or "").strip(),
+                    ]
+                    if part
+                ).strip()
+                or "Unknown",
+                title=self._clean_text(contact.findtext("title")),
+                phone=self._clean_phone(contact.findtext("phone")),
+                email=self._clean_text(contact.findtext("email")),
+                is_primary=(contact.findtext("isPrimary") == "1"),
+            )
+            key = (summary.name, summary.title or "", summary.phone or "", summary.email or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            summaries.append(summary)
+        return tuple(summaries[:5])
+
+    def _clean_text(self, value: object) -> str | None:
+        """Normalize a candidate text value into a printable string."""
         text = str(value or "").strip()
         return text or None
 

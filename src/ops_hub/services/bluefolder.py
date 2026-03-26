@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
-from ops_hub.models.requests import BlueFolderJobSummary, CommandResult, PartsCommentRecord, PartsLifecycleSnapshot
+from ops_hub.models.requests import (
+    BlueFolderJobSummary,
+    CommandResult,
+    CustomerContactSummary,
+    PartsCommentRecord,
+    PartsLifecycleSnapshot,
+)
 from ops_hub.services.notifications import NotificationService
 
 
@@ -351,6 +357,10 @@ class BlueFolderService:
             lines.append(f"Status: `{summary.service_request_status}`")
         if address := self._format_address(summary):
             lines.append(f"Address: {address}")
+        if summary.customer_contacts:
+            lines.extend(["", "**Contacts**"])
+            for contact in summary.customer_contacts[:3]:
+                lines.append(self._format_customer_contact(contact))
         if summary.customer_id or summary.customer_location_id:
             lines.extend(["", "**BlueFolder**"])
             if summary.customer_id:
@@ -371,6 +381,18 @@ class BlueFolderService:
             ]
             if part
         )
+
+    def _format_customer_contact(self, contact: CustomerContactSummary) -> str:
+        """Render a customer contact line for Discord output."""
+        bits = [contact.name]
+        if contact.title:
+            bits.append(contact.title)
+        if contact.phone:
+            bits.append(contact.phone)
+        if contact.email:
+            bits.append(contact.email)
+        prefix = "Primary" if contact.is_primary else "Contact"
+        return f"{prefix}: {' | '.join(bits)}"
 
     def recommend_next_action(self, snapshot: PartsLifecycleSnapshot) -> str:
         """Return a plain-language recommended next action for the current parts stage."""
