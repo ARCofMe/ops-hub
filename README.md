@@ -127,8 +127,13 @@ Admin only:
 - `/config_check`
 - `/service_status`
 - `/recent_notices`
+- `/bluefolder_techs`
+- `/export_member_map`
+- `/suggest_tech_map`
+- `/lookup_member`
 - `/technician_mappings`
 - `/export_technician_mappings`
+- `/import_technician_mappings`
 - `/reload_technician_mappings`
 - `/set_technician_mapping`
 - `/remove_technician_mapping`

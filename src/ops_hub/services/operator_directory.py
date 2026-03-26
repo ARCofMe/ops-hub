@@ -97,6 +97,13 @@ class TechnicianDirectoryService:
         mappings[discord_user_id] = bluefolder_user_id
         self.store.export(mappings)
 
+    def import_mappings(self, records: dict[int, int], *, replace: bool = False) -> Path | None:
+        """Import many mappings into the file-backed store."""
+        mappings = dict(records) if replace else self.mappings()
+        if not replace:
+            mappings.update(records)
+        return self.store.export(mappings)
+
     def remove_mapping(self, *, discord_user_id: int) -> bool:
         """Remove a mapping from the file-backed store if present."""
         mappings = self.mappings()

@@ -57,7 +57,8 @@ class HealthCog(commands.Cog):
                 "",
                 "**Admin**",
                 "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`",
-                "`/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`",
+                "`/bluefolder_techs`, `/export_member_map`, `/suggest_tech_map`, `/lookup_member`",
+                "`/technician_mappings`, `/export_technician_mappings`, `/import_technician_mappings`, `/reload_technician_mappings`",
                 "`/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`",
                 "`/photo_features`, `/set_photo_feature`, `/clear_photo_feature`",
             ]

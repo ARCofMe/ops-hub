@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
+from unittest.mock import patch
 
 from ops_hub.bot.client import OpsHubBot
-from ops_hub.bot.cogs.admin import AdminCog
+from ops_hub.services.bluefolder import BlueFolderService
+from ops_hub.bot.cogs.admin import AdminCog, _build_tech_map_suggestion, _parse_mapping_import_text
 from ops_hub.core.config import Settings
 from ops_hub.core.container import build_container
 
@@ -56,6 +59,9 @@ class _DummyRole:
 class _DummyUser:
     id: int
     roles: list[_DummyRole]
+    name: str = "mike.smith"
+    display_name: str = "Mike Smith"
+    global_name: str | None = "Mike Smith"
 
 
 @dataclass(slots=True)
@@ -140,7 +146,15 @@ def test_build_command_access_describes_current_scopes() -> None:
 
     result = cog._build_command_access()
 
-    assert "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only" in result
+    assert "`/ops_status`" in result
+    assert "`/bluefolder_techs`" in result
+    assert "`/export_member_map`" in result
+    assert "`/suggest_tech_map`" in result
+    assert "`/lookup_member`" in result
+    assert "`/technician_mappings`" in result
+    assert "`/export_technician_mappings`" in result
+    assert "`/import_technician_mappings`" in result
+    assert "`/reload_technician_mappings`" in result
     assert "`/job`, `/assignments`, `/customer`: technicians, dispatchers, admins" in result
     assert "`/eta`, `/enroute`, `/start`, `/no_answer`, `/not_home`, `/reschedule_needed`, `/note`: technicians, admins" in result
     assert "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)" in result
@@ -160,6 +174,99 @@ def test_build_photo_features_reports_default_states() -> None:
     assert "Photo Features" in result
     assert "`mdlsn_upload`: `enabled` via `env`" in result
     assert "`photo_mailbox_scan`: `disabled` via `env`" in result
+
+
+def test_build_tech_map_suggestion_matches_exact_names() -> None:
+    result = _build_tech_map_suggestion(
+        [
+            {
+                "discord_user_id": "42",
+                "username": "mike.smith",
+                "display_name": "Mike Smith",
+                "global_name": None,
+                "role_names": ["Technician"],
+            }
+        ],
+        [
+            {"id": 13051, "name": "Mike Smith", "email": "mike@example.com"},
+            {"id": 13052, "name": "John Doe", "email": "john@example.com"},
+        ],
+    )
+
+    assert result["suggested_discord_tech_map"] == {"42": 13051}
+    assert "OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP=" in str(result["suggested_discord_tech_map_env"])
+
+
+def test_build_bluefolder_techs_renders_export_and_ids(tmp_path) -> None:
+    cog = _build_cog(member_export_path=str(tmp_path / "members.json"))
+
+    async def fake_directory(self) -> dict[int, str]:
+        return {13051: "Mike Smith", 14001: "John Doe"}
+
+    with patch.object(BlueFolderService, "get_active_user_directory", new=fake_directory):
+        result = asyncio.run(cog._build_bluefolder_techs())
+
+    assert "BlueFolder Technicians (`2`)" in result
+    assert "`13051` Mike Smith" in result
+    assert any(path.name.startswith("members_bluefolder_techs") for path in tmp_path.iterdir())
+
+
+def test_parse_mapping_import_text_accepts_env_line() -> None:
+    result = _parse_mapping_import_text('OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}')
+
+    assert result == {42: 13051}
+
+
+def test_parse_mapping_import_text_accepts_suggestion_export_payload() -> None:
+    result = _parse_mapping_import_text(
+        '{"suggested_discord_tech_map":{"42":13051,"84":14001},"matched":[]}'
+    )
+
+    assert result == {42: 13051, 84: 14001}
+
+
+def test_build_lookup_member_reports_mapping_and_exact_match() -> None:
+    cog = _build_cog(technician_bluefolder_user_map={42: 13051})
+
+    async def fake_directory(self) -> dict[int, str]:
+        return {13051: "Mike Smith"}
+
+    with patch.object(BlueFolderService, "get_active_user_directory", new=fake_directory):
+        result = asyncio.run(cog._build_lookup_member(_DummyUser(id=42, roles=[])))  # type: ignore[arg-type]
+
+    assert "Discord ID: `42`" in result
+    assert "Mapped explicitly: Mike Smith (BlueFolder `13051`)" in result
+
+
+def test_import_technician_mappings_merges_into_file_store(tmp_path) -> None:
+    import_path = tmp_path / "suggested.json"
+    import_path.write_text('{"suggested_discord_tech_map":{"84":14001}}', encoding="utf-8")
+    mapping_file = tmp_path / "technician_mappings.json"
+    cog = _build_cog(
+        technician_bluefolder_user_map={42: 13051},
+        technician_mapping_file=str(mapping_file),
+    )
+
+    result = cog._build_import_technician_mappings(str(import_path), mode="merge")
+
+    assert "Imported `1` technician mappings" in result
+    assert "Current merged mapping count: `2`" in result
+    assert mapping_file.exists()
+    assert json.loads(mapping_file.read_text(encoding="utf-8")) == {"42": 13051, "84": 14001}
+
+
+def test_import_technician_mappings_replace_overwrites_file_store(tmp_path) -> None:
+    import_path = tmp_path / "legacy.env"
+    import_path.write_text('DISCORD_TECH_MAP={"84":14001}', encoding="utf-8")
+    mapping_file = tmp_path / "technician_mappings.json"
+    mapping_file.write_text('{"42":13051}', encoding="utf-8")
+    cog = _build_cog(technician_mapping_file=str(mapping_file))
+
+    result = cog._build_import_technician_mappings(str(import_path), mode="replace")
+
+    assert "Imported `1` technician mappings" in result
+    assert "using `replace` mode" in result
+    assert json.loads(mapping_file.read_text(encoding="utf-8")) == {"84": 14001}
 
 
 def test_set_photo_feature_persists_override() -> None:

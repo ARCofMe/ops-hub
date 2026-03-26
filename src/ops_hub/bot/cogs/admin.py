@@ -2,13 +2,199 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+from difflib import SequenceMatcher
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from ops_hub.bot.client import OpsHubBot
+
+
+def _normalize_name(raw: str | None) -> str:
+    """Return a casefolded alphanumeric name for loose matching."""
+    text = " ".join(str(raw or "").split()).strip().casefold()
+    return "".join(char for char in text if char.isalnum() or char.isspace()).strip()
+
+
+def _member_name_candidates_from_record(member: dict[str, object]) -> list[str]:
+    """Return normalized Discord name candidates for one member record."""
+    candidates: list[str] = []
+    for raw in [member.get("display_name"), member.get("global_name"), member.get("username")]:
+        normalized = _normalize_name(str(raw or ""))
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def _matching_techs_for_member_record(
+    member: dict[str, object],
+    techs: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Return exact normalized-name BlueFolder matches for a Discord member."""
+    techs_by_name: dict[str, list[dict[str, object]]] = {}
+    for tech in techs:
+        normalized = _normalize_name(str(tech.get("name") or ""))
+        if normalized:
+            techs_by_name.setdefault(normalized, []).append(tech)
+
+    unique_matches: dict[int, dict[str, object]] = {}
+    for candidate in _member_name_candidates_from_record(member):
+        for tech in techs_by_name.get(candidate, []):
+            tech_id = int(tech.get("id") or 0)
+            if tech_id:
+                unique_matches[tech_id] = tech
+    return list(unique_matches.values())
+
+
+def _near_match_techs_for_member_record(
+    member: dict[str, object],
+    techs: list[dict[str, object]],
+    *,
+    threshold: float = 0.84,
+) -> list[dict[str, object]]:
+    """Return close BlueFolder name matches for manual review."""
+    candidates = _member_name_candidates_from_record(member)
+    scored: list[tuple[float, dict[str, object]]] = []
+    for tech in techs:
+        tech_name = _normalize_name(str(tech.get("name") or ""))
+        if not tech_name:
+            continue
+        best = max((SequenceMatcher(None, candidate, tech_name).ratio() for candidate in candidates), default=0.0)
+        if best >= threshold:
+            scored.append((best, tech))
+
+    scored.sort(key=lambda item: (-item[0], str(item[1].get("name") or "")))
+    unique: dict[int, dict[str, object]] = {}
+    for score, tech in scored[:5]:
+        tech_id = int(tech.get("id") or 0)
+        if tech_id and tech_id not in unique:
+            unique[tech_id] = {
+                "id": tech_id,
+                "name": tech.get("name"),
+                "score": round(score, 3),
+            }
+    return list(unique.values())
+
+
+def _build_tech_map_suggestion(
+    members: list[dict[str, object]],
+    techs: list[dict[str, object]],
+) -> dict[str, object]:
+    """Build exact and near-match mapping suggestions from Discord members to BlueFolder techs."""
+    suggested_map: dict[str, int] = {}
+    matched: list[dict[str, object]] = []
+    ambiguous: list[dict[str, object]] = []
+    near_matches: list[dict[str, object]] = []
+    unmatched_discord: list[dict[str, object]] = []
+    matched_tech_ids: set[int] = set()
+
+    for member in members:
+        unique_matches = _matching_techs_for_member_record(member, techs)
+
+        if len(unique_matches) == 1:
+            tech = unique_matches[0]
+            tech_id = int(tech["id"])
+            suggested_map[str(member["discord_user_id"])] = tech_id
+            matched_tech_ids.add(tech_id)
+            matched.append(
+                {
+                    "discord_user_id": member["discord_user_id"],
+                    "display_name": member.get("display_name"),
+                    "username": member.get("username"),
+                    "bluefolder_user_id": tech_id,
+                    "bluefolder_name": tech.get("name"),
+                }
+            )
+        elif len(unique_matches) > 1:
+            ambiguous.append(
+                {
+                    "discord_user_id": member["discord_user_id"],
+                    "display_name": member.get("display_name"),
+                    "username": member.get("username"),
+                    "candidate_bluefolder_users": [
+                        {"id": int(tech["id"]), "name": tech.get("name")}
+                        for tech in unique_matches
+                    ],
+                }
+            )
+        else:
+            nearby = _near_match_techs_for_member_record(member, techs)
+            if nearby:
+                near_matches.append(
+                    {
+                        "discord_user_id": member["discord_user_id"],
+                        "display_name": member.get("display_name"),
+                        "username": member.get("username"),
+                        "candidate_bluefolder_users": nearby,
+                    }
+                )
+            unmatched_discord.append(member)
+
+    unmatched_bluefolder = [
+        {"id": int(tech["id"]), "name": tech.get("name"), "email": tech.get("email")}
+        for tech in techs
+        if int(tech.get("id") or 0) not in matched_tech_ids
+    ]
+
+    return {
+        "suggested_discord_tech_map": suggested_map,
+        "suggested_discord_tech_map_env": (
+            "OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP="
+            f"{json.dumps(suggested_map, separators=(',', ':'))}"
+        ),
+        "matched": matched,
+        "ambiguous": ambiguous,
+        "near_matches": near_matches,
+        "unmatched_discord": unmatched_discord,
+        "unmatched_bluefolder": unmatched_bluefolder,
+    }
+
+
+def _coerce_mapping_dict(raw: object) -> dict[int, int]:
+    """Validate and coerce a mapping payload into integer Discord/BlueFolder ids."""
+    if not isinstance(raw, dict):
+        raise ValueError("Mapping payload must be a JSON object.")
+
+    parsed: dict[int, int] = {}
+    for raw_discord_user_id, raw_bluefolder_user_id in raw.items():
+        try:
+            discord_user_id = int(str(raw_discord_user_id).strip())
+            bluefolder_user_id = int(str(raw_bluefolder_user_id).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Mapping payload must contain only integer Discord and BlueFolder user IDs.") from exc
+        if discord_user_id <= 0 or bluefolder_user_id <= 0:
+            raise ValueError("Mapping payload must contain only positive Discord and BlueFolder user IDs.")
+        parsed[discord_user_id] = bluefolder_user_id
+    return parsed
+
+
+def _parse_mapping_import_text(text: str) -> dict[int, int]:
+    """Parse a mapping import artifact from JSON or env-assignment text."""
+    raw_text = text.strip()
+    if not raw_text:
+        raise ValueError("Mapping import file is empty.")
+
+    for prefix in ["OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP=", "DISCORD_TECH_MAP="]:
+        if raw_text.startswith(prefix):
+            raw_text = raw_text[len(prefix):].strip()
+            break
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Mapping import file must contain valid JSON or an env assignment line.") from exc
+
+    if isinstance(payload, dict):
+        for key in ["suggested_discord_tech_map", "technician_bluefolder_user_map", "mappings"]:
+            if key in payload:
+                return _coerce_mapping_dict(payload[key])
+        return _coerce_mapping_dict(payload)
+
+    raise ValueError("Mapping import file must contain a JSON object.")
 
 
 class AdminCog(commands.Cog):
@@ -49,10 +235,72 @@ class AdminCog(commands.Cog):
         """Show the merged technician mapping set."""
         await interaction.response.send_message(self._build_technician_mappings(), ephemeral=True)
 
+    @app_commands.command(name="bluefolder_techs", description="List active BlueFolder technicians and IDs.")
+    async def bluefolder_techs(self, interaction: discord.Interaction) -> None:
+        """Show active BlueFolder technicians and export them for review."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(await self._build_bluefolder_techs(), ephemeral=True)
+
+    @app_commands.command(name="export_member_map", description="Export Discord member identities to a JSON file.")
+    @app_commands.describe(scope="Export all guild members or only members visible in this channel.")
+    @app_commands.choices(
+        scope=[
+            app_commands.Choice(name="guild", value="guild"),
+            app_commands.Choice(name="channel", value="channel"),
+        ]
+    )
+    async def export_member_map(self, interaction: discord.Interaction, scope: str = "guild") -> None:
+        """Write a Discord member snapshot to disk for mapping review."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(await self._build_export_member_map(interaction, scope), ephemeral=True)
+
+    @app_commands.command(name="suggest_tech_map", description="Suggest technician mappings by comparing Discord names to BlueFolder techs.")
+    @app_commands.describe(scope="Compare all guild members or only members visible in this channel.")
+    @app_commands.choices(
+        scope=[
+            app_commands.Choice(name="guild", value="guild"),
+            app_commands.Choice(name="channel", value="channel"),
+        ]
+    )
+    async def suggest_tech_map(self, interaction: discord.Interaction, scope: str = "guild") -> None:
+        """Write a suggested technician-map export and env snippet."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(await self._build_suggest_tech_map(interaction, scope), ephemeral=True)
+
+    @app_commands.command(name="lookup_member", description="Inspect one Discord member's technician mapping status.")
+    @app_commands.describe(user="Discord member to inspect.")
+    async def lookup_member(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Inspect a member against current mappings and BlueFolder tech matches."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(await self._build_lookup_member(user), ephemeral=True)
+
     @app_commands.command(name="export_technician_mappings", description="Persist technician mappings to the configured file.")
     async def export_technician_mappings(self, interaction: discord.Interaction) -> None:
         """Write current technician mappings to disk."""
         await interaction.response.send_message(self._build_export_technician_mappings(), ephemeral=True)
+
+    @app_commands.command(name="import_technician_mappings", description="Import technician mappings from a JSON or env-style artifact.")
+    @app_commands.describe(
+        path="Path to a JSON or .env-style mapping artifact.",
+        mode="Merge into current mappings or replace the file-backed set.",
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="merge", value="merge"),
+            app_commands.Choice(name="replace", value="replace"),
+        ]
+    )
+    async def import_technician_mappings(
+        self,
+        interaction: discord.Interaction,
+        path: str,
+        mode: str = "merge",
+    ) -> None:
+        """Import technician mappings from disk into the configured file-backed store."""
+        await interaction.response.send_message(
+            self._build_import_technician_mappings(path, mode=mode),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="reload_technician_mappings", description="Reload technician mappings from the configured file.")
     async def reload_technician_mappings(self, interaction: discord.Interaction) -> None:
@@ -234,12 +482,157 @@ class AdminCog(commands.Cog):
             )
         return "\n".join(lines)
 
+    async def _build_bluefolder_techs(self) -> str:
+        """Render and export the currently visible BlueFolder technician directory."""
+        techs = await self._active_bluefolder_techs()
+        if not techs:
+            return (
+                "BlueFolder Technicians\n"
+                "No active BlueFolder technician list is currently available. "
+                "The tenant user-directory endpoint may be unavailable."
+            )
+
+        payload = {
+            "bluefolder_tech_count": len(techs),
+            "techs": techs,
+        }
+        export_path = self._write_json_export("bluefolder_techs", payload)
+
+        lines = [
+            f"BlueFolder Technicians (`{len(techs)}`)",
+            f"Exported JSON: `{export_path}`",
+        ]
+        for tech in techs[:20]:
+            lines.append(f"`{tech['id']}` {tech['name']}")
+        if len(techs) > 20:
+            lines.append(f"...and `{len(techs) - 20}` more in the export.")
+        return "\n".join(lines)
+
+    async def _build_export_member_map(self, interaction: discord.Interaction, scope: str) -> str:
+        """Export Discord member records in the requested scope."""
+        records = await self._collect_members(interaction, scope=scope)
+        payload = {
+            "guild_id": str(interaction.guild_id or ""),
+            "scope": scope,
+            "member_count": len(records),
+            "members": records,
+            "technician_map_template": {item["discord_user_id"]: None for item in records},
+        }
+        export_path = self._write_json_export("member_map", payload)
+        return f"Wrote `{len(records)}` member records to `{export_path}`."
+
+    async def _build_suggest_tech_map(self, interaction: discord.Interaction, scope: str) -> str:
+        """Build a suggested technician mapping export from Discord members and BlueFolder techs."""
+        records = await self._collect_members(interaction, scope=scope)
+        techs = await self._active_bluefolder_techs()
+        if not techs:
+            return (
+                "Could not build a technician-map suggestion because no active BlueFolder tech list is available."
+            )
+
+        suggestion = _build_tech_map_suggestion(records, techs)
+        payload = {
+            "guild_id": str(interaction.guild_id or ""),
+            "scope": scope,
+            "member_count": len(records),
+            "bluefolder_tech_count": len(techs),
+            **suggestion,
+        }
+        suggestion_path = self._write_json_export("suggested_tech_map", payload)
+        env_path = self._write_text_export(
+            "technician_map",
+            f"{suggestion['suggested_discord_tech_map_env']}\n",
+            extension=".env",
+        )
+        return (
+            f"Wrote suggested map to `{suggestion_path}` and env snippet to `{env_path}`. "
+            f"Matched `{len(suggestion['matched'])}`, ambiguous `{len(suggestion['ambiguous'])}`, "
+            f"near matches `{len(suggestion['near_matches'])}`, "
+            f"unmatched Discord `{len(suggestion['unmatched_discord'])}`, "
+            f"unmatched BlueFolder `{len(suggestion['unmatched_bluefolder'])}`."
+        )
+
+    async def _build_lookup_member(self, user: discord.Member) -> str:
+        """Render one member's current technician-mapping status."""
+        techs = await self._active_bluefolder_techs()
+        record = self._discord_member_record_from_member(user)
+        direct_map = self.bot.container.technician_directory_service.mappings().get(user.id)
+        matched_techs = _matching_techs_for_member_record(record, techs)
+
+        lines = [
+            f"Discord user: {record['display_name']} (@{record['username']})",
+            f"Discord ID: `{user.id}`",
+        ]
+        role_names = sorted(str(name) for name in (record.get("role_names") or []))
+        if role_names:
+            lines.append("Roles: " + ", ".join(role_names))
+        if direct_map:
+            mapped_tech = next((tech for tech in techs if int(tech.get("id") or 0) == int(direct_map)), None)
+            if mapped_tech:
+                lines.append(f"Mapped explicitly: {mapped_tech['name']} (BlueFolder `{mapped_tech['id']}`)")
+            else:
+                lines.append(f"Mapped explicitly: BlueFolder `{direct_map}` (not found in active tech list)")
+        else:
+            lines.append("Mapped explicitly: no")
+
+        if len(matched_techs) == 1:
+            tech = matched_techs[0]
+            lines.append(f"Name-based match: {tech['name']} (BlueFolder `{tech['id']}`)")
+        elif len(matched_techs) > 1:
+            lines.append(
+                "Name-based matches: "
+                + ", ".join(f"{tech['name']} (`{tech['id']}`)" for tech in matched_techs[:5])
+            )
+        else:
+            near_matches = _near_match_techs_for_member_record(record, techs)
+            if near_matches:
+                lines.append(
+                    "Near matches: "
+                    + ", ".join(
+                        f"{tech['name']} (`{tech['id']}`, score `{tech['score']}`)"
+                        for tech in near_matches
+                    )
+                )
+            else:
+                lines.append("Name-based match: none")
+        return "\n".join(lines)
+
     def _build_export_technician_mappings(self) -> str:
         """Persist current mappings to disk and report the result."""
         path = self.bot.container.technician_directory_service.export_mappings()
         if path is None:
             return "Technician mapping export is not configured. Set OPS_HUB_TECHNICIAN_MAPPING_FILE first."
         return f"Exported technician mappings to `{path}`."
+
+    def _build_import_technician_mappings(self, path: str, *, mode: str = "merge") -> str:
+        """Import technician mappings from a JSON or env-style artifact on disk."""
+        if mode not in {"merge", "replace"}:
+            return "Import mode must be `merge` or `replace`."
+
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"Technician mapping import file was not found: `{file_path}`."
+        if not file_path.is_file():
+            return f"Technician mapping import path is not a file: `{file_path}`."
+
+        try:
+            imported = _parse_mapping_import_text(file_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"Could not import technician mappings: {exc}"
+
+        persisted_path = self.bot.container.technician_directory_service.import_mappings(
+            imported,
+            replace=(mode == "replace"),
+        )
+        if persisted_path is None:
+            return "Technician mapping import is not configured. Set OPS_HUB_TECHNICIAN_MAPPING_FILE first."
+
+        total = len(self.bot.container.technician_directory_service.mappings())
+        return (
+            f"Imported `{len(imported)}` technician mappings from `{file_path}` using `{mode}` mode. "
+            f"Current merged mapping count: `{total}`. "
+            f"Persisted to `{persisted_path}`."
+        )
 
     def _build_reload_technician_mappings(self) -> str:
         """Reload file-backed mappings and report the result."""
@@ -276,7 +669,7 @@ class AdminCog(commands.Cog):
         return "\n".join(
             [
                 "Command Access",
-                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/export_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/bluefolder_techs`, `/export_member_map`, `/suggest_tech_map`, `/lookup_member`, `/export_technician_mappings`, `/import_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
                 "`/job`, `/assignments`, `/customer`: technicians, dispatchers, admins",
                 "`/eta`, `/enroute`, `/start`, `/no_answer`, `/not_home`, `/reschedule_needed`, `/note`: technicians, admins",
                 "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)",
@@ -314,6 +707,92 @@ class AdminCog(commands.Cog):
         if removed:
             return f"Cleared photo feature override for `{feature}`."
         return f"No override was set for `{feature}`."
+
+    async def _active_bluefolder_techs(self) -> list[dict[str, object]]:
+        """Return the active BlueFolder tech list in the old-bot-compatible shape."""
+        directory = await self.bot.container.bluefolder_service.get_active_user_directory()
+        return [
+            {"id": user_id, "name": name, "email": None}
+            for user_id, name in sorted(directory.items(), key=lambda item: item[1].casefold())
+        ]
+
+    async def _collect_members(
+        self,
+        interaction: discord.Interaction,
+        *,
+        scope: str,
+    ) -> list[dict[str, object]]:
+        """Collect Discord member records for the requested scope."""
+        guild = interaction.guild
+        if guild is None:
+            return []
+
+        try:
+            members: list[discord.Member]
+            if scope == "channel":
+                channel = interaction.channel
+                members = list(getattr(channel, "members", []) or [])
+            else:
+                members = [member async for member in guild.fetch_members(limit=None)]
+        except Exception as exc:
+            if scope == "channel":
+                raise RuntimeError("Could not load Discord members visible in this channel.") from exc
+            raise RuntimeError(
+                "Could not load Discord guild members. Check Server Members Intent and bot permissions."
+            ) from exc
+
+        exported: list[dict[str, object]] = []
+        for member in sorted(
+            members,
+            key=lambda item: (
+                str(getattr(item, "display_name", "") or "").casefold(),
+                str(getattr(item, "name", "") or "").casefold(),
+                int(getattr(item, "id", 0) or 0),
+            ),
+        ):
+            if getattr(member, "bot", False):
+                continue
+            exported.append(self._discord_member_record_from_member(member))
+        return exported
+
+    def _discord_member_record_from_member(self, member: discord.abc.User) -> dict[str, object]:
+        """Return the exportable identity record for one Discord member."""
+        return {
+            "discord_user_id": str(member.id),
+            "username": member.name,
+            "display_name": getattr(member, "display_name", member.name),
+            "global_name": getattr(member, "global_name", None),
+            "role_names": sorted(
+                role.name
+                for role in getattr(member, "roles", [])
+                if getattr(role, "name", None)
+            ),
+        }
+
+    def _write_json_export(self, stem_suffix: str, payload: dict[str, object]) -> str:
+        """Write one JSON export file and return its path."""
+        path = self._export_output_path(stem_suffix=stem_suffix)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return str(path)
+
+    def _write_text_export(self, stem_suffix: str, text: str, *, extension: str = ".txt") -> str:
+        """Write one text export file and return its path."""
+        path = self._export_output_path(stem_suffix=stem_suffix, extension=extension)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def _export_output_path(self, *, stem_suffix: str, extension: str = ".json") -> Path:
+        """Return the configured export output path for member/mapping admin artifacts."""
+        configured = self.bot.settings.member_export_path
+        base_path = Path(configured).expanduser() if configured else Path.cwd() / "exports" / "discord_members.json"
+        stem = base_path.stem
+        timestamp = ""
+        if self.bot.settings.member_export_timestamped:
+            timestamp = "_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        suffix = f"_{stem_suffix}" if stem_suffix else ""
+        return base_path.with_name(f"{stem}{suffix}{timestamp}{extension}")
 
     def _path_line(self, label: str, path_value: str | None) -> str:
         """Render a filesystem path status line."""

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     dispatcher_role_ids: list[int] = []
     technician_bluefolder_user_map: dict[int, int] = {}
     technician_mapping_file: str | None = None
+    member_export_path: str | None = None
+    member_export_timestamped: bool = True
     parts_request_file: str | None = None
     notification_channel_id: int | None = None
     notification_channel_map: dict[str, int] = {}
@@ -110,6 +112,8 @@ class Settings(BaseSettings):
         optional_scalar_fields = {
             "guild_id",
             "technician_mapping_file",
+            "member_export_path",
+            "member_export_timestamped",
             "operator_mapping_file",
             "parts_request_file",
             "notification_channel_id",

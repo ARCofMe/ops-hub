@@ -8,8 +8,13 @@ This guide covers the admin and support commands in Ops Hub.
 - `/config_check`
 - `/service_status`
 - `/recent_notices`
+- `/bluefolder_techs`
+- `/export_member_map`
+- `/suggest_tech_map`
+- `/lookup_member`
 - `/technician_mappings`
 - `/export_technician_mappings`
+- `/import_technician_mappings`
 - `/reload_technician_mappings`
 - `/set_technician_mapping`
 - `/remove_technician_mapping`
@@ -42,7 +47,12 @@ Use this when:
 
 ### Technician mapping management
 
+- `/bluefolder_techs`
+- `/export_member_map`
+- `/suggest_tech_map`
+- `/lookup_member`
 - `/technician_mappings`
+- `/import_technician_mappings`
 - `/set_technician_mapping`
 - `/remove_technician_mapping`
 - `/export_technician_mappings`
@@ -52,6 +62,8 @@ Use these when:
 
 - a technician is not resolving correctly
 - a Discord user needs to map to a BlueFolder tech id
+- you need to export the current Discord member list for review
+- you want a suggested Discord-to-BlueFolder mapping to start from
 
 ### Feature flags
 
