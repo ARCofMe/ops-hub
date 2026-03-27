@@ -403,3 +403,232 @@ def test_eta_logs_field_event_and_sends_result() -> None:
         "notify_dispatch": True,
     }
     assert interaction.response.messages == [{"content": "eta logged", "ephemeral": True, "embed": None}]
+
+
+def test_mdlsn_builds_photo_payload_and_uses_display_name() -> None:
+    cog = _build_cog(technician_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[], display_name="Mike Tech"))
+    attachment = _DummyAttachment()
+    captured: dict[str, object] = {}
+
+    async def fake_attach(
+        self,
+        sr_id: int,
+        *,
+        photo,
+        requested_by_user_id: int,
+        requested_by_label: str,
+    ):
+        captured.update(
+            {
+                "sr_id": sr_id,
+                "photo": photo,
+                "requested_by_user_id": requested_by_user_id,
+                "requested_by_label": requested_by_label,
+            }
+        )
+        return CommandResult(message="photo attached")
+
+    with patch.object(type(cog.bot.container.photo_ingest_service), "attach_model_serial_photo", new=fake_attach):
+        asyncio.run(cog.mdlsn.callback(cog, interaction, sr_id=100, image=attachment))
+
+    assert isinstance(captured["photo"], PhotoAttachmentPayload)
+    assert captured["sr_id"] == 100
+    assert captured["requested_by_user_id"] == 42
+    assert captured["requested_by_label"] == "Mike Tech"
+    assert interaction.response.messages == [{"content": "photo attached", "ephemeral": True, "embed": None}]
+
+
+def test_photo_archive_passes_subject_and_multiple_payloads() -> None:
+    cog = _build_cog(technician_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[], display_name="Mike Tech"))
+    attachment_a = _DummyAttachment()
+    attachment_b = _DummyAttachment()
+    captured: dict[str, object] = {}
+
+    async def fake_summary(self, reference: str):
+        assert reference == "SR-100"
+        return SimpleNamespace(available=True, subject="Dryer repair")
+
+    async def fake_archive(
+        self,
+        sr_id: int,
+        *,
+        photos,
+        requested_by_user_id: int,
+        requested_by_label: str,
+        sr_subject: str | None,
+    ):
+        captured.update(
+            {
+                "sr_id": sr_id,
+                "photos": photos,
+                "requested_by_user_id": requested_by_user_id,
+                "requested_by_label": requested_by_label,
+                "sr_subject": sr_subject,
+            }
+        )
+        return CommandResult(message="archive queued")
+
+    with patch.object(type(cog.bot.container.bluefolder_service), "get_job_summary", new=fake_summary):
+        with patch.object(type(cog.bot.container.photo_ingest_service), "archive_job_photos", new=fake_archive):
+            asyncio.run(
+                cog.photo_archive.callback(
+                    cog,
+                    interaction,
+                    sr_id=100,
+                    image_1=attachment_a,
+                    image_2=attachment_b,
+                    image_3=None,
+                    image_4=None,
+                )
+            )
+
+    assert captured["sr_id"] == 100
+    assert captured["requested_by_user_id"] == 42
+    assert captured["requested_by_label"] == "Mike Tech"
+    assert captured["sr_subject"] == "Dryer repair"
+    assert len(captured["photos"]) == 2
+    assert all(isinstance(photo, PhotoAttachmentPayload) for photo in captured["photos"])
+    assert interaction.response.messages == [{"content": "archive queued", "ephemeral": True, "embed": None}]
+
+
+def test_part_ordered_builds_expected_metadata() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[], display_name="Parts User"))
+    captured: dict[str, object] = {}
+
+    async def fake_log_update(
+        self,
+        sr_id: int,
+        *,
+        update_type: str,
+        details: str,
+        requested_by_user_id: int,
+        requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
+        metadata: dict[str, str] | None = None,
+    ):
+        captured.update(
+            {
+                "sr_id": sr_id,
+                "update_type": update_type,
+                "details": details,
+                "requested_by_user_id": requested_by_user_id,
+                "requested_by_label": requested_by_label,
+                "bluefolder_user_id": bluefolder_user_id,
+                "metadata": metadata,
+            }
+        )
+        return CommandResult(message="ordered logged")
+
+    with patch.object(type(cog.bot.container.bluefolder_service), "log_parts_update", new=fake_log_update):
+        asyncio.run(
+            cog.part_ordered.callback(
+                cog,
+                interaction,
+                sr_id=100,
+                vendor="Marcone",
+                eta="Friday",
+                details=None,
+            )
+        )
+
+    assert captured == {
+        "sr_id": 100,
+        "update_type": "part_ordered",
+        "details": "Order submitted.",
+        "requested_by_user_id": 42,
+        "requested_by_label": "Parts User",
+        "bluefolder_user_id": None,
+        "metadata": {"vendor": "Marcone", "eta": "Friday"},
+    }
+    assert interaction.response.messages == [{"content": "ordered logged", "ephemeral": True, "embed": None}]
+
+
+def test_part_request_builds_tracked_request_payload() -> None:
+    cog = _build_cog(technician_user_ids=[42], technician_bluefolder_user_map={42: 13051})
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+    captured: dict[str, object] = {}
+
+    async def fake_create(self, payload):
+        captured["payload"] = payload
+        return CommandResult(message="request created")
+
+    with patch.object(type(cog.bot.container.parts_cannon_service), "create_request", new=fake_create):
+        asyncio.run(cog.part_request.callback(cog, interaction, reference="SR-100", description="Need control board"))
+
+    payload = captured["payload"]
+    assert isinstance(payload, type(payload))
+    assert payload.reference == "SR-100"
+    assert payload.description == "Need control board"
+    assert payload.requested_by_user_id == 42
+    assert payload.technician_bluefolder_user_id == 13051
+    assert payload.requester_is_admin is False
+    assert interaction.response.messages == [{"content": "request created", "ephemeral": True, "embed": None}]
+
+
+def test_part_update_builds_request_update_payload() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+    captured: dict[str, object] = {}
+
+    async def fake_update(self, payload):
+        captured["payload"] = payload
+        return CommandResult(message="request updated")
+
+    with patch.object(type(cog.bot.container.parts_cannon_service), "update_request", new=fake_update):
+        asyncio.run(cog.part_update.callback(cog, interaction, request_id=7, status="ordered"))
+
+    payload = captured["payload"]
+    assert payload.request_id == 7
+    assert payload.status == "ordered"
+    assert payload.updated_by_user_id == 42
+    assert interaction.response.messages == [{"content": "request updated", "ephemeral": True, "embed": None}]
+
+
+def test_part_claim_and_unclaim_build_claim_payloads() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+    captured: list[object] = []
+
+    async def fake_claim(self, payload):
+        captured.append(payload)
+        return CommandResult(message="claim updated")
+
+    with patch.object(type(cog.bot.container.parts_cannon_service), "claim_request", new=fake_claim):
+        asyncio.run(cog.part_claim.callback(cog, interaction, request_id=7))
+        asyncio.run(cog.part_unclaim.callback(cog, interaction, request_id=7))
+
+    assert len(captured) == 2
+    assert captured[0].request_id == 7
+    assert captured[0].parts_user_id == 42
+    assert captured[0].updated_by_user_id == 42
+    assert captured[1].request_id == 7
+    assert captured[1].parts_user_id is None
+    assert captured[1].updated_by_user_id == 42
+    assert interaction.response.messages == [
+        {"content": "claim updated", "ephemeral": True, "embed": None},
+        {"content": "claim updated", "ephemeral": True, "embed": None},
+    ]
+
+
+def test_part_sync_and_reconcile_send_results() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_sync(self):
+        return CommandResult(message="sync complete")
+
+    async def fake_reconcile(self):
+        return CommandResult(message="reconcile complete")
+
+    with patch.object(type(cog.bot.container.parts_cannon_service), "sync_requests_to_parts_system", new=fake_sync):
+        with patch.object(type(cog.bot.container.parts_cannon_service), "reconcile_requests_from_parts_system", new=fake_reconcile):
+            asyncio.run(cog.part_sync.callback(cog, interaction))
+            asyncio.run(cog.part_reconcile.callback(cog, interaction))
+
+    assert interaction.response.messages == [
+        {"content": "sync complete", "ephemeral": True, "embed": None},
+        {"content": "reconcile complete", "ephemeral": True, "embed": None},
+    ]
