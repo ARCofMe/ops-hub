@@ -29,6 +29,16 @@ class _DummyGuild:
     members: list[_DummyUser]
 
 
+class _FetchGuild:
+    def __init__(self, members: list[_DummyUser]) -> None:
+        self.members: list[_DummyUser] = []
+        self._fetched_members = members
+
+    async def fetch_members(self, *, limit=None):
+        for member in self._fetched_members:
+            yield member
+
+
 @dataclass(slots=True)
 class _DummyInteraction:
     user: _DummyUser
@@ -110,6 +120,41 @@ def test_dispatch_cog_board_uses_only_current_technician_members() -> None:
                 _DummyUser(id=42, roles=[_DummyRole(id=7)]),
                 _DummyUser(id=50, roles=[]),
                 _DummyUser(id=99, roles=[]),
+            ]
+        ),
+    )
+
+    records = asyncio.run(cog._technician_dispatch_mappings(interaction))
+
+    assert len(records) == 1
+    assert records[0].discord_user_id == 42
+    assert records[0].bluefolder_user_id == 13051
+
+
+def test_dispatch_cog_uses_all_mapping_records_without_guild_context() -> None:
+    cog = _build_cog(technician_bluefolder_user_map={42: 13051, 50: 13052})
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)
+
+    records = asyncio.run(cog._technician_dispatch_mappings(interaction))
+
+    assert [(record.discord_user_id, record.bluefolder_user_id) for record in records] == [
+        (42, 13051),
+        (50, 13052),
+    ]
+
+
+def test_dispatch_cog_fetches_members_when_guild_cache_is_empty() -> None:
+    cog = _build_cog(
+        dispatcher_user_ids=[99],
+        technician_role_ids=[7],
+        technician_bluefolder_user_map={42: 13051, 50: 13052},
+    )
+    interaction = _DummyInteraction(
+        user=_DummyUser(id=99, roles=[]),
+        guild=_FetchGuild(
+            [
+                _DummyUser(id=42, roles=[_DummyRole(id=7)]),
+                _DummyUser(id=50, roles=[]),
             ]
         ),
     )

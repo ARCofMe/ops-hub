@@ -10,9 +10,16 @@ def section(title: str, *lines: str) -> list[str]:
     return result
 
 
-def status_section(title: str, *, status: str, details: str, extra_lines: list[str] | None = None) -> list[str]:
+def status_section(
+    title: str,
+    *,
+    status: str,
+    details: str,
+    extra_lines: list[str] | None = None,
+    details_label: str = "Details",
+) -> list[str]:
     """Return a common status/details section."""
-    lines = [title, f"Status: `{status}`", f"Details: {details}"]
+    lines = [title, f"Status: `{status}`", f"{details_label}: {details}"]
     if extra_lines:
         lines.extend(line for line in extra_lines if line)
     return lines

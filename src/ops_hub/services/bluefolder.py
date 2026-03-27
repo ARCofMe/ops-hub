@@ -13,6 +13,7 @@ from ops_hub.models.requests import (
     PartsLifecycleSnapshot,
 )
 from ops_hub.services.notifications import NotificationService
+from ops_hub.services.text_blocks import section, status_section
 
 
 @dataclass(slots=True)
@@ -51,9 +52,12 @@ class BlueFolderService:
             lines = [
                 f"**Parts Brief SR-{sr_id}**",
                 "",
-                "**BlueFolder**",
-                f"Status: `{summary.integration_status}`",
-                f"Detail: {summary.message}",
+                *status_section(
+                    "**BlueFolder**",
+                    status=summary.integration_status,
+                    details=summary.message,
+                    details_label="Detail",
+                ),
             ]
             if snapshot is None:
                 return CommandResult(message="\n".join(lines))
@@ -88,7 +92,7 @@ class BlueFolderService:
             f"**Parts Brief SR-{summary.service_request_id or sr_id}**",
             f"SR: `{summary.service_request_id or sr_id}`",
             "",
-            "**Service Request**",
+            *section("**Service Request**"),
             f"Subject: {summary.subject or 'Unlabeled Service Request'}",
             f"Customer: {summary.customer_name or 'n/a'}",
             f"Address: {self._format_address(summary) or 'n/a'}",
@@ -160,11 +164,14 @@ class BlueFolderService:
             lines.extend(
                 [
                     "",
-                    "**BlueFolder**",
-                    f"Status: `{summary.integration_status}`",
+                    *status_section(
+                        "**BlueFolder**",
+                        status=summary.integration_status,
+                        details=summary.message,
+                        details_label="Detail",
+                    ),
                 ]
             )
-            lines.append(f"Detail: {summary.message}")
             return CommandResult(message="\n".join(lines))
 
         if snapshot is None:
@@ -364,9 +371,12 @@ class BlueFolderService:
                     [
                         f"**Customer SR-{sr_id}**",
                         "",
-                        "**BlueFolder**",
-                        f"Status: `{summary.integration_status}`",
-                        f"Detail: {summary.message}",
+                        *status_section(
+                            "**BlueFolder**",
+                            status=summary.integration_status,
+                            details=summary.message,
+                            details_label="Detail",
+                        ),
                     ]
                 )
             )
@@ -383,11 +393,11 @@ class BlueFolderService:
         if address := self._format_address(summary):
             lines.append(f"Address: {address}")
         if summary.customer_contacts:
-            lines.extend(["", "**Contacts**"])
+            lines.extend(["", *section("**Contacts**")])
             for contact in summary.customer_contacts[:3]:
                 lines.append(self._format_customer_contact(contact))
         if summary.customer_id or summary.customer_location_id:
-            lines.extend(["", "**BlueFolder**"])
+            lines.extend(["", *section("**BlueFolder**")])
             if summary.customer_id:
                 lines.append(f"Customer ID: `{summary.customer_id}`")
             if summary.customer_location_id:

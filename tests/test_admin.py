@@ -53,6 +53,7 @@ def _build_cog(**overrides: object) -> AdminCog:
 @dataclass(slots=True)
 class _DummyRole:
     id: int
+    name: str = "Technician"
 
 
 @dataclass(slots=True)
@@ -62,11 +63,19 @@ class _DummyUser:
     name: str = "mike.smith"
     display_name: str = "Mike Smith"
     global_name: str | None = "Mike Smith"
+    bot: bool = False
+
+
+@dataclass(slots=True)
+class _DummyChannel:
+    members: list[_DummyUser]
 
 
 @dataclass(slots=True)
 class _DummyInteraction:
     user: _DummyUser
+    guild: object | None = None
+    channel: object | None = None
 
 
 def test_build_ops_status_reports_basic_runtime_state() -> None:
@@ -257,6 +266,53 @@ def test_import_technician_mappings_merges_into_file_store(tmp_path) -> None:
     assert "Current merged mapping count: `2`" in result
     assert mapping_file.exists()
     assert json.loads(mapping_file.read_text(encoding="utf-8")) == {"42": 13051, "84": 14001}
+
+
+def test_collect_members_uses_channel_scope_without_bots() -> None:
+    cog = _build_cog()
+    interaction = _DummyInteraction(
+        user=_DummyUser(id=1, roles=[]),
+        guild=object(),
+        channel=_DummyChannel(
+            members=[
+                _DummyUser(id=42, roles=[_DummyRole(id=7, name="Technician")]),
+                _DummyUser(id=43, roles=[_DummyRole(id=9, name="Admin")], bot=True),
+            ]
+        ),
+    )
+
+    result = asyncio.run(cog._collect_members(interaction, scope="channel"))  # type: ignore[arg-type]
+
+    assert result == [
+        {
+            "discord_user_id": "42",
+            "username": "mike.smith",
+            "display_name": "Mike Smith",
+            "global_name": "Mike Smith",
+            "role_names": ["Technician"],
+        }
+    ]
+
+
+def test_collect_members_reports_guild_fetch_failure() -> None:
+    cog = _build_cog()
+
+    class _FailingGuild:
+        async def fetch_members(self, *, limit=None):
+            raise RuntimeError("no intent")
+            yield  # pragma: no cover
+
+    interaction = _DummyInteraction(
+        user=_DummyUser(id=1, roles=[]),
+        guild=_FailingGuild(),
+    )
+
+    try:
+        asyncio.run(cog._collect_members(interaction, scope="guild"))  # type: ignore[arg-type]
+    except RuntimeError as exc:
+        assert str(exc) == "Could not load Discord guild members. Check Server Members Intent and bot permissions."
+    else:
+        raise AssertionError("Expected guild member collection failure to be raised")
 
 
 def test_import_technician_mappings_replace_overwrites_file_store(tmp_path) -> None:
