@@ -44,7 +44,7 @@ class OperationsCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.dispatch_service.lookup_job(request)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="assignments", description="Show current assignments for a mapped or specified BlueFolder user.")
     @app_commands.describe(
@@ -69,7 +69,7 @@ class OperationsCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.dispatch_service.lookup_assignments(request)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="route_map", description="Show today's route as an inline map preview.")
     @app_commands.describe(
@@ -129,9 +129,9 @@ class OperationsCog(commands.Cog):
             sr_id,
             photo=payload,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="eta", description="Log an ETA update to a service request.")
     async def eta(self, interaction: discord.Interaction, sr_id: int, minutes: int) -> None:
@@ -205,7 +205,7 @@ class OperationsCog(commands.Cog):
         if not self._can_use_job_commands(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.bluefolder_service.get_customer_snapshot(sr_id)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="photo_archive", description="Email one or more compressed job photos to the archive mailbox.")
     @app_commands.describe(
@@ -234,10 +234,10 @@ class OperationsCog(commands.Cog):
             sr_id,
             photos=payloads,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
             sr_subject=summary.subject if summary.available else None,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="photo_status", description="Check whether archived photos exist for a service request.")
     async def photo_status(self, interaction: discord.Interaction, sr_id: int) -> None:
@@ -246,7 +246,7 @@ class OperationsCog(commands.Cog):
         if not self._can_view_parts_context(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.photo_ingest_service.get_photo_status(sr_id)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="photo_reminder_check", description="Evaluate whether a missing-photo reminder should be sent.")
     @app_commands.describe(
@@ -269,7 +269,7 @@ class OperationsCog(commands.Cog):
             status_override=status_override,
             send_notice=send_notice,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part", description="Look up or start a parts workflow action.")
     @app_commands.describe(reference="Part number, SR id, request id, or lookup token.")
@@ -285,7 +285,7 @@ class OperationsCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.parts_cannon_service.lookup_part(request)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="parts_brief", description="Show a BlueFolder-native parts summary for a service request.")
     async def parts_brief(self, interaction: discord.Interaction, sr_id: int) -> None:
@@ -294,7 +294,7 @@ class OperationsCog(commands.Cog):
         if not self._can_view_parts_context(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.bluefolder_service.get_parts_brief(sr_id)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="parts_notes", description="Show recent parts-related BlueFolder comments for a service request.")
     async def parts_notes(self, interaction: discord.Interaction, sr_id: int) -> None:
@@ -303,7 +303,7 @@ class OperationsCog(commands.Cog):
         if not self._can_view_parts_context(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.bluefolder_service.get_parts_notes(sr_id)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="missing_part", description="Log a missing-part issue to BlueFolder for a service request.")
     async def missing_part(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
@@ -316,10 +316,10 @@ class OperationsCog(commands.Cog):
             issue_type="missing_part",
             details=details,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
             bluefolder_user_id=identity.bluefolder_user_id,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="damaged_part", description="Log a damaged-part issue to BlueFolder for a service request.")
     async def damaged_part(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
@@ -332,10 +332,10 @@ class OperationsCog(commands.Cog):
             issue_type="damaged_part",
             details=details,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
             bluefolder_user_id=identity.bluefolder_user_id,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_ordered", description="Log that a part was ordered in BlueFolder for a service request.")
     @app_commands.describe(vendor="Vendor or supplier name.", eta="Optional ETA text.", details="Optional extra order detail.")
@@ -460,7 +460,7 @@ class OperationsCog(commands.Cog):
                 requester_is_admin=identity.is_admin,
             )
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="my_part_requests", description="List your tracked parts requests.")
     @app_commands.describe(
@@ -482,7 +482,7 @@ class OperationsCog(commands.Cog):
             requested_by_user_id=interaction.user.id,
             only_unsynced=unsynced_only,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_requests", description="List tracked parts requests.")
     @app_commands.describe(
@@ -503,7 +503,7 @@ class OperationsCog(commands.Cog):
             status=status,
             only_unsynced=unsynced_only,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_request_detail", description="Show full detail for a tracked parts request.")
     async def part_request_detail(self, interaction: discord.Interaction, request_id: int) -> None:
@@ -512,7 +512,7 @@ class OperationsCog(commands.Cog):
         if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.get_request(request_id)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_update", description="Update the status of a tracked parts request.")
     @app_commands.describe(
@@ -531,7 +531,7 @@ class OperationsCog(commands.Cog):
                 updated_by_user_id=interaction.user.id,
             )
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_claim", description="Claim a tracked parts request for yourself.")
     async def part_claim(self, interaction: discord.Interaction, request_id: int) -> None:
@@ -546,7 +546,7 @@ class OperationsCog(commands.Cog):
                 updated_by_user_id=interaction.user.id,
             )
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_unclaim", description="Remove the current parts assignment from a tracked request.")
     async def part_unclaim(self, interaction: discord.Interaction, request_id: int) -> None:
@@ -561,7 +561,7 @@ class OperationsCog(commands.Cog):
                 updated_by_user_id=interaction.user.id,
             )
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_sync", description="Export the tracked parts queue to the configured parts workflow path.")
     async def part_sync(self, interaction: discord.Interaction) -> None:
@@ -570,7 +570,7 @@ class OperationsCog(commands.Cog):
         if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.sync_requests_to_parts_system()
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     @app_commands.command(name="part_reconcile", description="Import downstream parts receipts into the tracked queue.")
     async def part_reconcile(self, interaction: discord.Interaction) -> None:
@@ -579,7 +579,7 @@ class OperationsCog(commands.Cog):
         if not self._can_use_parts_queue(identity):
             raise app_commands.CheckFailure("You do not have permission to use this command.")
         result = await self.bot.container.parts_cannon_service.reconcile_requests_from_parts_system()
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub technician/admin identity."""
@@ -608,11 +608,11 @@ class OperationsCog(commands.Cog):
             update_type=update_type,
             details=details,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
             bluefolder_user_id=identity.bluefolder_user_id,
             metadata=metadata,
         )
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result)
 
     async def _send_field_event(
         self,
@@ -632,13 +632,21 @@ class OperationsCog(commands.Cog):
             sr_id,
             event_type=event_type,
             requested_by_user_id=interaction.user.id,
-            requested_by_label=getattr(interaction.user, "display_name", None) or str(interaction.user),
+            requested_by_label=self._requested_by_label(interaction),
             bluefolder_user_id=identity.bluefolder_user_id,
             details=details,
             minutes=minutes,
             notify_dispatch=notify_dispatch,
         )
+        await self._send_result(interaction, result)
+
+    async def _send_result(self, interaction: discord.Interaction, result) -> None:
+        """Send a standard ephemeral command result."""
         await interaction.response.send_message(result.message, ephemeral=True)
+
+    def _requested_by_label(self, interaction: discord.Interaction) -> str:
+        """Resolve a stable display label for service-side audit messages."""
+        return getattr(interaction.user, "display_name", None) or str(interaction.user)
 
     def _can_use_job_commands(self, identity) -> bool:
         """Return whether the user can access job and assignments commands."""
