@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ops_hub.bot.client import OpsHubBot
@@ -76,6 +77,33 @@ class _DummyInteraction:
     user: _DummyUser
     guild: object | None = None
     channel: object | None = None
+    guild_id: int | None = 123456
+    response: object | None = None
+    followup: object | None = None
+
+    def __post_init__(self) -> None:
+        self.response = _DummyResponse()
+        self.followup = _DummyFollowup()
+
+
+class _DummyResponse:
+    def __init__(self) -> None:
+        self.deferred = False
+        self.messages: list[dict[str, object]] = []
+
+    async def send_message(self, content: str, *, ephemeral: bool, embed=None) -> None:
+        self.messages.append({"content": content, "ephemeral": ephemeral, "embed": embed})
+
+    async def defer(self, *, ephemeral: bool) -> None:
+        self.deferred = ephemeral
+
+
+class _DummyFollowup:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+
+    async def send(self, content: str, *, ephemeral: bool, embed=None) -> None:
+        self.messages.append({"content": content, "ephemeral": ephemeral, "embed": embed})
 
 
 def test_build_ops_status_reports_basic_runtime_state() -> None:
@@ -384,3 +412,71 @@ def test_is_admin_rejects_unconfigured_user() -> None:
     result = cog._is_admin(_DummyInteraction(user=_DummyUser(id=42, roles=[_DummyRole(id=7)])))
 
     assert result is False
+
+
+def test_admin_cog_service_status_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_build(self) -> str:
+        return "Service status ready"
+
+    with patch.object(AdminCog, "_build_service_status", new=fake_build):
+        asyncio.run(cog.service_status.callback(cog, interaction))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Service status ready", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_export_member_map_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_build(self, interaction, scope: str) -> str:
+        assert scope == "channel"
+        return "Member export ready"
+
+    with patch.object(AdminCog, "_build_export_member_map", new=fake_build):
+        asyncio.run(cog.export_member_map.callback(cog, interaction, scope="channel"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Member export ready", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_import_technician_mappings_sends_response() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    with patch.object(
+        AdminCog,
+        "_build_import_technician_mappings",
+        return_value="Import preview",
+    ) as build_import:
+        asyncio.run(
+            cog.import_technician_mappings.callback(
+                cog,
+                interaction,
+                path="/tmp/map.json",
+                mode="merge",
+                confirm=False,
+            )
+        )
+
+    build_import.assert_called_once_with("/tmp/map.json", mode="merge", confirm=False)
+    assert interaction.response.messages == [{"content": "Import preview", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_lookup_member_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+    target = _DummyUser(id=84, roles=[])
+
+    async def fake_build(self, user) -> str:
+        assert user.id == 84
+        return "Lookup ready"
+
+    with patch.object(AdminCog, "_build_lookup_member", new=fake_build):
+        asyncio.run(cog.lookup_member.callback(cog, interaction, user=target))  # type: ignore[arg-type]
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Lookup ready", "ephemeral": True, "embed": None}]

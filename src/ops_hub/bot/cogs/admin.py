@@ -262,34 +262,32 @@ class AdminCog(commands.Cog):
     @app_commands.command(name="ops_status", description="Show current Ops Hub runtime status.")
     async def ops_status(self, interaction: discord.Interaction) -> None:
         """Report high-level runtime and wiring status."""
-        await interaction.response.send_message(self._build_ops_status(), ephemeral=True)
+        await self._send_message(interaction, self._build_ops_status())
 
     @app_commands.command(name="config_check", description="Show configuration and path wiring status.")
     async def config_check(self, interaction: discord.Interaction) -> None:
         """Report current config shape without exposing secrets."""
-        await interaction.response.send_message(self._build_config_check(), ephemeral=True)
+        await self._send_message(interaction, self._build_config_check())
 
     @app_commands.command(name="service_status", description="Show current integration and service states.")
     async def service_status(self, interaction: discord.Interaction) -> None:
         """Report current service-layer status from the configured adapters."""
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await self._build_service_status(), ephemeral=True)
+        await self._send_deferred_message(interaction, await self._build_service_status())
 
     @app_commands.command(name="recent_notices", description="Show the most recent Ops Hub notices.")
     async def recent_notices(self, interaction: discord.Interaction) -> None:
         """Report recent dry-run notices captured by the notification service."""
-        await interaction.response.send_message(await self._build_recent_notices(), ephemeral=True)
+        await self._send_message(interaction, await self._build_recent_notices())
 
     @app_commands.command(name="technician_mappings", description="Show current technician to BlueFolder mappings.")
     async def technician_mappings(self, interaction: discord.Interaction) -> None:
         """Show the merged technician mapping set."""
-        await interaction.response.send_message(self._build_technician_mappings(), ephemeral=True)
+        await self._send_message(interaction, self._build_technician_mappings())
 
     @app_commands.command(name="bluefolder_techs", description="List active BlueFolder technicians and IDs.")
     async def bluefolder_techs(self, interaction: discord.Interaction) -> None:
         """Show active BlueFolder technicians and export them for review."""
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await self._build_bluefolder_techs(), ephemeral=True)
+        await self._send_deferred_message(interaction, await self._build_bluefolder_techs())
 
     @app_commands.command(name="export_member_map", description="Export Discord member identities to a JSON file.")
     @app_commands.describe(scope="Export all guild members or only members visible in this channel.")
@@ -301,8 +299,7 @@ class AdminCog(commands.Cog):
     )
     async def export_member_map(self, interaction: discord.Interaction, scope: str = "guild") -> None:
         """Write a Discord member snapshot to disk for mapping review."""
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await self._build_export_member_map(interaction, scope), ephemeral=True)
+        await self._send_deferred_message(interaction, await self._build_export_member_map(interaction, scope))
 
     @app_commands.command(name="suggest_tech_map", description="Suggest technician mappings by comparing Discord names to BlueFolder techs.")
     @app_commands.describe(scope="Compare all guild members or only members visible in this channel.")
@@ -314,20 +311,18 @@ class AdminCog(commands.Cog):
     )
     async def suggest_tech_map(self, interaction: discord.Interaction, scope: str = "guild") -> None:
         """Write a suggested technician-map export and env snippet."""
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await self._build_suggest_tech_map(interaction, scope), ephemeral=True)
+        await self._send_deferred_message(interaction, await self._build_suggest_tech_map(interaction, scope))
 
     @app_commands.command(name="lookup_member", description="Inspect one Discord member's technician mapping status.")
     @app_commands.describe(user="Discord member to inspect.")
     async def lookup_member(self, interaction: discord.Interaction, user: discord.Member) -> None:
         """Inspect a member against current mappings and BlueFolder tech matches."""
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(await self._build_lookup_member(user), ephemeral=True)
+        await self._send_deferred_message(interaction, await self._build_lookup_member(user))
 
     @app_commands.command(name="export_technician_mappings", description="Persist technician mappings to the configured file.")
     async def export_technician_mappings(self, interaction: discord.Interaction) -> None:
         """Write current technician mappings to disk."""
-        await interaction.response.send_message(self._build_export_technician_mappings(), ephemeral=True)
+        await self._send_message(interaction, self._build_export_technician_mappings())
 
     @app_commands.command(name="import_technician_mappings", description="Import technician mappings from a JSON or env-style artifact.")
     @app_commands.describe(
@@ -349,15 +344,12 @@ class AdminCog(commands.Cog):
         confirm: bool = False,
     ) -> None:
         """Import technician mappings from disk into the configured file-backed store."""
-        await interaction.response.send_message(
-            self._build_import_technician_mappings(path, mode=mode, confirm=confirm),
-            ephemeral=True,
-        )
+        await self._send_message(interaction, self._build_import_technician_mappings(path, mode=mode, confirm=confirm))
 
     @app_commands.command(name="reload_technician_mappings", description="Reload technician mappings from the configured file.")
     async def reload_technician_mappings(self, interaction: discord.Interaction) -> None:
         """Reload file-backed technician mappings."""
-        await interaction.response.send_message(self._build_reload_technician_mappings(), ephemeral=True)
+        await self._send_message(interaction, self._build_reload_technician_mappings())
 
     @app_commands.command(name="set_technician_mapping", description="Set a Discord user to BlueFolder user mapping.")
     async def set_technician_mapping(
@@ -367,28 +359,22 @@ class AdminCog(commands.Cog):
         bluefolder_user_id: int,
     ) -> None:
         """Create or update a technician mapping."""
-        await interaction.response.send_message(
-            self._build_set_technician_mapping(discord_user_id, bluefolder_user_id),
-            ephemeral=True,
-        )
+        await self._send_message(interaction, self._build_set_technician_mapping(discord_user_id, bluefolder_user_id))
 
     @app_commands.command(name="remove_technician_mapping", description="Remove a Discord user to BlueFolder user mapping.")
     async def remove_technician_mapping(self, interaction: discord.Interaction, discord_user_id: int) -> None:
         """Remove a technician mapping."""
-        await interaction.response.send_message(
-            self._build_remove_technician_mapping(discord_user_id),
-            ephemeral=True,
-        )
+        await self._send_message(interaction, self._build_remove_technician_mapping(discord_user_id))
 
     @app_commands.command(name="command_access", description="Show the current command access model.")
     async def command_access(self, interaction: discord.Interaction) -> None:
         """Report command scope definitions for admins/technicians/dispatchers."""
-        await interaction.response.send_message(self._build_command_access(), ephemeral=True)
+        await self._send_message(interaction, self._build_command_access())
 
     @app_commands.command(name="photo_features", description="Show current photo workflow feature flags.")
     async def photo_features(self, interaction: discord.Interaction) -> None:
         """Show effective photo feature states."""
-        await interaction.response.send_message(self._build_photo_features(), ephemeral=True)
+        await self._send_message(interaction, self._build_photo_features())
 
     @app_commands.command(name="set_photo_feature", description="Enable or disable a photo workflow feature.")
     @app_commands.choices(
@@ -401,7 +387,7 @@ class AdminCog(commands.Cog):
     )
     async def set_photo_feature(self, interaction: discord.Interaction, feature: str, enabled: bool) -> None:
         """Persist a photo feature override."""
-        await interaction.response.send_message(self._build_set_photo_feature(feature, enabled), ephemeral=True)
+        await self._send_message(interaction, self._build_set_photo_feature(feature, enabled))
 
     @app_commands.command(name="clear_photo_feature", description="Clear a photo feature override and revert to env default.")
     @app_commands.choices(
@@ -414,7 +400,16 @@ class AdminCog(commands.Cog):
     )
     async def clear_photo_feature(self, interaction: discord.Interaction, feature: str) -> None:
         """Clear a persisted photo feature override."""
-        await interaction.response.send_message(self._build_clear_photo_feature(feature), ephemeral=True)
+        await self._send_message(interaction, self._build_clear_photo_feature(feature))
+
+    async def _send_message(self, interaction: discord.Interaction, message: str) -> None:
+        """Send a standard ephemeral admin response."""
+        await interaction.response.send_message(message, ephemeral=True)
+
+    async def _send_deferred_message(self, interaction: discord.Interaction, message: str) -> None:
+        """Send a standard deferred ephemeral admin response."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(message, ephemeral=True)
 
     def _build_ops_status(self) -> str:
         """Render a concise runtime status summary."""

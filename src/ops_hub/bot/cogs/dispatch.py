@@ -36,7 +36,7 @@ class DispatchCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.dispatch_service.lookup_assignments(request)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result.message)
 
     @app_commands.command(name="tech_job", description="Look up a job with explicit tech dispatch context.")
     @app_commands.describe(
@@ -59,14 +59,14 @@ class DispatchCog(commands.Cog):
             requester_is_admin=identity.is_admin,
         )
         result = await self.bot.container.dispatch_service.lookup_job(request)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result.message)
 
     @app_commands.command(name="dispatch_board", description="Show a board summary across all mapped technicians.")
     async def dispatch_board(self, interaction: discord.Interaction) -> None:
         """Dispatcher-focused board summary using current technician mappings."""
         mappings = await self._technician_dispatch_mappings(interaction)
         result = await self.bot.container.dispatch_service.lookup_dispatch_board(mappings)
-        await interaction.response.send_message(result.message, ephemeral=True)
+        await self._send_result(interaction, result.message)
 
     @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
     @app_commands.describe(
@@ -87,14 +87,13 @@ class DispatchCog(commands.Cog):
             stage_filter=stage,
             technician_bluefolder_user_id=bluefolder_user_id,
         )
-        await interaction.followup.send(result.message, ephemeral=True)
+        await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="dispatch_next", description="Show the recommended next dispatch action for a specific SR.")
     async def dispatch_next(self, interaction: discord.Interaction, sr_id: int) -> None:
         """Dispatcher-focused next-action summary for a service request."""
-        await interaction.response.defer(ephemeral=True)
         result = await self.bot.container.bluefolder_service.get_parts_next_action(sr_id)
-        await interaction.followup.send(result.message, ephemeral=True)
+        await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="photo_compliance_board", description="Show current jobs that still need required photos.")
     @app_commands.describe(actionable_only="Only show jobs that are in a photo-required status and still missing photos.")
@@ -110,7 +109,7 @@ class DispatchCog(commands.Cog):
             mappings,
             actionable_only=actionable_only,
         )
-        await interaction.followup.send(result.message, ephemeral=True)
+        await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="dispatch_heatmap", description="Show a mini-map of current assignment hotspots.")
     @app_commands.describe(bluefolder_user_id="Optional BlueFolder technician user id to narrow the heatmap.")
@@ -130,7 +129,22 @@ class DispatchCog(commands.Cog):
         if result.image_url:
             embed = discord.Embed(title="Assignment Heatmap")
             embed.set_image(url=result.image_url)
-        await interaction.followup.send(result.message, embed=embed, ephemeral=True)
+        await self._send_deferred_result(interaction, result.message, embed=embed)
+
+    async def _send_result(self, interaction: discord.Interaction, message: str) -> None:
+        """Send a standard ephemeral dispatcher response."""
+        await interaction.response.send_message(message, ephemeral=True)
+
+    async def _send_deferred_result(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+        *,
+        embed: discord.Embed | None = None,
+    ) -> None:
+        """Send a standard deferred ephemeral dispatcher response."""
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(message, embed=embed, ephemeral=True)
 
     def _resolve_identity(self, interaction: discord.Interaction):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from discord import app_commands
 
@@ -43,6 +45,32 @@ class _FetchGuild:
 class _DummyInteraction:
     user: _DummyUser
     guild: _DummyGuild | None = None
+    response: object | None = None
+    followup: object | None = None
+
+    def __post_init__(self) -> None:
+        self.response = _DummyResponse()
+        self.followup = _DummyFollowup()
+
+
+class _DummyResponse:
+    def __init__(self) -> None:
+        self.deferred = False
+        self.messages: list[dict[str, object]] = []
+
+    async def send_message(self, content: str, *, ephemeral: bool, embed=None) -> None:
+        self.messages.append({"content": content, "ephemeral": ephemeral, "embed": embed})
+
+    async def defer(self, *, ephemeral: bool) -> None:
+        self.deferred = ephemeral
+
+
+class _DummyFollowup:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+
+    async def send(self, content: str, *, ephemeral: bool, embed=None) -> None:
+        self.messages.append({"content": content, "ephemeral": ephemeral, "embed": embed})
 
 
 def _settings(**overrides: object) -> Settings:
@@ -164,3 +192,62 @@ def test_dispatch_cog_fetches_members_when_guild_cache_is_empty() -> None:
     assert len(records) == 1
     assert records[0].discord_user_id == 42
     assert records[0].bluefolder_user_id == 13051
+
+
+def test_dispatch_cog_tech_assignments_sends_result() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_lookup(self, request):
+        assert request.target_bluefolder_user_id == 13051
+        assert request.requested_by_user_id == 99
+        return SimpleNamespace(message="Assignments ready")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "lookup_assignments", new=fake_lookup):
+        asyncio.run(cog.tech_assignments.callback(cog, interaction, bluefolder_user_id=13051))
+
+    assert interaction.response.messages == [{"content": "Assignments ready", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_dispatch_attention_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)
+
+    async def fake_lookup(self, mappings, *, stage_filter=None, technician_bluefolder_user_id=None):
+        assert mappings == []
+        assert stage_filter == "part_ready"
+        assert technician_bluefolder_user_id == 13051
+        return SimpleNamespace(message="Attention board")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "lookup_dispatch_attention", new=fake_lookup):
+        asyncio.run(
+            cog.dispatch_attention.callback(
+                cog,
+                interaction,
+                stage="part_ready",
+                bluefolder_user_id=13051,
+            )
+        )
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention board", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_dispatch_heatmap_sends_embed() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)
+
+    async def fake_lookup(self, mappings, *, technician_bluefolder_user_id=None):
+        assert mappings == []
+        assert technician_bluefolder_user_id == 13051
+        return SimpleNamespace(message="Heatmap ready", image_url="https://example.com/heatmap.png")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "lookup_assignment_heatmap", new=fake_lookup):
+        asyncio.run(cog.dispatch_heatmap.callback(cog, interaction, bluefolder_user_id=13051))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages[0]["content"] == "Heatmap ready"
+    assert interaction.followup.messages[0]["ephemeral"] is True
+    embed = interaction.followup.messages[0]["embed"]
+    assert embed is not None
+    assert embed.image.url == "https://example.com/heatmap.png"
