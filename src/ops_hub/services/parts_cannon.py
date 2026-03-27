@@ -19,6 +19,7 @@ from ops_hub.models.requests import (
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_request_store import PartsRequestStore
+from ops_hub.services.text_blocks import section, status_section
 
 PARTS_REQUEST_STATUSES: tuple[str, ...] = (
     "requested",
@@ -297,10 +298,15 @@ class PartsCannonService:
         )
         lines = [
             "**Parts Queue Sync**",
-            f"Status: `{export_result.integration_status}`",
-            f"Details: {export_result.message}",
-            f"Exported requests: `{export_result.exported_count}`",
         ]
+        lines.extend(
+            status_section(
+                "",
+                status=export_result.integration_status,
+                details=export_result.message,
+                extra_lines=[f"Exported requests: `{export_result.exported_count}`"],
+            )[1:]
+        )
         if export_result.integration_status == "exported":
             lines.append(f"Synced at: `{synced_at}`")
         if export_result.export_path is not None:
@@ -352,11 +358,18 @@ class PartsCannonService:
         )
         lines = [
             "**Parts Queue Reconcile**",
-            f"Status: `{import_result.integration_status}`",
-            f"Details: {import_result.message}",
-            f"Applied receipts: `{applied}`",
-            f"Ignored receipts: `{ignored}`",
         ]
+        lines.extend(
+            status_section(
+                "",
+                status=import_result.integration_status,
+                details=import_result.message,
+                extra_lines=[
+                    f"Applied receipts: `{applied}`",
+                    f"Ignored receipts: `{ignored}`",
+                ],
+            )[1:]
+        )
         if import_result.receipt_path is not None:
             lines.append(f"Receipt path: `{import_result.receipt_path}`")
         return CommandResult(message="\n".join(lines))
@@ -428,9 +441,7 @@ class PartsCannonService:
         lines = [
             f"**Part Lookup {summary.reference}**",
             "",
-            "**Parts System**",
-            f"Status: `{summary.integration_status}`",
-            f"Details: {summary.message}",
+            *status_section("**Parts System**", status=summary.integration_status, details=summary.message),
         ]
         if summary.source_path is not None:
             lines.append(f"Handoff root: `{summary.source_path}`")
@@ -443,7 +454,7 @@ class PartsCannonService:
                 f"Receipt file: `{summary.receipt_path}` ({'present' if summary.receipt_file_exists else 'missing'})"
             )
 
-        lines.extend(["", "**Tracked Requests**"])
+        lines.extend(["", *section("**Tracked Requests**")])
         if not matching_records:
             lines.append("No tracked parts requests found for this reference.")
         else:
@@ -466,26 +477,23 @@ class PartsCannonService:
             if len(matching_records) > 5:
                 lines.append(f"...and `{len(matching_records) - 5}` more tracked request(s)")
 
-        lines.extend(
-            [
-                "",
-                "**Context**",
-                *(
-                    [
-                        "Requester: "
-                        f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
-                    ]
-                    if request.technician_bluefolder_user_id is not None
-                    else []
-                ),
-                *(
-                    [f"Requester: {self._discord_user_label(request.requested_by_user_id)} (admin)"]
-                    if request.requester_is_admin and request.technician_bluefolder_user_id is None
-                    else []
-                ),
-                f"Notifications: `{notification_mode}`",
-            ]
-        )
+        context_lines = [
+            *(
+                [
+                    "Requester: "
+                    f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
+                ]
+                if request.technician_bluefolder_user_id is not None
+                else []
+            ),
+            *(
+                [f"Requester: {self._discord_user_label(request.requested_by_user_id)} (admin)"]
+                if request.requester_is_admin and request.technician_bluefolder_user_id is None
+                else []
+            ),
+            f"Notifications: `{notification_mode}`",
+        ]
+        lines.extend(["", *section("**Context**", *context_lines)])
         return CommandResult(message="\n".join(lines))
 
     def _discord_user_label(self, user_id: int) -> str:

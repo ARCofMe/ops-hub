@@ -16,6 +16,7 @@ from ops_hub.models.requests import (
 )
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
+from ops_hub.services.text_blocks import section, status_section
 
 
 @dataclass(slots=True)
@@ -423,7 +424,7 @@ class DispatchService:
                 f"**Job {reference}**",
                 f"Subject: {summary.subject or 'Unlabeled Service Request'}",
                 "",
-                "**BlueFolder**",
+                *section("**BlueFolder**"),
                 f"BlueFolder SR: `{summary.service_request_id or reference}`",
             ]
             if summary.customer_id:
@@ -442,7 +443,7 @@ class DispatchService:
                         if part
                     )
                 lines.append(f"Address: {location}")
-            lines.extend(["", "**Dispatch**", f"Dispatch: `{dispatch_summary.integration_status}`"])
+            lines.extend(["", *section("**Dispatch**"), f"Dispatch: `{dispatch_summary.integration_status}`"])
             if dispatch_summary.stop_label:
                 lines.append(f"Dispatch stop: `{dispatch_summary.stop_label}`")
             if dispatch_summary.stop_window:
@@ -470,8 +471,7 @@ class DispatchService:
                         lines.append(line)
                         break
             if requestor_line := self._requestor_context_line(request):
-                lines.extend(["", "**Context**"])
-                lines.append(requestor_line)
+                lines.extend(["", *section("**Context**", requestor_line)])
             lines.append("")
             lines.append(f"Dispatch detail: {dispatch_summary.message}")
             return "\n".join(lines)
@@ -480,14 +480,10 @@ class DispatchService:
             [
                 f"**Job {reference}**",
                 "",
-                "**BlueFolder**",
-                f"Status: `{summary.integration_status}`",
-                f"BlueFolder detail: {summary.message}",
+                *status_section("**BlueFolder**", status=summary.integration_status, details=summary.message),
                 "",
-                "**Dispatch**",
-                f"Status: `{dispatch_summary.integration_status}`",
+                *status_section("**Dispatch**", status=dispatch_summary.integration_status, details=dispatch_summary.message),
                 *([self._requestor_context_line(request)] if self._requestor_context_line(request) else []),
-                f"Dispatch detail: {dispatch_summary.message}",
             ]
         )
 

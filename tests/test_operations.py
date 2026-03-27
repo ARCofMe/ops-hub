@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import io
 
 from discord import app_commands
+from PIL import Image
 
 from ops_hub.bot.client import OpsHubBot
 from ops_hub.bot.cogs.operations import OperationsCog
 from ops_hub.core.config import Settings
 from ops_hub.core.container import build_container
+from ops_hub.models.requests import PhotoAttachmentPayload
 
 
 @dataclass(slots=True)
@@ -27,6 +30,17 @@ class _DummyUser:
 @dataclass(slots=True)
 class _DummyInteraction:
     user: _DummyUser
+
+
+class _DummyAttachment:
+    filename = "photo.png"
+    content_type = "image/png"
+
+    async def read(self) -> bytes:
+        image = Image.new("RGB", (16, 16), color=(200, 30, 30))
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
 
 
 def _settings(**overrides: object) -> Settings:
@@ -180,3 +194,41 @@ def test_parts_can_write_bluefolder_parts_update() -> None:
 
     assert cog._can_write_parts_update(identity) is True
     assert cog._can_upload_sr_photo(identity) is False
+
+
+def test_dispatcher_can_view_parts_context_but_not_write_parts_update() -> None:
+    cog = _build_cog(dispatcher_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_view_parts_context(identity) is True
+    assert cog._can_write_parts_update(identity) is False
+    assert cog._can_log_field_event(identity) is False
+
+
+def test_admin_can_use_all_operations_surfaces() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    identity = cog._resolve_identity(interaction)
+
+    assert cog._can_use_job_commands(identity) is True
+    assert cog._can_submit_parts_request(identity) is True
+    assert cog._can_use_parts_queue(identity) is True
+    assert cog._can_view_parts_context(identity) is True
+    assert cog._can_write_parts_issue(identity) is True
+    assert cog._can_write_parts_update(identity) is True
+    assert cog._can_upload_sr_photo(identity) is True
+    assert cog._can_log_field_event(identity) is True
+
+
+def test_attachment_payload_reads_discord_attachment_shape() -> None:
+    cog = _build_cog()
+
+    payload = asyncio.run(cog._attachment_payload(_DummyAttachment()))
+
+    assert isinstance(payload, PhotoAttachmentPayload)
+    assert payload.filename == "photo.png"
+    assert payload.content_type == "image/png"
+    assert payload.data
