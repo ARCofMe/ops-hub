@@ -79,7 +79,7 @@ class PhotoIngestAdapter:
         }
 
     async def ingest_message(self, message: PhotoIngestMessage) -> PhotoIngestResult:
-        """Report listener-observed messages until attachment wiring is implemented."""
+        """Process a Discord listener message into an archive-email handoff when possible."""
         if message.attachment_count <= 0:
             return PhotoIngestResult(
                 handled=False,
@@ -87,13 +87,39 @@ class PhotoIngestAdapter:
                 message="Message did not include attachments.",
             )
 
+        if not message.attachments:
+            return PhotoIngestResult(
+                handled=False,
+                status="ignored_non_image_attachments",
+                message="Message did not include supported image attachments.",
+            )
+
+        sr_id_text = self._extract_service_request_id(message.content)
+        if sr_id_text is None:
+            return PhotoIngestResult(
+                handled=False,
+                status="missing_sr_reference",
+                message="Message must include an SR reference like `SR-12345` to archive photos.",
+            )
+
+        if not self._archive_email_configured():
+            return PhotoIngestResult(
+                handled=False,
+                status="archive_unconfigured",
+                message="Archive email is not configured for Discord photo-ingest handoff.",
+            )
+
+        result = await self.archive_photos_via_email(
+            int(sr_id_text),
+            photos=message.attachments,
+            uploaded_by_user_id=message.author_id,
+            uploaded_by_label=message.author_label,
+            sr_subject=message.content.strip() or None,
+        )
         return PhotoIngestResult(
-            handled=False,
-            status="listener_unimplemented",
-            message=(
-                "Photo ingest listener observed an attachment-bearing message, "
-                "but direct Discord attachment ingestion is not wired yet."
-            ),
+            handled=result.ok,
+            status=result.status,
+            message=result.message,
         )
 
     async def attach_photo_to_service_request(

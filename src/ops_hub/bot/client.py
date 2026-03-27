@@ -92,14 +92,27 @@ class OpsHubBot(commands.Bot):
         if message.author.bot:
             return
 
+        ingest_message = PhotoIngestMessage(
+            channel_id=message.channel.id,
+            message_id=message.id,
+            author_id=message.author.id,
+            author_label=(
+                getattr(message.author, "display_name", None)
+                or getattr(message.author, "global_name", None)
+                or getattr(message.author, "name", None)
+            ),
+            content=message.content or "",
+            attachment_count=len(message.attachments),
+        )
+        if self.container.photo_ingest_service.should_process_channel(message.channel.id) and message.attachments:
+            ingest_message.attachments = [
+                await self._attachment_payload(attachment)
+                for attachment in message.attachments
+                if self._is_image_attachment(attachment)
+            ]
+
         photo_result = await self.container.photo_ingest_service.handle_message(
-            PhotoIngestMessage(
-                channel_id=message.channel.id,
-                message_id=message.id,
-                author_id=message.author.id,
-                content=message.content or "",
-                attachment_count=len(message.attachments),
-            )
+            ingest_message
         )
         if photo_result.handled:
             logger.info(
@@ -121,6 +134,22 @@ class OpsHubBot(commands.Bot):
             )
 
         await self.process_commands(message)
+
+    async def _attachment_payload(self, attachment: discord.Attachment) -> PhotoAttachmentPayload:
+        """Read one Discord attachment into the shared photo payload shape."""
+        return PhotoAttachmentPayload(
+            filename=attachment.filename,
+            content_type=attachment.content_type,
+            data=await attachment.read(),
+        )
+
+    def _is_image_attachment(self, attachment: discord.Attachment) -> bool:
+        """Return whether a Discord attachment looks like an image."""
+        content_type = str(attachment.content_type or "").casefold()
+        if content_type.startswith("image/"):
+            return True
+        filename = str(attachment.filename or "").casefold()
+        return filename.endswith((".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"))
 
     async def on_app_command_error(
         self,

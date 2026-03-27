@@ -93,7 +93,7 @@ def test_photo_ingest_service_ignores_other_channels() -> None:
     assert result.status == "ignored_channel"
 
 
-def test_photo_ingest_service_reports_unimplemented_attachment_ingest_in_configured_channel() -> None:
+def test_photo_ingest_service_requires_sr_reference_for_attachment_ingest() -> None:
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=123),
         adapter=PhotoIngestAdapter(base_path=None),
@@ -108,12 +108,82 @@ def test_photo_ingest_service_reports_unimplemented_attachment_ingest_in_configu
                 author_id=42,
                 content="see attached",
                 attachment_count=2,
+                attachments=[
+                    PhotoAttachmentPayload(filename="photo.png", content_type="image/png", data=_image_bytes("PNG"))
+                ],
             )
         )
     )
 
     assert result.handled is False
-    assert result.status == "listener_unimplemented"
+    assert result.status == "missing_sr_reference"
+
+
+def test_photo_ingest_service_archives_attachment_messages_in_configured_channel() -> None:
+    sent_messages: list[object] = []
+
+    class _DummySMTP:
+        def __init__(self, host, port, timeout=30):
+            assert host == "smtp.example.com"
+            assert port == 587
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def starttls(self):
+            return None
+
+        def login(self, username, password):
+            assert username == "user"
+            assert password == "pass"
+
+        def send_message(self, message):
+            sent_messages.append(message)
+
+    import smtplib
+
+    original_smtp = smtplib.SMTP
+    smtplib.SMTP = _DummySMTP  # type: ignore[assignment]
+    try:
+        service = PhotoIngestService(
+            settings=_settings(photo_ingest_channel_id=123),
+            adapter=PhotoIngestAdapter(
+                archive_smtp_host="smtp.example.com",
+                archive_smtp_port=587,
+                archive_smtp_username="user",
+                archive_smtp_password="pass",
+                archive_from_email="from@example.com",
+                archive_to_email="to@example.com",
+            ),
+            feature_flags=_feature_flags(),
+        )
+
+        result = asyncio.run(
+            service.handle_message(
+                PhotoIngestMessage(
+                    channel_id=123,
+                    message_id=1,
+                    author_id=42,
+                    author_label="Mike Smith",
+                    content="SR-12345 Washer repair",
+                    attachment_count=2,
+                    attachments=[
+                        PhotoAttachmentPayload(filename="one.png", content_type="image/png", data=_image_bytes("PNG")),
+                        PhotoAttachmentPayload(filename="two.png", content_type="image/png", data=_image_bytes("PNG")),
+                    ],
+                )
+            )
+        )
+    finally:
+        smtplib.SMTP = original_smtp  # type: ignore[assignment]
+
+    assert result.handled is True
+    assert result.status == "archived"
+    assert "Emailed `2` compressed photo(s) for `SR-12345` to the archive mailbox." in result.message
+    assert len(sent_messages) == 1
 
 
 def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -220,6 +220,8 @@ class PhotoIngestMessage:
     author_id: int
     content: str
     attachment_count: int
+    author_label: str | None = None
+    attachments: list["PhotoAttachmentPayload"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
