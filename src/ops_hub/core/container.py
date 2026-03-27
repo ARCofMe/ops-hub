@@ -60,7 +60,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         ),
     )
 
-    # TODO: Replace these placeholders with real wrappers around existing local projects.
+    # Adapters bridge the current local projects into a shared Ops Hub service surface.
     bluefolder_adapter = BlueFolderAdapter(
         base_path=settings.bluefolder_api_path,
         api_key=settings.bluefolder_api_key,

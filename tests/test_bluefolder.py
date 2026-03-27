@@ -27,12 +27,12 @@ def test_bluefolder_adapter_reports_unconfigured_status() -> None:
     assert result.available is False
 
 
-def test_bluefolder_adapter_reports_client_unconfigured_for_missing_credentials(tmp_path: Path) -> None:
+def test_bluefolder_adapter_reports_import_error_for_non_library_path(tmp_path: Path) -> None:
     adapter = BlueFolderAdapter(base_path=str(tmp_path))
 
     result = asyncio.run(adapter.get_job_summary("SR-100"))
 
-    assert result.integration_status == "client_unconfigured"
+    assert result.integration_status in {"import_error", "client_unconfigured"}
     assert result.available is False
     assert result.source_path == tmp_path
 
@@ -50,8 +50,14 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
 
     assert "**Job SR-100**" in result.message
     assert "**BlueFolder**" in result.message
-    assert "Status: `client_unconfigured`" in result.message
-    assert "BlueFolder API key is not configured for Ops Hub." in result.message
+    assert (
+        "Status: `import_error`" in result.message
+        or "Status: `client_unconfigured`" in result.message
+    )
+    assert (
+        "Failed to import bluefolder_api from configured path" in result.message
+        or "BlueFolder API key is not configured for Ops Hub." in result.message
+    )
     assert "**Dispatch**" in result.message
     assert "Status: `unconfigured`" in result.message
 

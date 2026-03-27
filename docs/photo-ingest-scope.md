@@ -6,7 +6,7 @@ This is not a cancellation. It is a product-scope decision:
 
 - the concept is being revised before implementation resumes
 - Ops Hub should reach a coherent beta first around job, assignment, parts, admin, and notification workflows
-- the existing placeholder listener remains only as a non-committal scaffold
+- the listener can now archive Discord photo attachments through the configured email handoff
 
 ## What This Means for `V0.1.0`
 
@@ -16,7 +16,7 @@ This is not a cancellation. It is a product-scope decision:
 
 ## What Is Still Allowed
 
-- keep the config placeholder for the future ingest channel
+- keep the ingest channel config in place for future direct BlueFolder upload/compliance expansion
 - keep the service and adapter boundary in place
 - evolve the design later without forcing a rewrite of the current bot foundation
 

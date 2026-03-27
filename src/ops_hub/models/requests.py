@@ -157,7 +157,7 @@ class DispatchJobSummary:
 
 @dataclass(slots=True)
 class BlueFolderJobSummary:
-    """Read-only job summary placeholder for future BlueFolder integration."""
+    """Read-only job summary for BlueFolder-backed lookups."""
 
     reference: str
     available: bool

@@ -12,7 +12,7 @@ from discord.ext import commands
 from ops_hub.bot.extensions import EXTENSIONS
 from ops_hub.core.config import Settings
 from ops_hub.core.container import ServiceContainer
-from ops_hub.models.requests import PhotoIngestMessage
+from ops_hub.models.requests import PhotoAttachmentPayload, PhotoIngestMessage
 
 
 logger = logging.getLogger(__name__)

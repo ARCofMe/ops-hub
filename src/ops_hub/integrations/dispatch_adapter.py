@@ -1,4 +1,4 @@
-"""Dispatch adapter for incremental wrapper-based migration work."""
+"""Dispatch adapter for route-preview and assignment-context integrations."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class DispatchAdapter:
                 reference=reference,
                 available=True,
                 integration_status="wrapper_ready",
-                message="Dispatch wrapper is available, but no live BlueFolder job data was available for a stop preview.",
+                message="Dispatch integration is available, but no live BlueFolder job data was available for a stop preview.",
                 source_path=resolved_path,
                 module_name=module_name,
                 default_origin_address=default_origin_address,
@@ -108,7 +108,7 @@ class DispatchAdapter:
                 reference=reference,
                 available=True,
                 integration_status="wrapper_ready",
-                message="Dispatch wrapper is available, but the BlueFolder job did not include an address for stop preview.",
+                message="Dispatch integration is available, but the BlueFolder job did not include an address for stop preview.",
                 source_path=resolved_path,
                 module_name=module_name,
                 default_origin_address=default_origin_address,
@@ -146,7 +146,7 @@ class DispatchAdapter:
                 reference=reference,
                 available=True,
                 integration_status="wrapper_ready",
-                message="Dispatch wrapper is available, but it did not return any stop previews for this job.",
+                message="Dispatch integration is available, but it did not return any stop previews for this job.",
                 source_path=resolved_path,
                 module_name=module_name,
                 default_origin_address=default_origin_address,
