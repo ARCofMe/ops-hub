@@ -455,7 +455,7 @@ def test_photo_ingest_service_evaluates_missing_photo_reminder() -> None:
 
         async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str]]:
             if user_id == 13051:
-                return [{"id": "12345"}]
+                return [{"serviceRequestId": "12345"}]
             return []
 
     class _NotificationsStub:
@@ -606,7 +606,10 @@ def test_photo_ingest_service_builds_photo_compliance_board() -> None:
     assert "**Photo Compliance Board**" in result.message
     assert "Scanned jobs: `2`" in result.message
     assert "Actionable jobs: `1`" in result.message
+    assert "Technicians with actionable jobs: `1`" in result.message
     assert "`SR-12345` Washer repair" in result.message
+    assert "Photo count: `1`" in result.message
+    assert "Found tags: `model`" in result.message
     assert "Missing tags: `serial`" in result.message
     assert "`SR-12346`" not in result.message
 

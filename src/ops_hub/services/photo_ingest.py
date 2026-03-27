@@ -194,11 +194,13 @@ class PhotoIngestService:
         lines = ["**Photo Compliance Board**"]
         scanned = 0
         actionable = 0
+        technicians_with_actionable = 0
         entries: list[str] = []
 
         for mapping in mappings:
             assignments = await self.bluefolder_service.get_assignments_for_user_today(mapping.bluefolder_user_id)
             technician_label = self._technician_mention(mapping.discord_user_id) or "Unknown technician"
+            technician_actionable = 0
             for assignment in assignments[:10]:
                 sr_id_text = str(assignment.get("serviceRequestId") or "").strip()
                 if not sr_id_text.isdigit():
@@ -213,6 +215,7 @@ class PhotoIngestService:
                     continue
                 if is_actionable:
                     actionable += 1
+                    technician_actionable += 1
 
                 subject = summary.subject or assignment.get("subject") or "Unlabeled Service Request"
                 entries.extend(
@@ -222,14 +225,20 @@ class PhotoIngestService:
                         f"Technician: {technician_label}",
                         f"Status: `{summary.service_request_status or 'unknown'}`",
                         f"Photos present: `{'yes' if compliance.total_photos > 0 else 'no'}`",
+                        f"Photo count: `{compliance.total_photos}`",
+                        "Found tags: "
+                        + (", ".join(f"`{tag}`" for tag in compliance.found_tags) if compliance.found_tags else "none"),
                         "Missing tags: "
                         + (", ".join(f"`{tag}`" for tag in compliance.missing_tags) if compliance.missing_tags else "none"),
                         f"Actionable: `{'yes' if is_actionable else 'no'}`",
                     ]
                 )
+            if technician_actionable > 0:
+                technicians_with_actionable += 1
 
         lines.append(f"Scanned jobs: `{scanned}`")
         lines.append(f"Actionable jobs: `{actionable}`")
+        lines.append(f"Technicians with actionable jobs: `{technicians_with_actionable}`")
         if actionable_only:
             lines.append("Showing only jobs that match the photo-required status policy and still need photos.")
         if not entries:
@@ -256,7 +265,11 @@ class PhotoIngestService:
         for bluefolder_user_id, discord_user_id in reverse_mappings.items():
             assignments = await self.bluefolder_service.get_assignments_for_user_today(bluefolder_user_id)
             for assignment in assignments:
-                assignment_id = str(assignment.get("id") or "").strip()
+                assignment_id = str(
+                    assignment.get("serviceRequestId")
+                    or assignment.get("id")
+                    or ""
+                ).strip()
                 if assignment_id == str(sr_id):
                     return discord_user_id
         return None
