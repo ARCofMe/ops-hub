@@ -81,3 +81,26 @@ def test_notification_service_routes_by_topic_prefix_when_channel_map_is_configu
     assert service.records[0].delivery == "discord:200"
     assert service.records[1].delivery == "discord:300"
     assert service.records[2].delivery == "discord:123"
+
+
+def test_notification_service_falls_back_when_sender_raises() -> None:
+    async def _sender(channel_id: int, topic: str, message: str) -> None:
+        raise RuntimeError("discord unavailable")
+
+    service = NotificationService(channel_id=123)
+    service.configure_sender(_sender)
+
+    asyncio.run(service.send_notice(topic="parts.lookup", message="lookup happened"))
+
+    assert service.records[0].delivery == "fallback_logger"
+
+
+def test_notification_service_recent_notices_returns_newest_first_and_honors_limit() -> None:
+    service = NotificationService()
+
+    asyncio.run(service.send_notice(topic="one", message="first"))
+    asyncio.run(service.send_notice(topic="two", message="second"))
+    asyncio.run(service.send_notice(topic="three", message="third"))
+    notices = asyncio.run(service.recent_notices(limit=2))
+
+    assert [notice.topic for notice in notices] == ["three", "two"]

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass
+
 from ops_hub.bot.client import OpsHubBot
 from ops_hub.bot.cogs.health import HealthCog
 from ops_hub.core.config import Settings
@@ -39,6 +42,28 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**defaults)
 
 
+@dataclass(slots=True)
+class _DummyUser:
+    id: int
+
+
+@dataclass(slots=True)
+class _DummyInteraction:
+    user: _DummyUser
+    response: object | None = None
+
+    def __post_init__(self) -> None:
+        self.response = _DummyResponse()
+
+
+class _DummyResponse:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+
+    async def send_message(self, content: str, *, ephemeral: bool, embed=None) -> None:
+        self.messages.append({"content": content, "ephemeral": ephemeral, "embed": embed})
+
+
 def test_build_help_text_lists_current_role_surfaces() -> None:
     settings = _settings()
     bot = OpsHubBot(settings=settings, container=build_container(settings))
@@ -66,3 +91,26 @@ def test_build_help_text_lists_current_role_surfaces() -> None:
     assert "/part_reconcile" in result
     assert "/part_tracking" in result
     assert "/technician_mappings" in result
+
+
+def test_ping_command_sends_ephemeral_pong() -> None:
+    settings = _settings()
+    bot = OpsHubBot(settings=settings, container=build_container(settings))
+    cog = HealthCog(bot)
+    interaction = _DummyInteraction(user=_DummyUser(id=42))
+
+    asyncio.run(cog.ping.callback(cog, interaction))
+
+    assert interaction.response.messages == [{"content": "pong", "ephemeral": True, "embed": None}]
+
+
+def test_help_command_sends_ephemeral_help_text() -> None:
+    settings = _settings()
+    bot = OpsHubBot(settings=settings, container=build_container(settings))
+    cog = HealthCog(bot)
+    interaction = _DummyInteraction(user=_DummyUser(id=42))
+
+    asyncio.run(cog.help.callback(cog, interaction))
+
+    assert interaction.response.messages[0]["ephemeral"] is True
+    assert "**Ops Hub Command Guide**" in str(interaction.response.messages[0]["content"])
