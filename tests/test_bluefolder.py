@@ -27,12 +27,12 @@ def test_bluefolder_adapter_reports_unconfigured_status() -> None:
     assert result.available is False
 
 
-def test_bluefolder_adapter_reports_import_error_for_non_library_path(tmp_path: Path) -> None:
+def test_bluefolder_adapter_reports_client_unconfigured_for_missing_credentials(tmp_path: Path) -> None:
     adapter = BlueFolderAdapter(base_path=str(tmp_path))
 
     result = asyncio.run(adapter.get_job_summary("SR-100"))
 
-    assert result.integration_status == "import_error"
+    assert result.integration_status == "client_unconfigured"
     assert result.available is False
     assert result.source_path == tmp_path
 
@@ -50,8 +50,8 @@ def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) 
 
     assert "**Job SR-100**" in result.message
     assert "**BlueFolder**" in result.message
-    assert "Status: `import_error`" in result.message
-    assert "Failed to import bluefolder_api from configured path" in result.message
+    assert "Status: `client_unconfigured`" in result.message
+    assert "BlueFolder API key is not configured for Ops Hub." in result.message
     assert "**Dispatch**" in result.message
     assert "Status: `unconfigured`" in result.message
 
@@ -1013,6 +1013,10 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
         ),
         encoding="utf-8",
     )
+    (tmp_path / ".env").write_text(
+        "DEFAULT_ORIGIN=South Paris, ME\nGEOAPIFY_API_KEY=test-key\n",
+        encoding="utf-8",
+    )
     bluefolder_service = BlueFolderService(
         adapter=BlueFolderAdapter(
             base_path=str(tmp_path),
@@ -1047,6 +1051,8 @@ def test_dispatch_service_formats_live_bluefolder_summary(tmp_path: Path) -> Non
     assert "Dispatch stop address: 123 Main St, Portland, ME 04101" in result.message
     assert "Technician assignment: `assigned_today`" in result.message
     assert "Technician origin: South Paris, ME" in result.message
+    assert "Dispatch default origin: South Paris, ME" in result.message
+    assert "Dispatch route tools: route map `ready`, heatmap `ready`" in result.message
     assert "Parts: `Tracking Posted`" in result.message
     assert "Status detail: Part tracking update: UPS 123" in result.message
     assert "Recommended next action: Track shipment progress and prepare dispatch for receipt or scheduling follow-up." in result.message
@@ -1069,6 +1075,8 @@ def test_dispatch_adapter_reports_wrapper_ready_for_existing_project(tmp_path: P
     assert result.integration_status == "wrapper_ready"
     assert result.available is True
     assert result.module_name == "optimized_routing.routing"
+    assert result.route_map_supported is False
+    assert result.heat_map_supported is False
 
 
 def test_bluefolder_adapter_returns_live_read_for_local_library(tmp_path: Path) -> None:

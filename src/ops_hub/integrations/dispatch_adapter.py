@@ -66,6 +66,9 @@ class DispatchAdapter:
             )
 
         module_name = "optimized_routing.routing"
+        env_values = self._load_dispatch_project_env(resolved_path)
+        default_origin_address = env_values.get("DEFAULT_ORIGIN") or None
+        geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
         try:
             with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
@@ -82,6 +85,9 @@ class DispatchAdapter:
                 message=f"Failed to import dispatch wrapper from configured path: {exc}",
                 source_path=resolved_path,
                 module_name=module_name,
+                default_origin_address=default_origin_address,
+                route_map_supported=bool(geoapify_api_key or default_origin_address),
+                heat_map_supported=bool(geoapify_api_key),
             )
 
         if bluefolder_summary is None or bluefolder_summary.integration_status != "live_read":
@@ -92,6 +98,9 @@ class DispatchAdapter:
                 message="Dispatch wrapper is available, but no live BlueFolder job data was available for a stop preview.",
                 source_path=resolved_path,
                 module_name=module_name,
+                default_origin_address=default_origin_address,
+                route_map_supported=bool(geoapify_api_key or default_origin_address),
+                heat_map_supported=bool(geoapify_api_key),
             )
 
         if not bluefolder_summary.address:
@@ -102,6 +111,9 @@ class DispatchAdapter:
                 message="Dispatch wrapper is available, but the BlueFolder job did not include an address for stop preview.",
                 source_path=resolved_path,
                 module_name=module_name,
+                default_origin_address=default_origin_address,
+                route_map_supported=bool(geoapify_api_key or default_origin_address),
+                heat_map_supported=bool(geoapify_api_key),
             )
 
         assignment = {
@@ -124,6 +136,9 @@ class DispatchAdapter:
                 message=f"Dispatch stop preview failed: {exc}",
                 source_path=resolved_path,
                 module_name=module_name,
+                default_origin_address=default_origin_address,
+                route_map_supported=bool(geoapify_api_key or default_origin_address),
+                heat_map_supported=bool(geoapify_api_key),
             )
 
         if not stops:
@@ -134,6 +149,9 @@ class DispatchAdapter:
                 message="Dispatch wrapper is available, but it did not return any stop previews for this job.",
                 source_path=resolved_path,
                 module_name=module_name,
+                default_origin_address=default_origin_address,
+                route_map_supported=bool(geoapify_api_key or default_origin_address),
+                heat_map_supported=bool(geoapify_api_key),
             )
 
         stop = stops[0]
@@ -175,6 +193,9 @@ class DispatchAdapter:
             stop_window=getattr(getattr(stop, "window", None), "name", None),
             technician_assignment_status=technician_assignment_status,
             technician_origin_address=technician_origin_address,
+            default_origin_address=default_origin_address,
+            route_map_supported=bool(geoapify_api_key or default_origin_address),
+            heat_map_supported=bool(geoapify_api_key),
         )
 
     async def get_assignments_for_user(self, technician_bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:

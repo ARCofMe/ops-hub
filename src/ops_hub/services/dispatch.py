@@ -453,6 +453,13 @@ class DispatchService:
                 lines.append(f"Technician assignment: `{dispatch_summary.technician_assignment_status}`")
             if dispatch_summary.technician_origin_address:
                 lines.append(f"Technician origin: {dispatch_summary.technician_origin_address}")
+            if dispatch_summary.default_origin_address:
+                lines.append(f"Dispatch default origin: {dispatch_summary.default_origin_address}")
+            lines.append(
+                "Dispatch route tools: "
+                f"route map `{'ready' if dispatch_summary.route_map_supported else 'limited'}`, "
+                f"heatmap `{'ready' if dispatch_summary.heat_map_supported else 'limited'}`"
+            )
             if parts_lines := self._parts_context_lines(parts_brief):
                 lines.extend(["", "**Parts**"])
                 lines.extend(parts_lines)

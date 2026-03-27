@@ -150,6 +150,9 @@ class DispatchJobSummary:
     stop_window: str | None = None
     technician_assignment_status: str | None = None
     technician_origin_address: str | None = None
+    default_origin_address: str | None = None
+    route_map_supported: bool = False
+    heat_map_supported: bool = False
 
 
 @dataclass(slots=True)
