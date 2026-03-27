@@ -13,6 +13,7 @@ import sys
 from types import TracebackType
 
 import requests
+from ops_hub.integrations.import_context import TemporarySysPath
 from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
 
@@ -501,28 +502,6 @@ class DispatchAdapter:
         )
 
 
-class _temporary_sys_path:
-    """Context manager that temporarily prepends a path to ``sys.path``."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = str(path)
-
-    def __enter__(self) -> None:
-        if self.path not in sys.path:
-            sys.path.insert(0, self.path)
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        try:
-            sys.path.remove(self.path)
-        except ValueError:
-            pass
-
-
 class _temporary_dispatch_context:
     """Context manager for dispatch-wrapper imports plus BlueFolder runtime env."""
 
@@ -538,8 +517,8 @@ class _temporary_dispatch_context:
         verify_ssl: bool | None,
         timeout_seconds: float | None,
     ) -> None:
-        self.dispatch_ctx = _temporary_sys_path(dispatch_path)
-        self.bluefolder_ctx = _temporary_sys_path(bluefolder_path) if bluefolder_path else None
+        self.dispatch_ctx = TemporarySysPath(dispatch_path)
+        self.bluefolder_ctx = TemporarySysPath(bluefolder_path) if bluefolder_path else None
         self.values = {
             "BLUEFOLDER_API_KEY": api_key or "",
             "BLUEFOLDER_ACCOUNT_NAME": account_name or "",

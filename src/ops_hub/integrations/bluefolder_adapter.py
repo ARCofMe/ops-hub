@@ -14,6 +14,7 @@ from types import TracebackType
 
 from datetime import date, datetime
 
+from ops_hub.integrations.import_context import TemporarySysPath
 from ops_hub.models.requests import BlueFolderJobSummary, CustomerContactSummary, PartsCommentRecord
 
 
@@ -113,7 +114,7 @@ class BlueFolderAdapter:
                 service_request_id=service_request_id,
             )
 
-        with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+        with TemporarySysPath(resolved_path), _temporary_bluefolder_env(
             api_key=self.api_key,
             account_name=self.account_name,
             base_url=self.base_url,
@@ -180,7 +181,7 @@ class BlueFolderAdapter:
         )
 
         if customer_id and customer_location_id:
-            with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+            with TemporarySysPath(resolved_path), _temporary_bluefolder_env(
                 api_key=self.api_key,
                 account_name=self.account_name,
                 base_url=self.base_url,
@@ -879,7 +880,7 @@ class BlueFolderAdapter:
         if not ((self.account_name or "").strip() or (self.base_url or "").strip()):
             return None, resolved_path
 
-        with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+        with TemporarySysPath(resolved_path), _temporary_bluefolder_env(
             api_key=self.api_key,
             account_name=self.account_name,
             base_url=self.base_url,
@@ -897,34 +898,12 @@ class BlueFolderAdapter:
 
     def _load_client_class(self, resolved_path: Path) -> type[object]:
         """Load the shared BlueFolder client from a local repo path."""
-        with _temporary_sys_path(resolved_path):
+        with TemporarySysPath(resolved_path):
             importlib.invalidate_caches()
             sys.modules.pop("bluefolder_api", None)
             sys.modules.pop("bluefolder_api.client", None)
             module = importlib.import_module("bluefolder_api.client")
         return getattr(module, "BlueFolderClient")
-
-
-class _temporary_sys_path:
-    """Context manager that temporarily prepends a path to ``sys.path``."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = str(path)
-
-    def __enter__(self) -> None:
-        if self.path not in sys.path:
-            sys.path.insert(0, self.path)
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        try:
-            sys.path.remove(self.path)
-        except ValueError:
-            pass
 
 
 class _temporary_bluefolder_env:

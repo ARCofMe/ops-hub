@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from PIL import Image, ImageOps
 
+from ops_hub.integrations.import_context import TemporarySysPath
 from ops_hub.models.requests import (
     ArchivedPhotoRecord,
     PhotoArchiveResult,
@@ -427,7 +428,7 @@ class PhotoIngestAdapter:
             return None
 
         try:
-            with _temporary_sys_path(resolved_path), _temporary_bluefolder_env(
+            with TemporarySysPath(resolved_path), _temporary_bluefolder_env(
                 api_key=self.bluefolder_api_key,
                 account_name=self.bluefolder_account_name,
                 base_url=self.bluefolder_base_url,
@@ -531,28 +532,6 @@ class PhotoIngestAdapter:
         if size_bytes < 1024 * 1024:
             return f"{size_bytes / 1024:.1f} KB"
         return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
-class _temporary_sys_path:
-    """Context manager that temporarily prepends a path to ``sys.path``."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = str(path)
-
-    def __enter__(self) -> None:
-        if self.path not in sys.path:
-            sys.path.insert(0, self.path)
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        try:
-            sys.path.remove(self.path)
-        except ValueError:
-            pass
 
 
 class _temporary_bluefolder_env:
