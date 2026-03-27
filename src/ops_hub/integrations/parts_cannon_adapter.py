@@ -42,12 +42,18 @@ class PartsCannonAdapter:
                 source_path=resolved_path,
             )
 
+        export_path = resolved_path / "ops_hub_exports" / "parts_requests.json"
+        receipt_path = resolved_path / "ops_hub_exports" / "parts_request_receipts.json"
         return PartsWorkflowSummary(
             reference=reference,
             available=True,
             integration_status="handoff_ready",
             message="Parts handoff directory is available for request export and receipt import.",
             source_path=resolved_path,
+            export_path=export_path,
+            export_file_exists=export_path.exists(),
+            receipt_path=receipt_path,
+            receipt_file_exists=receipt_path.exists(),
         )
 
     async def export_requests(self, records: list[PartRequestRecord]) -> PartsExportSummary:

@@ -290,13 +290,17 @@ class PhotoReminderEvaluation:
 
 @dataclass(slots=True)
 class PartsWorkflowSummary:
-    """Placeholder summary for a future parts workflow wrapper."""
+    """Summary of the current parts handoff integration state."""
 
     reference: str
     available: bool
     integration_status: str
     message: str
     source_path: Path | None = None
+    export_path: Path | None = None
+    export_file_exists: bool = False
+    receipt_path: Path | None = None
+    receipt_file_exists: bool = False
 
 
 @dataclass(slots=True)

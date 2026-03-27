@@ -28,6 +28,8 @@ def test_parts_adapter_reports_ready_status_for_existing_path(tmp_path: Path) ->
     assert result.integration_status == "handoff_ready"
     assert result.available is True
     assert result.source_path == tmp_path
+    assert result.export_file_exists is False
+    assert result.receipt_file_exists is False
 
 
 def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> None:
@@ -46,10 +48,46 @@ def test_parts_service_includes_wrapper_status_in_message(tmp_path: Path) -> Non
     assert "**Parts System**" in result.message
     assert "Status: `handoff_ready`" in result.message
     assert "Details: Parts handoff directory is available for request export and receipt import." in result.message
+    assert "**Tracked Requests**" in result.message
+    assert "No tracked parts requests found for this reference." in result.message
     assert "**Context**" in result.message
     assert "Notifications: `dry_run`" in result.message
     assert len(notifications.records) == 1
     assert notifications.records[0].topic == "parts.lookup"
+
+
+def test_parts_service_lookup_includes_matching_tracked_requests(tmp_path: Path) -> None:
+    notifications = NotificationService()
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=str(tmp_path)),
+        notifications=notifications,
+        request_store=PartsRequestStore(file_path=None),
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-200",
+                description="Need control board",
+                requested_by_user_id=1,
+            )
+        )
+    )
+    asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=1,
+                status="ordered",
+                updated_by_user_id=1,
+            )
+        )
+    )
+
+    result = asyncio.run(service.lookup_part(PartLookupRequest(reference="SR-200", requested_by_user_id=1)))
+
+    assert "Tracked requests: `1`" in result.message
+    assert "Open requests: `1`" in result.message
+    assert "`1` `ordered` requested by <@1>" in result.message
+    assert "Description: Need control board" in result.message
 
 
 def test_parts_adapter_exports_requests_to_handoff_file(tmp_path: Path) -> None:

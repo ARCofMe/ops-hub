@@ -42,15 +42,15 @@ class PartsCannonService:
     technician_directory_service: TechnicianDirectoryService | None = None
 
     async def lookup_part(self, request: PartLookupRequest) -> CommandResult:
-        """Return a placeholder parts wrapper response."""
-        # TODO: Wrap existing parts workflow logic here instead of moving code prematurely.
+        """Return the current parts-system and local queue state for a reference."""
         result = await self.adapter.get_part_status(request.reference)
+        matching_records = self._matching_records_for_reference(request.reference)
         await self.notifications.send_notice(
             topic="parts.lookup",
             message=f"Parts lookup requested for {request.reference} with status {result.integration_status}.",
         )
         notification_status = await self.notifications.status()
-        return self._build_lookup_result(request, result, notification_status.mode)
+        return self._build_lookup_result(request, result, notification_status.mode, matching_records)
 
     async def create_request(self, request: PartRequestCreate) -> CommandResult:
         """Create a lightweight parts request record."""
@@ -408,36 +408,85 @@ class PartsCannonService:
                 return record
         return None
 
+    def _matching_records_for_reference(self, reference: str) -> list[PartRequestRecord]:
+        """Return tracked parts requests whose reference matches the lookup."""
+        normalized_reference = reference.strip().casefold()
+        return [
+            record
+            for record in self.request_store.load()
+            if record.reference.strip().casefold() == normalized_reference
+        ]
+
     def _build_lookup_result(
         self,
         request: PartLookupRequest,
         summary: PartsWorkflowSummary,
         notification_mode: str,
+        matching_records: list[PartRequestRecord],
     ) -> CommandResult:
         """Convert a typed parts summary into a user-facing command response."""
-        return CommandResult(
-            message="\n".join(
-                [
-                    f"**Part Lookup {summary.reference}**",
-                    "",
-                    "**Parts System**",
-                    f"Status: `{summary.integration_status}`",
-                    f"Details: {summary.message}",
-                    "",
-                    "**Context**",
-                    *(
-                        [
-                            "Requester: "
-                            f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
-                        ]
-                        if request.technician_bluefolder_user_id is not None
-                        else []
-                    ),
-                    *([f"Requester: {self._discord_user_label(request.requested_by_user_id)} (admin)"] if request.requester_is_admin and request.technician_bluefolder_user_id is None else []),
-                    f"Notifications: `{notification_mode}`",
-                ]
+        lines = [
+            f"**Part Lookup {summary.reference}**",
+            "",
+            "**Parts System**",
+            f"Status: `{summary.integration_status}`",
+            f"Details: {summary.message}",
+        ]
+        if summary.source_path is not None:
+            lines.append(f"Handoff root: `{summary.source_path}`")
+        if summary.export_path is not None:
+            lines.append(
+                f"Export file: `{summary.export_path}` ({'present' if summary.export_file_exists else 'missing'})"
             )
+        if summary.receipt_path is not None:
+            lines.append(
+                f"Receipt file: `{summary.receipt_path}` ({'present' if summary.receipt_file_exists else 'missing'})"
+            )
+
+        lines.extend(["", "**Tracked Requests**"])
+        if not matching_records:
+            lines.append("No tracked parts requests found for this reference.")
+        else:
+            lines.append(f"Tracked requests: `{len(matching_records)}`")
+            open_count = sum(1 for record in matching_records if record.status not in {"resolved", "cancelled"})
+            lines.append(f"Open requests: `{open_count}`")
+            for record in matching_records[:5]:
+                lines.append(
+                    f"`{record.request_id}` `{record.status}` requested by {self._discord_user_label(record.requested_by_user_id)}"
+                )
+                if record.assigned_parts_user_id is not None:
+                    lines.append(f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}")
+                if record.last_synced_at is not None:
+                    lines.append(f"Last synced: `{record.last_synced_at}`")
+                if record.last_reconciled_at is not None:
+                    lines.append(f"Last reconciled: `{record.last_reconciled_at}`")
+                if record.downstream_note:
+                    lines.append(f"Downstream note: {record.downstream_note}")
+                lines.append(f"Description: {record.description}")
+            if len(matching_records) > 5:
+                lines.append(f"...and `{len(matching_records) - 5}` more tracked request(s)")
+
+        lines.extend(
+            [
+                "",
+                "**Context**",
+                *(
+                    [
+                        "Requester: "
+                        f"{self._technician_label(discord_user_id=request.requested_by_user_id, bluefolder_user_id=request.technician_bluefolder_user_id)}"
+                    ]
+                    if request.technician_bluefolder_user_id is not None
+                    else []
+                ),
+                *(
+                    [f"Requester: {self._discord_user_label(request.requested_by_user_id)} (admin)"]
+                    if request.requester_is_admin and request.technician_bluefolder_user_id is None
+                    else []
+                ),
+                f"Notifications: `{notification_mode}`",
+            ]
         )
+        return CommandResult(message="\n".join(lines))
 
     def _discord_user_label(self, user_id: int) -> str:
         """Render a Discord-facing user label."""
