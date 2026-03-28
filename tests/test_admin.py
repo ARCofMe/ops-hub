@@ -147,6 +147,7 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "Parts queue open: `0` of `0` total" in result
     assert "Parts queue synced: `0`" in result
     assert "Photo ingest: `unconfigured`" in result
+    assert "Photo ingest mode: `dormant`" in result
     assert "Photo ingest listener: `configured`" in result
     assert "Photo ingest upload: `unconfigured`" in result
     assert "Photo ingest archive: `unconfigured`" in result

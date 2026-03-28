@@ -71,9 +71,17 @@ class PhotoIngestAdapter:
         upload_ready = self._bluefolder_upload_configured()
         archive_ready = self._archive_email_configured()
         mailbox_ready = self._mailbox_scan_configured()
+        listener_mode = "full" if archive_ready else "upload_only" if upload_ready else "dormant"
+        if archive_ready or mailbox_ready:
+            status = "partial" if not (upload_ready and archive_ready and mailbox_ready) else "ready"
+        elif upload_ready:
+            status = "upload_only"
+        else:
+            status = "unconfigured"
         return {
-            "status": "ready" if (upload_ready or archive_ready or mailbox_ready) else "unconfigured",
+            "status": status,
             "source": "photo_ingest_adapter",
+            "mode": listener_mode,
             "upload": "configured" if upload_ready else "unconfigured",
             "archive": "configured" if archive_ready else "unconfigured",
             "mailbox": "configured" if mailbox_ready else "unconfigured",

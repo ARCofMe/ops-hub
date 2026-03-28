@@ -477,6 +477,7 @@ class AdminCog(commands.Cog):
             f"cancelled `{parts_queue.cancelled_count}`",
             f"Photo ingest: `{photo.get('status', 'unknown')}`",
             f"Photo ingest source: `{photo.get('source', 'unknown')}`",
+            f"Photo ingest mode: `{photo.get('mode', 'unknown')}`",
             f"Photo ingest listener: `{photo.get('listener', 'unknown')}`",
             f"Photo ingest upload: `{photo.get('upload', 'unknown')}`",
             f"Photo ingest archive: `{photo.get('archive', 'unknown')}`",

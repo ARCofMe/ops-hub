@@ -70,6 +70,30 @@ def test_photo_ingest_service_ignores_unconfigured_channel() -> None:
     assert result.status == "ignored_channel"
 
 
+def test_photo_ingest_status_reports_upload_only_when_bluefolder_upload_is_configured() -> None:
+    bluefolder_root = Path("/tmp/test-photo-ingest-bluefolder")
+    bluefolder_root.mkdir(parents=True, exist_ok=True)
+
+    service = PhotoIngestService(
+        settings=_settings(photo_ingest_channel_id=123),
+        adapter=PhotoIngestAdapter(
+            bluefolder_api_path=str(bluefolder_root),
+            bluefolder_api_key="key",
+            bluefolder_account_name="acme",
+        ),
+        feature_flags=_feature_flags(),
+    )
+
+    status = asyncio.run(service.status())
+
+    assert status["status"] == "upload_only"
+    assert status["mode"] == "upload_only"
+    assert status["listener"] == "configured"
+    assert status["upload"] == "configured"
+    assert status["archive"] == "unconfigured"
+    assert status["mailbox"] == "unconfigured"
+
+
 def test_photo_ingest_service_ignores_other_channels() -> None:
     service = PhotoIngestService(
         settings=_settings(photo_ingest_channel_id=999),
