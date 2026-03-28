@@ -51,17 +51,20 @@ PYTHONPATH=src python -m ops_hub
 
 ## Workflow Check
 
+- Pick one or two known-good SRs from your tenant before testing. Do not use placeholder SRs like `SR-100` unless you know they exist.
 - Verify technician flows:
   - `/job`
   - `/assignments`
   - `/missing_part`
   - `/damaged_part`
+  - `/mdlsn`
 - Verify dispatch flows:
   - `/tech_assignments`
   - `/tech_job`
   - `/dispatch_board`
   - `/dispatch_attention`
   - `/dispatch_next`
+  - `/route_map`
 - Verify parts flows:
   - `/parts_brief`
   - `/parts_notes`
@@ -75,6 +78,31 @@ PYTHONPATH=src python -m ops_hub
   - `/config_check`
   - `/service_status`
   - `/recent_notices`
+  - `/bluefolder_techs`
+  - `/suggest_tech_map`
+  - `/technician_mappings`
+
+## Photo Scope Check
+
+- If archive SMTP and mailbox IMAP are not configured yet:
+  - treat photo ingest as deferred, not as a cutover blocker
+  - validate `/mdlsn` only
+  - do not treat the Discord photo listener as production-ready just because `OPS_HUB_PHOTO_INGEST_CHANNEL_ID` is set
+- If archive SMTP is configured:
+  - post a test image in the configured ingest channel with an SR reference like `SR-12345`
+  - confirm the listener logs an archive handoff instead of `archive_unconfigured`
+- If mailbox IMAP is configured:
+  - verify `/photo_status` against an SR with known archived photos
+
+## Supplemental Queue Check
+
+- If `OPS_HUB_PARTS_CANNON_PROJECT_PATH` is unset:
+  - treat the supplemental parts queue handoff as intentionally disabled
+  - do not block cutover on `/part_sync` or `/part_reconcile`
+- If `OPS_HUB_PARTS_CANNON_PROJECT_PATH` is set:
+  - confirm `ops_hub_exports/parts_requests.json` is written on `/part_sync`
+  - confirm downstream receipts appear in `ops_hub_exports/parts_request_receipts.json`
+  - confirm `/part_reconcile` imports them cleanly
 
 ## Notification Check
 
