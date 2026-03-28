@@ -40,18 +40,21 @@ def test_main_builds_and_runs_bot() -> None:
     settings = _Settings()
     container = SimpleNamespace(name="container")
     bot = _Bot()
+    api_server = SimpleNamespace(start=lambda: calls.append(("api_start", None)), stop=lambda: calls.append(("api_stop", None)))
 
     with patch.object(main_module, "load_settings", return_value=settings):
         with patch.object(main_module, "configure_logging", side_effect=lambda level: calls.append(("logging", level))):
             with patch.object(main_module, "build_container", return_value=container) as build_container:
                 with patch.object(main_module, "build_bot", return_value=bot) as build_bot:
-                    with patch.object(main_module, "_suppress_insecure_request_warnings") as suppress:
-                        assert main_module.main() == 0
+                    with patch.object(main_module, "build_api_server", return_value=api_server) as build_api_server:
+                        with patch.object(main_module, "_suppress_insecure_request_warnings") as suppress:
+                            assert main_module.main() == 0
 
-    assert calls == [("logging", "INFO"), ("validate", None), ("run", "token")]
+    assert calls == [("logging", "INFO"), ("validate", None), ("api_start", None), ("run", "token"), ("api_stop", None)]
     suppress.assert_called_once_with(verify_ssl=False)
     build_container.assert_called_once_with(settings)
     build_bot.assert_called_once_with(settings=settings, container=container)
+    build_api_server.assert_called_once_with(settings=settings, container=container)
 
 
 def test_main_reraises_bot_run_failure() -> None:
@@ -69,15 +72,17 @@ def test_main_reraises_bot_run_failure() -> None:
             raise RuntimeError("boom")
 
     settings = _Settings()
+    api_server = SimpleNamespace(start=lambda: None, stop=lambda: None)
 
     with patch.object(main_module, "load_settings", return_value=settings):
         with patch.object(main_module, "configure_logging"):
             with patch.object(main_module, "build_container", return_value=SimpleNamespace()):
                 with patch.object(main_module, "build_bot", return_value=_Bot()):
-                    with patch.object(main_module, "_suppress_insecure_request_warnings"):
-                        try:
-                            main_module.main()
-                        except RuntimeError as exc:
-                            assert str(exc) == "boom"
-                        else:
-                            raise AssertionError("Expected main() to re-raise bot runtime failures")
+                    with patch.object(main_module, "build_api_server", return_value=api_server):
+                        with patch.object(main_module, "_suppress_insecure_request_warnings"):
+                            try:
+                                main_module.main()
+                            except RuntimeError as exc:
+                                assert str(exc) == "boom"
+                            else:
+                                raise AssertionError("Expected main() to re-raise bot runtime failures")

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     enable_message_content_intent: bool = True
     log_level: str = "INFO"
     environment: str = "dev"
+    enable_technician_api: bool = False
+    technician_api_host: str = "127.0.0.1"
+    technician_api_port: int = 8787
+    technician_api_token: str | None = None
     photo_ingest_channel_id: int | None = None
     photo_compress_max_dimension: int = 1800
     photo_compress_jpeg_quality: int = 82
@@ -112,6 +116,10 @@ class Settings(BaseSettings):
         }
         optional_scalar_fields = {
             "guild_id",
+            "enable_technician_api",
+            "technician_api_host",
+            "technician_api_port",
+            "technician_api_token",
             "technician_mapping_file",
             "member_export_path",
             "member_export_timestamped",
@@ -185,6 +193,14 @@ class Settings(BaseSettings):
 
         if not self.environment.strip():
             errors.append("OPS_HUB_ENVIRONMENT cannot be empty.")
+
+        if self.enable_technician_api:
+            if not self.technician_api_host.strip():
+                errors.append("OPS_HUB_TECHNICIAN_API_HOST cannot be empty when technician API is enabled.")
+            if self.technician_api_port <= 0:
+                errors.append("OPS_HUB_TECHNICIAN_API_PORT must be greater than 0 when technician API is enabled.")
+            if not (self.technician_api_token or "").strip():
+                errors.append("OPS_HUB_TECHNICIAN_API_TOKEN is required when technician API is enabled.")
 
         if not self.log_level.strip():
             errors.append("OPS_HUB_LOG_LEVEL cannot be empty.")

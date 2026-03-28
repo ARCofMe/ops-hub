@@ -232,6 +232,29 @@ To enable Discord notice routing, optionally set:
 - `OPS_HUB_NOTIFICATION_CHANNEL_ID` for a default notice channel
 - `OPS_HUB_NOTIFICATION_CHANNEL_MAP` to route topic families like `parts` or `dispatch` to specific channels
 
+To enable the technician app API, also set:
+
+- `OPS_HUB_ENABLE_TECHNICIAN_API=true`
+- `OPS_HUB_TECHNICIAN_API_HOST`
+- `OPS_HUB_TECHNICIAN_API_PORT`
+- `OPS_HUB_TECHNICIAN_API_TOKEN`
+
+Current technician app routes:
+
+- `GET /health`
+- `GET /tech/me/today`
+- `GET /tech/jobs`
+- `GET /tech/jobs/<sr_id>`
+- `POST /tech/jobs/<sr_id>/status`
+- `POST /tech/jobs/<sr_id>/notes`
+- `POST /tech/jobs/<sr_id>/parts`
+- `POST /tech/jobs/<sr_id>/photos/prepare`
+
+Requests use `Authorization: Bearer <token>` and resolve the technician from either:
+
+- query `technician_id=<discord_user_id>`
+- header `X-Technician-Subject: <discord_user_id>`
+
 ## Project Layout
 
 ```text

@@ -24,6 +24,10 @@ def _settings(**overrides: object) -> Settings:
         "notification_channel_map": {},
         "log_level": "INFO",
         "environment": "dev",
+        "enable_technician_api": False,
+        "technician_api_host": "127.0.0.1",
+        "technician_api_port": 8787,
+        "technician_api_token": None,
         "photo_ingest_channel_id": None,
         "bluefolder_api_path": None,
         "bluefolder_api_key": None,
@@ -52,6 +56,14 @@ def test_validation_errors_reject_blank_environment() -> None:
     errors = settings.validation_errors()
 
     assert "OPS_HUB_ENVIRONMENT cannot be empty." in errors
+
+
+def test_validation_errors_require_api_token_when_technician_api_is_enabled() -> None:
+    settings = _settings(enable_technician_api=True, technician_api_token="")
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_TECHNICIAN_API_TOKEN is required when technician API is enabled." in errors
 
 
 def test_validation_errors_reject_blank_log_level() -> None:

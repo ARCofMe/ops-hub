@@ -7,6 +7,11 @@ Use this checklist when replacing the current beta Discord bot with Ops Hub in t
 - Confirm `.env` is complete:
   - `OPS_HUB_DISCORD_TOKEN`
   - `OPS_HUB_GUILD_ID`
+  - technician API settings if the mobile app will talk to this instance:
+    - `OPS_HUB_ENABLE_TECHNICIAN_API`
+    - `OPS_HUB_TECHNICIAN_API_HOST`
+    - `OPS_HUB_TECHNICIAN_API_PORT`
+    - `OPS_HUB_TECHNICIAN_API_TOKEN`
   - BlueFolder credentials and path
   - technician / dispatch / parts / admin role IDs or user IDs
   - technician BlueFolder map
@@ -37,6 +42,7 @@ PYTHONPATH=src python -m ops_hub
   - no config validation failure
   - no import/runtime crash during startup
   - Discord login succeeds
+  - technician API starts if enabled
   - command sync completes for the configured guild or globally
 
 ## Server Check

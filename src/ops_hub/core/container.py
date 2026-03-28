@@ -20,6 +20,7 @@ from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
 from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
+from ops_hub.services.technician_api import TechnicianApiService
 
 
 @dataclass(slots=True)
@@ -34,6 +35,7 @@ class ServiceContainer:
     parts_cannon_service: PartsCannonService
     photo_ingest_service: PhotoIngestService
     dispatch_service: DispatchService
+    technician_api_service: TechnicianApiService
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -113,35 +115,42 @@ def build_container(settings: Settings) -> ServiceContainer:
         bluefolder_timeout_seconds=settings.bluefolder_timeout_seconds,
     )
 
+    bluefolder_service = BlueFolderService(
+        adapter=bluefolder_adapter,
+        notifications=notification_service,
+    )
+    parts_cannon_service = PartsCannonService(
+        adapter=parts_adapter,
+        notifications=notification_service,
+        request_store=parts_request_store,
+        technician_directory_service=technician_directory_service,
+    )
+    photo_ingest_service = PhotoIngestService(
+        settings=settings,
+        adapter=photo_adapter,
+        feature_flags=photo_feature_flags_service,
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=technician_directory_service,
+        notifications=notification_service,
+    )
+
     return ServiceContainer(
         settings=settings,
         notification_service=notification_service,
         technician_directory_service=technician_directory_service,
         photo_feature_flags_service=photo_feature_flags_service,
-        bluefolder_service=BlueFolderService(
-            adapter=bluefolder_adapter,
-            notifications=notification_service,
-        ),
-        parts_cannon_service=PartsCannonService(
-            adapter=parts_adapter,
-            notifications=notification_service,
-            request_store=parts_request_store,
-            technician_directory_service=technician_directory_service,
-        ),
-        photo_ingest_service=PhotoIngestService(
-            settings=settings,
-            adapter=photo_adapter,
-            feature_flags=photo_feature_flags_service,
-            bluefolder_service=BlueFolderService(
-                adapter=bluefolder_adapter,
-                notifications=notification_service,
-            ),
-            technician_directory_service=technician_directory_service,
-            notifications=notification_service,
-        ),
+        bluefolder_service=bluefolder_service,
+        parts_cannon_service=parts_cannon_service,
+        photo_ingest_service=photo_ingest_service,
         dispatch_service=DispatchService(
             adapter=dispatch_adapter,
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
             technician_directory_service=technician_directory_service,
+        ),
+        technician_api_service=TechnicianApiService(
+            bluefolder_service=bluefolder_service,
+            technician_directory_service=technician_directory_service,
+            parts_cannon_service=parts_cannon_service,
+            photo_ingest_service=photo_ingest_service,
         ),
     )
