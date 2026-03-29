@@ -115,6 +115,7 @@ def test_build_ops_status_reports_basic_runtime_state() -> None:
     assert "Environment: `dev`" in result
     assert "Guild sync: guild" in result
     assert "Configured guild id: `123456`" in result
+    assert "Workflow policy runner: disabled" in result
     assert "Photo ingest listener channel: `222`" in result
     assert "Bot identity: not connected" in result
 
@@ -156,6 +157,9 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "`mdlsn_upload`: `enabled` via `env`" in result
     assert "Notifications: `dry_run` via `logger`" in result
     assert "Notification notices sent: `0`" in result
+    assert "Workflow attention items: `0`" in result
+    assert "Workflow parts cases: `0`" in result
+    assert "Workflow events: `0`" in result
 
 
 def test_build_recent_notices_renders_latest_entries() -> None:

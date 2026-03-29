@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
 from ops_hub.models.requests import (
@@ -18,6 +19,9 @@ from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.text_blocks import section, status_section
 
+if TYPE_CHECKING:
+    from ops_hub.services.workflow_state import WorkflowStateService
+
 
 @dataclass(slots=True)
 class DispatchService:
@@ -26,6 +30,7 @@ class DispatchService:
     adapter: DispatchAdapter
     bluefolder_service: BlueFolderService
     technician_directory_service: TechnicianDirectoryService | None = None
+    workflow_state_service: "WorkflowStateService | None" = None
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
@@ -107,9 +112,9 @@ class DispatchService:
         if not mappings:
             return CommandResult(message="Dispatch board requires at least one technician mapping.")
 
-        lines = ["**Dispatch Board**"]
         active_techs = 0
         total_assignments = 0
+        technician_sections: list[str] = []
         for record in mappings:
             assignments = await self._assignments_for_user(record.bluefolder_user_id)
             origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
@@ -118,25 +123,93 @@ class DispatchService:
             if assignment_count > 0:
                 active_techs += 1
 
-            summary = (
+            section_lines = [
                 "Technician: "
                 f"{await self._technician_label_for_record(record)} "
                 f"| `{assignment_count}` assignment(s)"
-            )
-            lines.extend(["", summary])
+            ]
             if origin_address:
-                lines.append(f"Origin: {origin_address}")
+                section_lines.append(f"Origin: {origin_address}")
             if assignments:
                 first_assignment = assignments[0]
                 sr_id = first_assignment.get("serviceRequestId") or "unknown"
                 subject = first_assignment.get("subject") or "Unlabeled Service Request"
-                lines.append(f"Next job: `SR-{sr_id}` {subject}")
+                section_lines.append(f"Next job: `SR-{sr_id}` {subject}")
             else:
-                lines.append("Next job: none")
+                section_lines.append("Next job: none")
+            technician_sections.append("\n".join(section_lines))
 
-        lines.insert(1, f"Mapped techs: `{len(mappings)}`")
-        lines.insert(2, f"Active techs: `{active_techs}`")
-        lines.insert(3, f"Total visible assignments: `{total_assignments}`")
+        lines = [
+            "**Dispatch Board**",
+            f"Mapped techs: `{len(mappings)}`",
+            f"Active techs: `{active_techs}`",
+            f"Total visible assignments: `{total_assignments}`",
+        ]
+
+        if self.workflow_state_service is not None:
+            scanned_jobs, attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
+            snapshot = self.workflow_state_service.current_snapshot()
+            open_parts_cases = [case for case in snapshot.parts_cases if case.status == "open"]
+            stage_counts: dict[str, int] = {}
+            age_counts: dict[str, int] = {}
+            for item in attention_items:
+                stage_counts[item.stage_label] = stage_counts.get(item.stage_label, 0) + 1
+                if item.age_bucket is not None:
+                    age_counts[item.age_bucket] = age_counts.get(item.age_bucket, 0) + 1
+
+            lines.extend(
+                [
+                    f"Scanned jobs: `{scanned_jobs}`",
+                    f"Attention jobs: `{len(attention_items)}`",
+                    f"Open parts cases: `{len(open_parts_cases)}`",
+                    "",
+                    "**Attention Queues**",
+                ]
+            )
+            if stage_counts:
+                for stage_label, count in sorted(stage_counts.items()):
+                    lines.append(f"{stage_label}: `{count}`")
+            else:
+                lines.append("No active attention queues.")
+            if age_counts:
+                lines.extend(["", "**Age Buckets**"])
+                for bucket, count in sorted(age_counts.items()):
+                    lines.append(f"{bucket}: `{count}`")
+
+            if attention_items:
+                lines.extend(["", "**Top Attention**"])
+                for item in attention_items[:8]:
+                    queue_lines = [
+                        f"`{item.reference}` {item.summary}",
+                        f"Stage: `{item.stage_label}`",
+                    ]
+                    if item.age_bucket is not None and item.age_hours is not None:
+                        queue_lines.append(f"Age: `{item.age_bucket}` ({item.age_hours}h)")
+                    if item.location:
+                        queue_lines.append(f"Location: {item.location}")
+                    if item.next_action:
+                        queue_lines.append(f"Next action: {item.next_action}")
+                    lines.extend(["", "\n".join(queue_lines)])
+
+            if open_parts_cases:
+                lines.extend(["", "**Open Parts Cases**"])
+                for case in open_parts_cases[:8]:
+                    case_lines = [
+                        f"`{case.reference}` `{case.stage_label}`",
+                    ]
+                    if case.open_request_ids:
+                        case_lines.append(
+                            "Tracked requests: " + ", ".join(f"`{request_id}`" for request_id in case.open_request_ids)
+                        )
+                    if case.age_bucket is not None and case.age_hours is not None:
+                        case_lines.append(f"Age: `{case.age_bucket}` ({case.age_hours}h)")
+                    if case.next_action:
+                        case_lines.append(f"Next action: {case.next_action}")
+                    lines.extend(["", "\n".join(case_lines)])
+
+        lines.extend(["", "**Technician Load**"])
+        for section in technician_sections:
+            lines.extend(["", section])
         return CommandResult(message="\n".join(lines))
 
     async def lookup_dispatch_attention(
@@ -145,6 +218,8 @@ class DispatchService:
         *,
         stage_filter: str | None = None,
         technician_bluefolder_user_id: int | None = None,
+        age_bucket: str | None = None,
+        owner_discord_user_id: int | None = None,
     ) -> CommandResult:
         """Return a dispatcher triage view for jobs that appear actionable."""
         if not mappings:
@@ -160,6 +235,12 @@ class DispatchService:
             return CommandResult(
                 message="Dispatch attention stage filter must be one of: `issue_reported`, `part_received`, `part_ready`."
             )
+        allowed_age_buckets = {"fresh", "warm", "stale", "urgent"}
+        normalized_age_bucket = None if age_bucket is None else age_bucket.strip().lower().replace(" ", "_")
+        if normalized_age_bucket is not None and normalized_age_bucket not in allowed_age_buckets:
+            return CommandResult(
+                message="Dispatch attention age filter must be one of: `fresh`, `warm`, `stale`, `urgent`."
+            )
 
         if technician_bluefolder_user_id is not None:
             mappings = [
@@ -173,41 +254,64 @@ class DispatchService:
                     )
                 )
 
-        attention_items: list[str] = []
-        scanned_jobs = 0
-        for record in mappings:
-            assignments = await self._assignments_for_user(record.bluefolder_user_id)
-            for assignment in assignments[:10]:
-                sr_id = assignment.get("serviceRequestId")
-                if sr_id in (None, ""):
-                    continue
-                scanned_jobs += 1
-                try:
-                    snapshot = await self.bluefolder_service.get_parts_snapshot(int(str(sr_id)))
-                except ValueError:
-                    continue
-                if snapshot is None:
-                    continue
-                if snapshot.stage not in allowed_stages:
-                    continue
-                if normalized_stage_filter is not None and snapshot.stage != normalized_stage_filter:
-                    continue
+        if self.workflow_state_service is not None:
+            scanned_jobs, derived_attention_items = await self.workflow_state_service.refresh_dispatch_attention(
+                mappings,
+                stage_filter=stage_filter,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                age_bucket=normalized_age_bucket,
+                owner_discord_user_id=owner_discord_user_id,
+            )
+            attention_items = [
+                "\n".join(
+                    [
+                        f"`{item.reference}` {item.summary}",
+                        f"Stage: `{item.stage_label}`",
+                        *( [f"Age: `{item.age_bucket}` ({item.age_hours}h)"] if item.age_bucket and item.age_hours is not None else [] ),
+                        f"Technician: {await self._technician_label(bluefolder_user_id=item.owner_bluefolder_user_id)}",
+                        *( [f"Location: {item.location}"] if item.location else [] ),
+                        *( [f"Window: `{item.route_label}`"] if item.route_label else [] ),
+                        *( [f"Next action: {item.next_action}"] if item.next_action else [] ),
+                    ]
+                )
+                for item in derived_attention_items
+            ]
+        else:
+            attention_items = []
+            scanned_jobs = 0
+            for record in mappings:
+                assignments = await self._assignments_for_user(record.bluefolder_user_id)
+                for assignment in assignments[:10]:
+                    sr_id = assignment.get("serviceRequestId")
+                    if sr_id in (None, ""):
+                        continue
+                    scanned_jobs += 1
+                    try:
+                        snapshot = await self.bluefolder_service.get_parts_snapshot(int(str(sr_id)))
+                    except ValueError:
+                        continue
+                    if snapshot is None:
+                        continue
+                    if snapshot.stage not in allowed_stages:
+                        continue
+                    if normalized_stage_filter is not None and snapshot.stage != normalized_stage_filter:
+                        continue
 
-                subject = assignment.get("subject") or "Unlabeled Service Request"
-                route_label = assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow")
-                location = " ".join(
-                    part for part in [assignment.get("city"), assignment.get("state")] if part
-                ).strip()
-                item_lines = [
-                    f"`SR-{sr_id}` {subject}",
-                    f"Stage: `{snapshot.stage_label}`",
-                    f"Technician: {await self._technician_label_for_record(record)}",
-                ]
-                if location:
-                    item_lines.append(f"Location: {location}")
-                if route_label:
-                    item_lines.append(f"Window: `{route_label}`")
-                attention_items.append("\n".join(item_lines))
+                    subject = assignment.get("subject") or "Unlabeled Service Request"
+                    route_label = assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow")
+                    location = " ".join(
+                        part for part in [assignment.get("city"), assignment.get("state")] if part
+                    ).strip()
+                    item_lines = [
+                        f"`SR-{sr_id}` {subject}",
+                        f"Stage: `{snapshot.stage_label}`",
+                        f"Technician: {await self._technician_label_for_record(record)}",
+                    ]
+                    if location:
+                        item_lines.append(f"Location: {location}")
+                    if route_label:
+                        item_lines.append(f"Window: `{route_label}`")
+                    attention_items.append("\n".join(item_lines))
 
         if not attention_items:
             return CommandResult(
@@ -220,12 +324,18 @@ class DispatchService:
                             if normalized_stage_filter is not None
                             else []
                         ),
+                        *([f"Age filter: `{normalized_age_bucket}`"] if normalized_age_bucket is not None else []),
                         *(
                             [
                                 "Technician filter: "
                                 f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"
                             ]
                             if technician_bluefolder_user_id is not None
+                            else []
+                        ),
+                        *(
+                            [f"Owner filter: {await self._technician_label(discord_user_id=owner_discord_user_id)}"]
+                            if owner_discord_user_id is not None
                             else []
                         ),
                         "No mapped assignments currently match the parts-attention stages.",
@@ -243,12 +353,18 @@ class DispatchService:
                 if normalized_stage_filter is not None
                 else []
             ),
+            *([f"Age filter: `{normalized_age_bucket}`"] if normalized_age_bucket is not None else []),
             *(
                 [
                     "Technician filter: "
                     f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}"
                 ]
                 if technician_bluefolder_user_id is not None
+                else []
+            ),
+            *(
+                [f"Owner filter: {await self._technician_label(discord_user_id=owner_discord_user_id)}"]
+                if owner_discord_user_id is not None
                 else []
             ),
         ]

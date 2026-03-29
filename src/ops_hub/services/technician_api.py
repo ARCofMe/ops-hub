@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ops_hub.models.requests import PartRequestCreate
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_cannon import PartsCannonService
 from ops_hub.services.photo_ingest import PhotoIngestService
+
+if TYPE_CHECKING:
+    from ops_hub.services.workflow_state import WorkflowStateService
 
 
 @dataclass(slots=True)
@@ -19,6 +23,7 @@ class TechnicianApiService:
     technician_directory_service: TechnicianDirectoryService
     parts_cannon_service: PartsCannonService
     photo_ingest_service: PhotoIngestService
+    workflow_state_service: "WorkflowStateService"
 
     async def health(self) -> dict[str, object]:
         """Return a minimal health payload for app clients."""
@@ -159,6 +164,7 @@ class TechnicianApiService:
     async def get_job(self, *, sr_id: int) -> dict[str, object]:
         """Return a single job summary in the app shape."""
         summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+        parts_case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
         if not summary.available:
             return {
                 "id": str(sr_id),
@@ -167,6 +173,8 @@ class TechnicianApiService:
                 "customerName": "Unknown customer",
                 "customerPhone": "",
                 "status": summary.integration_status,
+                "partsStage": parts_case.stage_label,
+                "nextAction": parts_case.next_action or "",
                 "equipment": None,
             }
         address = ", ".join(part for part in [summary.address, " ".join(v for v in [summary.city, summary.state, summary.postal_code] if v).strip()] if part)
@@ -177,8 +185,42 @@ class TechnicianApiService:
             "customerName": summary.customer_name or "Unknown customer",
             "customerPhone": summary.customer_phone or "",
             "status": summary.service_request_status or "Unknown",
+            "partsStage": parts_case.stage_label,
+            "nextAction": parts_case.next_action or "",
             "equipment": None,
         }
+
+    async def get_job_parts_case(self, *, sr_id: int) -> dict[str, object]:
+        """Return the current derived parts-case payload for a service request."""
+        case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
+        return {
+            "reference": case.reference,
+            "stage": case.stage,
+            "stageLabel": case.stage_label,
+            "status": case.status,
+            "openRequestIds": case.open_request_ids,
+            "assignedPartsUserId": case.assigned_parts_user_id,
+            "blocker": case.blocker,
+            "latestStatusText": case.latest_status_text,
+            "latestIssueText": case.latest_issue_text,
+            "nextAction": case.next_action,
+            "updatedAt": case.updated_at,
+        }
+
+    async def get_job_timeline(self, *, sr_id: int) -> list[dict[str, object]]:
+        """Return the current merged SR timeline payload."""
+        timeline = await self.workflow_state_service.build_service_request_timeline(sr_id)
+        return [
+            {
+                "occurredAt": entry.occurred_at,
+                "source": entry.source,
+                "eventType": entry.event_type,
+                "summary": entry.summary,
+                "details": entry.details,
+                "actorLabel": entry.actor_label,
+            }
+            for entry in timeline.entries
+        ]
 
     @staticmethod
     def _assignment_to_job(item: dict[str, object]) -> dict[str, object]:

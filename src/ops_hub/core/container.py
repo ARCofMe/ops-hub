@@ -21,6 +21,8 @@ from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 from ops_hub.services.technician_api import TechnicianApiService
+from ops_hub.services.workflow_state import WorkflowStateService
+from ops_hub.services.workflow_state_store import WorkflowStateStore
 
 
 @dataclass(slots=True)
@@ -36,6 +38,7 @@ class ServiceContainer:
     photo_ingest_service: PhotoIngestService
     dispatch_service: DispatchService
     technician_api_service: TechnicianApiService
+    workflow_state_service: WorkflowStateService
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -75,6 +78,9 @@ def build_container(settings: Settings) -> ServiceContainer:
     parts_adapter = PartsCannonAdapter(base_path=settings.parts_cannon_project_path)
     parts_request_store = PartsRequestStore(
         file_path=Path(settings.parts_request_file).expanduser() if settings.parts_request_file else None,
+    )
+    workflow_state_store = WorkflowStateStore(
+        file_path=Path(settings.workflow_state_file).expanduser() if settings.workflow_state_file else None,
     )
     photo_adapter = PhotoIngestAdapter(
         base_path=settings.photo_ingest_project_path,
@@ -133,6 +139,15 @@ def build_container(settings: Settings) -> ServiceContainer:
         technician_directory_service=technician_directory_service,
         notifications=notification_service,
     )
+    workflow_state_service = WorkflowStateService(
+        store=workflow_state_store,
+        bluefolder_service=bluefolder_service,
+        parts_cannon_service=parts_cannon_service,
+        technician_directory_service=technician_directory_service,
+        notification_service=notification_service,
+    )
+    bluefolder_service.workflow_state_service = workflow_state_service
+    parts_cannon_service.workflow_state_service = workflow_state_service
 
     return ServiceContainer(
         settings=settings,
@@ -146,11 +161,14 @@ def build_container(settings: Settings) -> ServiceContainer:
             adapter=dispatch_adapter,
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
             technician_directory_service=technician_directory_service,
+            workflow_state_service=workflow_state_service,
         ),
         technician_api_service=TechnicianApiService(
             bluefolder_service=bluefolder_service,
             technician_directory_service=technician_directory_service,
             parts_cannon_service=parts_cannon_service,
             photo_ingest_service=photo_ingest_service,
+            workflow_state_service=workflow_state_service,
         ),
+        workflow_state_service=workflow_state_service,
     )

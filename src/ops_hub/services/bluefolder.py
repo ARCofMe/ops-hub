@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.models.requests import (
@@ -15,6 +16,9 @@ from ops_hub.models.requests import (
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.text_blocks import section, status_section
 
+if TYPE_CHECKING:
+    from ops_hub.services.workflow_state import WorkflowStateService
+
 
 @dataclass(slots=True)
 class BlueFolderService:
@@ -22,6 +26,7 @@ class BlueFolderService:
 
     adapter: BlueFolderAdapter
     notifications: NotificationService | None = None
+    workflow_state_service: "WorkflowStateService | None" = None
 
     async def get_job_summary(
         self,
@@ -226,6 +231,17 @@ class BlueFolderService:
                     f"{result.get('error') or 'unknown error'}"
                 )
             )
+        if self.workflow_state_service is not None:
+            self.workflow_state_service.record_event(
+                event_type=f"parts_issue_{issue_type}",
+                source="bluefolder.parts",
+                sr_id=sr_id,
+                summary=f"Logged {issue_type.replace('_', '-')} issue for SR-{sr_id}.",
+                actor_user_id=requested_by_user_id,
+                actor_label=requested_by_label,
+                details=details,
+                occurred_at=str(result.get("logged_at") or "") or None,
+            )
         return CommandResult(
             message="\n".join(
                 [
@@ -263,6 +279,17 @@ class BlueFolderService:
                     f"Could not log {update_type.replace('_', '-')} update for `{sr_id}`: "
                     f"{result.get('error') or 'unknown error'}"
                 )
+            )
+        if self.workflow_state_service is not None:
+            self.workflow_state_service.record_event(
+                event_type=f"parts_update_{update_type}",
+                source="bluefolder.parts",
+                sr_id=sr_id,
+                summary=f"Logged {update_type.replace('_', '-')} update for SR-{sr_id}.",
+                actor_user_id=requested_by_user_id,
+                actor_label=requested_by_label,
+                details=details,
+                occurred_at=str(result.get("logged_at") or "") or None,
             )
         return CommandResult(
             message="\n".join(
@@ -351,6 +378,22 @@ class BlueFolderService:
             await self.notifications.send_notice(
                 topic=self._field_event_topic(event_type),
                 message=f"SR-{sr_id} {event_type.replace('_', '-')} logged. {result.get('note_text') or ''}",
+            )
+        if self.workflow_state_service is not None:
+            detail_parts = []
+            if minutes is not None:
+                detail_parts.append(f"minutes={minutes}")
+            if details:
+                detail_parts.append(details)
+            self.workflow_state_service.record_event(
+                event_type=event_type,
+                source="bluefolder.field",
+                sr_id=sr_id,
+                summary=f"Logged {event_type.replace('_', '-')} for SR-{sr_id}.",
+                actor_user_id=requested_by_user_id,
+                actor_label=requested_by_label,
+                details=" | ".join(detail_parts) if detail_parts else None,
+                occurred_at=str(result.get("logged_at") or "") or None,
             )
         return CommandResult(
             message="\n".join(

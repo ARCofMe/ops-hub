@@ -123,6 +123,9 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 - [ ] Main operational workflows are trusted in normal use
 - [ ] The bot identity and command surface are intentionally finalized
 - [ ] Major subsystems are no longer “placeholder” in normal usage
+- [ ] Ops Hub owns actionable workflow state instead of behaving mainly as a command wrapper
+- [ ] Dispatch and parts can work from queue views and next-action state instead of comment archaeology
+- [ ] Technician API and mobile workflows are first-class product surfaces
 
 ### Engineering Readiness
 
@@ -131,17 +134,20 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 - [ ] Documentation is operationally complete
 - [ ] Observability is sufficient for production support
 - [ ] The app can tolerate real failures without confusing users
+- [ ] Workflow events and state transitions are auditable across Discord and non-Discord surfaces
 
 ### Migration Readiness
 
 - [ ] Existing projects are wrapped or superseded in the right places
 - [ ] Remaining external dependencies are understood and intentional
 - [ ] Ops Hub is the default entry point for operations work
+- [ ] BlueFolder remains a system of record while Ops Hub clearly owns the system-of-action layer
 
 ## Recommended Near-Term Sequence
 
-1. Build on the dispatch board with more dispatch actions
-2. Build on the BlueFolder-native parts path so Discord workflows match the real BlueFolder-centered business process
-3. Keep the internal parts queue and handoff loop supplemental, not primary
-4. Strengthen assignment/job workflows where live use exposes gaps
-5. Revisit photo ingest after the revised concept is ready
+1. Build an attention engine so Ops Hub can derive actionable work instead of only surfacing source-system data
+2. Build a first-class parts case model so parts state is owned cleanly inside Ops Hub
+3. Promote dispatch from summaries into queue-based triage and next-action control
+4. Expand the technician API into a real field workflow surface
+5. Add metrics, escalation, and policy-driven follow-up
+6. Revisit photo ingest after the revised concept is ready

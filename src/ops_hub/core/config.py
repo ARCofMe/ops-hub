@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     member_export_path: str | None = None
     member_export_timestamped: bool = True
     parts_request_file: str | None = None
+    workflow_state_file: str | None = None
+    enable_workflow_policy_runner: bool = False
+    workflow_policy_interval_seconds: int = 900
     notification_channel_id: int | None = None
     notification_channel_map: dict[str, int] = {}
     enable_message_content_intent: bool = True
@@ -125,6 +128,9 @@ class Settings(BaseSettings):
             "member_export_timestamped",
             "operator_mapping_file",
             "parts_request_file",
+            "workflow_state_file",
+            "enable_workflow_policy_runner",
+            "workflow_policy_interval_seconds",
             "notification_channel_id",
             "photo_ingest_channel_id",
             "photo_compress_max_dimension",
@@ -201,6 +207,8 @@ class Settings(BaseSettings):
                 errors.append("OPS_HUB_TECHNICIAN_API_PORT must be greater than 0 when technician API is enabled.")
             if not (self.technician_api_token or "").strip():
                 errors.append("OPS_HUB_TECHNICIAN_API_TOKEN is required when technician API is enabled.")
+        if self.workflow_policy_interval_seconds <= 0:
+            errors.append("OPS_HUB_WORKFLOW_POLICY_INTERVAL_SECONDS must be greater than 0.")
 
         if not self.log_level.strip():
             errors.append("OPS_HUB_LOG_LEVEL cannot be empty.")
@@ -318,6 +326,7 @@ class Settings(BaseSettings):
             ("OPS_HUB_TECHNICIAN_MAPPING_FILE", self.technician_mapping_file),
             ("OPS_HUB_MEMBER_EXPORT_PATH", self.member_export_path),
             ("OPS_HUB_PARTS_REQUEST_FILE", self.parts_request_file),
+            ("OPS_HUB_WORKFLOW_STATE_FILE", self.workflow_state_file),
             ("OPS_HUB_PHOTO_FEATURE_FLAGS_FILE", self.photo_feature_flags_file),
         ]:
             errors.extend(self._file_target_path_errors(env_name, path_value))

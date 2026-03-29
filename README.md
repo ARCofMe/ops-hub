@@ -26,7 +26,9 @@ Ops Hub currently focuses on:
 - tracked internal parts queue workflows where supplemental coordination is useful
 - admin/debug visibility for runtime, config, mappings, and service state
 
-BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process.
+BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process today.
+
+The next product phase is to make Ops Hub own more of the system-of-action layer for queues, next actions, role-specific workflow views, and operational follow-up while still respecting BlueFolder as a core system of record.
 
 ## Start Here
 
@@ -42,6 +44,10 @@ If you are operating or deploying the bot:
 
 - `docs/cutover-checklist.md`
 - `docs/troubleshooting.md`
+
+If you are shaping the next product phase:
+
+- `docs/roadmap.md`
 
 ## Current Roles
 

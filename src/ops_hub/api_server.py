@@ -63,6 +63,18 @@ async def dispatch_technician_api_request(
         return HTTPStatus.OK, payload
 
     if method == "GET" and route_path.startswith("/tech/jobs/"):
+        if route_path.endswith("/parts"):
+            sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/parts")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            return HTTPStatus.OK, await container.technician_api_service.get_job_parts_case(sr_id=sr_id)
+
+        if route_path.endswith("/timeline"):
+            sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/timeline")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            return HTTPStatus.OK, await container.technician_api_service.get_job_timeline(sr_id=sr_id)
+
         sr_id = _path_int(route_path, prefix="/tech/jobs/")
         if sr_id is None:
             return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}

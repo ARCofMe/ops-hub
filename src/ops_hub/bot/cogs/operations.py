@@ -305,6 +305,24 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.bluefolder_service.get_parts_notes(sr_id)
         await self._send_result(interaction, result)
 
+    @app_commands.command(name="parts_case", description="Show the current Ops Hub parts case for a service request.")
+    async def parts_case(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show the current derived parts-case state."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.workflow_state_service.describe_parts_case(sr_id)
+        await self._send_result(interaction, result)
+
+    @app_commands.command(name="job_timeline", description="Show the current Ops Hub timeline for a service request.")
+    async def job_timeline(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show the merged timeline for one service request."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        result = await self.bot.container.workflow_state_service.describe_service_request_timeline(sr_id)
+        await self._send_result(interaction, result)
+
     @app_commands.command(name="missing_part", description="Log a missing-part issue to BlueFolder for a service request.")
     async def missing_part(self, interaction: discord.Interaction, sr_id: int, details: str) -> None:
         """Log a missing-part BlueFolder comment."""

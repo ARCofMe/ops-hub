@@ -213,10 +213,12 @@ def test_dispatch_cog_dispatch_attention_uses_deferred_followup() -> None:
     cog = _build_cog(dispatcher_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)
 
-    async def fake_lookup(self, mappings, *, stage_filter=None, technician_bluefolder_user_id=None):
+    async def fake_lookup(self, mappings, *, stage_filter=None, technician_bluefolder_user_id=None, age_bucket=None, owner_discord_user_id=None):
         assert mappings == []
         assert stage_filter == "part_ready"
+        assert age_bucket == "urgent"
         assert technician_bluefolder_user_id == 13051
+        assert owner_discord_user_id == 42
         return SimpleNamespace(message="Attention board")
 
     with patch.object(type(cog.bot.container.dispatch_service), "lookup_dispatch_attention", new=fake_lookup):
@@ -225,12 +227,29 @@ def test_dispatch_cog_dispatch_attention_uses_deferred_followup() -> None:
                 cog,
                 interaction,
                 stage="part_ready",
+                age="urgent",
                 bluefolder_user_id=13051,
+                owner_discord_user_id=42,
             )
         )
 
     assert interaction.response.deferred is True
     assert interaction.followup.messages == [{"content": "Attention board", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_dispatch_next_uses_workflow_state_result() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_describe(self, sr_id: int):
+        assert sr_id == 100
+        return SimpleNamespace(message="Next action ready")
+
+    with patch.object(type(cog.bot.container.workflow_state_service), "describe_parts_case", new=fake_describe):
+        asyncio.run(cog.dispatch_next.callback(cog, interaction, sr_id=100))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Next action ready", "ephemeral": True, "embed": None}]
 
 
 def test_dispatch_cog_dispatch_heatmap_sends_embed() -> None:

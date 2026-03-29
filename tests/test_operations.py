@@ -266,6 +266,34 @@ def test_attachment_payload_reads_discord_attachment_shape() -> None:
     assert payload.data
 
 
+def test_parts_case_sends_workflow_state_result() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_describe(self, sr_id: int):
+        assert sr_id == 100
+        return SimpleNamespace(message="Parts case ready")
+
+    with patch.object(type(cog.bot.container.workflow_state_service), "describe_parts_case", new=fake_describe):
+        asyncio.run(cog.parts_case.callback(cog, interaction, sr_id=100))
+
+    assert interaction.response.messages == [{"content": "Parts case ready", "ephemeral": True, "embed": None}]
+
+
+def test_job_timeline_sends_workflow_state_result() -> None:
+    cog = _build_cog(dispatcher_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_describe(self, sr_id: int):
+        assert sr_id == 100
+        return SimpleNamespace(message="Timeline ready")
+
+    with patch.object(type(cog.bot.container.workflow_state_service), "describe_service_request_timeline", new=fake_describe):
+        asyncio.run(cog.job_timeline.callback(cog, interaction, sr_id=100))
+
+    assert interaction.response.messages == [{"content": "Timeline ready", "ephemeral": True, "embed": None}]
+
+
 def test_assignments_rejects_technician_override() -> None:
     cog = _build_cog(technician_user_ids=[42], technician_bluefolder_user_map={42: 13051})
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))

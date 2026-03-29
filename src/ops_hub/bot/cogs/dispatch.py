@@ -71,13 +71,17 @@ class DispatchCog(commands.Cog):
     @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
     @app_commands.describe(
         stage="Optional stage filter: issue_reported, part_received, or part_ready.",
+        age="Optional age filter: fresh, warm, stale, or urgent.",
         bluefolder_user_id="Optional BlueFolder technician user id to narrow the view.",
+        owner_discord_user_id="Optional Discord technician user id to narrow by owner.",
     )
     async def dispatch_attention(
         self,
         interaction: discord.Interaction,
         stage: str | None = None,
+        age: str | None = None,
         bluefolder_user_id: int | None = None,
+        owner_discord_user_id: int | None = None,
     ) -> None:
         """Dispatcher-focused triage view for parts-related attention states."""
         mappings = await self._technician_dispatch_mappings(interaction)
@@ -86,13 +90,15 @@ class DispatchCog(commands.Cog):
             mappings,
             stage_filter=stage,
             technician_bluefolder_user_id=bluefolder_user_id,
+            age_bucket=age,
+            owner_discord_user_id=owner_discord_user_id,
         )
         await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="dispatch_next", description="Show the recommended next dispatch action for a specific SR.")
     async def dispatch_next(self, interaction: discord.Interaction, sr_id: int) -> None:
         """Dispatcher-focused next-action summary for a service request."""
-        result = await self.bot.container.bluefolder_service.get_parts_next_action(sr_id)
+        result = await self.bot.container.workflow_state_service.describe_parts_case(sr_id)
         await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="photo_compliance_board", description="Show current jobs that still need required photos.")

@@ -419,6 +419,11 @@ class AdminCog(commands.Cog):
             f"Environment: `{settings.environment}`",
             f"Guild sync: {'guild' if settings.guild_id is not None else 'global'}",
             f"Configured guild id: `{settings.guild_id}`" if settings.guild_id is not None else "Configured guild id: not set",
+            (
+                f"Workflow policy runner: enabled every `{settings.workflow_policy_interval_seconds}`s"
+                if settings.enable_workflow_policy_runner
+                else "Workflow policy runner: disabled"
+            ),
             f"Photo ingest listener channel: `{settings.photo_ingest_channel_id}`"
             if settings.photo_ingest_channel_id is not None
             else "Photo ingest listener channel: not set",
@@ -486,6 +491,14 @@ class AdminCog(commands.Cog):
             f"Notification notices sent: `{notifications.notice_count}`",
             f"Last notification topic: `{notifications.last_topic or 'none'}`",
         ]
+        workflow_snapshot = self.bot.container.workflow_state_service.current_snapshot()
+        lines.extend(
+            [
+                f"Workflow attention items: `{len(workflow_snapshot.attention_items)}`",
+                f"Workflow parts cases: `{len(workflow_snapshot.parts_cases)}`",
+                f"Workflow events: `{len(workflow_snapshot.events)}`",
+            ]
+        )
         features = photo.get("features", "")
         if features:
             lines.append("Photo features:")

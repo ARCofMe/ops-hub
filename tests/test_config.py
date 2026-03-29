@@ -20,6 +20,7 @@ def _settings(**overrides: object) -> Settings:
         "technician_bluefolder_user_map": {},
         "technician_mapping_file": None,
         "parts_request_file": None,
+        "workflow_state_file": None,
         "notification_channel_id": None,
         "notification_channel_map": {},
         "log_level": "INFO",
@@ -64,6 +65,14 @@ def test_validation_errors_require_api_token_when_technician_api_is_enabled() ->
     errors = settings.validation_errors()
 
     assert "OPS_HUB_TECHNICIAN_API_TOKEN is required when technician API is enabled." in errors
+
+
+def test_validation_errors_reject_non_positive_workflow_policy_interval() -> None:
+    settings = _settings(workflow_policy_interval_seconds=0)
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_WORKFLOW_POLICY_INTERVAL_SECONDS must be greater than 0." in errors
 
 
 def test_validation_errors_reject_blank_log_level() -> None:
@@ -200,6 +209,7 @@ def test_blank_optional_settings_values_are_treated_as_unset() -> None:
         notification_channel_map="",
         technician_user_ids="",
         technician_bluefolder_user_map="",
+        workflow_state_file="",
     )
 
     assert settings.guild_id is None
@@ -209,6 +219,7 @@ def test_blank_optional_settings_values_are_treated_as_unset() -> None:
     assert settings.notification_channel_map == {}
     assert settings.technician_user_ids == []
     assert settings.technician_bluefolder_user_map == {}
+    assert settings.workflow_state_file is None
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

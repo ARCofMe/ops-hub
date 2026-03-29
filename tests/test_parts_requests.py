@@ -58,8 +58,10 @@ def test_list_parts_requests_returns_saved_records() -> None:
     result = asyncio.run(service.list_requests())
 
     assert "**Parts Requests**" in result.message
-    assert "`1` `requested` `SR-300`" in result.message
-    assert "Requested by: <@42>" in result.message
+    assert "`SR-300` `Tracked Requests Only` `open`" in result.message
+    assert "Tracked requests: `1`" in result.message
+    assert "Next action: Review the tracked request and confirm the next parts step." in result.message
+    assert "Request `1` `requested` requested by <@42>" in result.message
     assert "Description: Need heating element" in result.message
 
 
@@ -187,6 +189,10 @@ def test_get_request_renders_detailed_view() -> None:
     result = asyncio.run(service.get_request(1))
 
     assert "**Parts Request 1**" in result.message
+    assert "**Parts Case**" in result.message
+    assert "Case stage: `Tracked Requests Only`" in result.message
+    assert "Case status: `open`" in result.message
+    assert "Next action: Review the tracked request and confirm the next parts step." in result.message
     assert "Assigned to: unassigned" in result.message
     assert "Last synced: never" in result.message
     assert "Last reconciled: never" in result.message

@@ -354,3 +354,99 @@ class PartRequestRecord:
     last_synced_at: str | None = None
     last_reconciled_at: str | None = None
     downstream_note: str | None = None
+
+
+@dataclass(slots=True)
+class WorkflowEventRecord:
+    """A typed Ops Hub event captured for audit and timeline use."""
+
+    event_id: str
+    event_type: str
+    source: str
+    occurred_at: str
+    summary: str
+    sr_id: int | None = None
+    reference: str | None = None
+    actor_user_id: int | None = None
+    actor_label: str | None = None
+    details: str | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class AttentionItemRecord:
+    """A derived actionable work item owned by Ops Hub."""
+
+    item_id: str
+    sr_id: int
+    reference: str
+    category: str
+    status: str
+    stage: str
+    stage_label: str
+    summary: str
+    details: str | None = None
+    location: str | None = None
+    route_label: str | None = None
+    owner_discord_user_id: int | None = None
+    owner_bluefolder_user_id: int | None = None
+    next_action: str | None = None
+    source: str = "derived"
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    age_hours: int | None = None
+    age_bucket: str | None = None
+
+
+@dataclass(slots=True)
+class PartsCaseRecord:
+    """An Ops Hub-owned summary of the current parts state for an SR/reference."""
+
+    case_id: str
+    reference: str
+    sr_id: int | None
+    stage: str
+    stage_label: str
+    status: str
+    open_request_ids: list[int] = field(default_factory=list)
+    assigned_parts_user_id: int | None = None
+    requested_by_user_id: int | None = None
+    technician_bluefolder_user_id: int | None = None
+    latest_status_text: str | None = None
+    latest_issue_text: str | None = None
+    blocker: str | None = None
+    next_action: str | None = None
+    updated_at: str | None = None
+    age_hours: int | None = None
+    age_bucket: str | None = None
+
+
+@dataclass(slots=True)
+class ServiceRequestTimelineEntry:
+    """A single timeline entry for an SR-centric operational view."""
+
+    occurred_at: str
+    source: str
+    event_type: str
+    summary: str
+    details: str | None = None
+    actor_label: str | None = None
+
+
+@dataclass(slots=True)
+class ServiceRequestTimeline:
+    """A merged timeline of Ops Hub and source-system events for one SR."""
+
+    sr_id: int
+    reference: str
+    entries: list[ServiceRequestTimelineEntry] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class WorkflowStateSnapshot:
+    """Current persisted Ops Hub workflow state."""
+
+    updated_at: str | None = None
+    attention_items: list[AttentionItemRecord] = field(default_factory=list)
+    parts_cases: list[PartsCaseRecord] = field(default_factory=list)
+    events: list[WorkflowEventRecord] = field(default_factory=list)

@@ -11,6 +11,7 @@ from ops_hub.bot.client import build_bot
 from ops_hub.core.config import load_settings
 from ops_hub.core.container import build_container
 from ops_hub.core.logging import configure_logging
+from ops_hub.policy_runner import build_policy_runner
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,9 @@ def main() -> int:
     logger.info("Starting Ops Hub", extra={"environment": settings.environment})
     container = build_container(settings)
     api_server = build_api_server(settings=settings, container=container)
+    policy_runner = build_policy_runner(settings=settings, container=container)
     api_server.start()
+    policy_runner.start()
     bot = build_bot(settings=settings, container=container)
     try:
         bot.run(settings.discord_token)
@@ -44,5 +47,6 @@ def main() -> int:
         logger.exception("Ops Hub failed during startup or runtime")
         raise
     finally:
+        policy_runner.stop()
         api_server.stop()
     return 0

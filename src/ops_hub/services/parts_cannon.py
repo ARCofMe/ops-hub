@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
 from ops_hub.models.requests import (
@@ -20,6 +21,9 @@ from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.text_blocks import section, status_section
+
+if TYPE_CHECKING:
+    from ops_hub.services.workflow_state import WorkflowStateService
 
 PARTS_REQUEST_STATUSES: tuple[str, ...] = (
     "requested",
@@ -41,6 +45,7 @@ class PartsCannonService:
     notifications: NotificationService
     request_store: PartsRequestStore
     technician_directory_service: TechnicianDirectoryService | None = None
+    workflow_state_service: "WorkflowStateService | None" = None
 
     async def lookup_part(self, request: PartLookupRequest) -> CommandResult:
         """Return the current parts-system and local queue state for a reference."""
@@ -74,6 +79,17 @@ class PartsCannonService:
         )
         records.append(record)
         self.request_store.save(records)
+        if self.workflow_state_service is not None:
+            self.workflow_state_service.record_event(
+                event_type="parts_request_created",
+                source="ops_hub.parts_queue",
+                reference=record.reference,
+                sr_id=self._reference_sr_id(record.reference),
+                actor_user_id=record.requested_by_user_id,
+                summary=f"Created tracked parts request {record.request_id} for {record.reference}.",
+                details=record.description,
+                occurred_at=record.created_at,
+            )
         await self.notifications.send_notice(
             topic="parts.request.created",
             message=f"Created parts request {request_id} for {request.reference}.",
@@ -119,21 +135,40 @@ class PartsCannonService:
             return CommandResult(message="No parts requests found.")
 
         lines = ["**Parts Requests**"]
-        for record in records[:15]:
+        records_by_reference: dict[str, list[PartRequestRecord]] = {}
+        for record in records:
+            records_by_reference.setdefault(record.reference, []).append(record)
+
+        grouped_items = list(sorted(records_by_reference.items()))[:15]
+        for reference, grouped_records in grouped_items:
+            case = await self._parts_case_for_reference(reference)
             lines.extend(
                 [
                     "",
-                    f"`{record.request_id}` `{record.status}` `{record.reference}`",
-                    f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
+                    f"`{reference}` `{case.stage_label}` `{case.status}`",
                 ]
             )
-            if record.assigned_parts_user_id is not None:
-                lines.append(f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}")
-            if record.last_synced_at is not None:
-                lines.append(f"Last synced: `{record.last_synced_at}`")
-            lines.append(f"Description: {record.description}")
-        if len(records) > 15:
-            lines.extend(["", f"...and {len(records) - 15} more request(s)"])
+            if case.open_request_ids:
+                lines.append("Tracked requests: " + ", ".join(f"`{request_id}`" for request_id in case.open_request_ids))
+            if case.assigned_parts_user_id is not None:
+                lines.append(f"Assigned to: {self._discord_user_label(case.assigned_parts_user_id)}")
+            if case.next_action:
+                lines.append(f"Next action: {case.next_action}")
+            if case.blocker:
+                lines.append(f"Blocker: {case.blocker}")
+
+            for record in grouped_records[:3]:
+                lines.append(
+                    f"Request `{record.request_id}` `{record.status}` requested by {self._discord_user_label(record.requested_by_user_id)}"
+                )
+                if record.last_synced_at is not None:
+                    lines.append(f"Last synced: `{record.last_synced_at}`")
+                lines.append(f"Description: {record.description}")
+            if len(grouped_records) > 3:
+                lines.append(f"...and {len(grouped_records) - 3} more tracked request(s)")
+
+        if len(records_by_reference) > 15:
+            lines.extend(["", f"...and {len(records_by_reference) - 15} more reference group(s)"])
         return CommandResult(message="\n".join(lines))
 
     async def update_request(self, request: PartRequestUpdate) -> CommandResult:
@@ -168,6 +203,16 @@ class PartsCannonService:
             )
             records[index] = updated
             self.request_store.save(records)
+            if self.workflow_state_service is not None:
+                self.workflow_state_service.record_event(
+                    event_type=f"parts_request_{normalized_status}",
+                    source="ops_hub.parts_queue",
+                    reference=updated.reference,
+                    sr_id=self._reference_sr_id(updated.reference),
+                    actor_user_id=request.updated_by_user_id,
+                    summary=f"Updated tracked parts request {updated.request_id} to {updated.status}.",
+                    occurred_at=updated.updated_at,
+                )
             await self.notifications.send_notice(
                 topic="parts.request.updated",
                 message=f"Updated parts request {request.request_id} to {request.status}.",
@@ -190,28 +235,48 @@ class PartsCannonService:
         if record is None:
             return CommandResult(message=f"Parts request `{request_id}` was not found.")
 
+        case = await self._parts_case_for_reference(record.reference)
         lines = [
             f"**Parts Request {record.request_id}**",
             f"Reference: `{record.reference}`",
-            f"Status: `{record.status}`",
+            f"Tracked status: `{record.status}`",
             "",
-            "**People**",
-            f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
-            (
-                f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}"
-                if record.assigned_parts_user_id is not None
-                else "Assigned to: unassigned"
-            ),
-            "",
-            "**Tracking**",
-            f"Created at: `{record.created_at}`",
-            f"Updated at: `{record.updated_at}`",
-            f"Last synced: `{record.last_synced_at}`" if record.last_synced_at is not None else "Last synced: never",
-            f"Last reconciled: `{record.last_reconciled_at}`" if record.last_reconciled_at is not None else "Last reconciled: never",
-            "",
-            "**Request**",
-            f"Description: {record.description}",
+            "**Parts Case**",
+            f"Case stage: `{case.stage_label}`",
+            f"Case status: `{case.status}`",
         ]
+        if case.open_request_ids:
+            lines.append("Open tracked requests: " + ", ".join(f"`{item}`" for item in case.open_request_ids))
+        if case.assigned_parts_user_id is not None:
+            lines.append(f"Assigned parts owner: {self._discord_user_label(case.assigned_parts_user_id)}")
+        if case.next_action:
+            lines.append(f"Next action: {case.next_action}")
+        if case.blocker:
+            lines.append(f"Blocker: {case.blocker}")
+        if case.latest_status_text:
+            lines.append(f"Latest status: {case.latest_status_text}")
+
+        lines.extend(
+            [
+                "",
+                "**People**",
+                f"Requested by: {self._discord_user_label(record.requested_by_user_id)}",
+                (
+                    f"Assigned to: {self._discord_user_label(record.assigned_parts_user_id)}"
+                    if record.assigned_parts_user_id is not None
+                    else "Assigned to: unassigned"
+                ),
+                "",
+                "**Tracking**",
+                f"Created at: `{record.created_at}`",
+                f"Updated at: `{record.updated_at}`",
+                f"Last synced: `{record.last_synced_at}`" if record.last_synced_at is not None else "Last synced: never",
+                f"Last reconciled: `{record.last_reconciled_at}`" if record.last_reconciled_at is not None else "Last reconciled: never",
+                "",
+                "**Request**",
+                f"Description: {record.description}",
+            ]
+        )
         if record.technician_bluefolder_user_id is not None:
             lines.append(f"Technician mapping: {self._technician_mapping_label(record)}")
         if record.downstream_note:
@@ -242,6 +307,25 @@ class PartsCannonService:
             )
             records[index] = updated
             self.request_store.save(records)
+            if self.workflow_state_service is not None:
+                self.workflow_state_service.record_event(
+                    event_type="parts_request_claimed" if request.parts_user_id is not None else "parts_request_unclaimed",
+                    source="ops_hub.parts_queue",
+                    reference=updated.reference,
+                    sr_id=self._reference_sr_id(updated.reference),
+                    actor_user_id=request.updated_by_user_id,
+                    summary=(
+                        f"Assigned tracked parts request {updated.request_id}."
+                        if request.parts_user_id is not None
+                        else f"Cleared assignment for tracked parts request {updated.request_id}."
+                    ),
+                    details=(
+                        f"assigned_parts_user_id={request.parts_user_id}"
+                        if request.parts_user_id is not None
+                        else None
+                    ),
+                    occurred_at=updated.updated_at,
+                )
             if request.parts_user_id is None:
                 topic = "parts.request.unclaimed"
                 message = f"Unassigned parts request {request.request_id}."
@@ -429,6 +513,39 @@ class PartsCannonService:
             for record in self.request_store.load()
             if record.reference.strip().casefold() == normalized_reference
         ]
+
+    async def _parts_case_for_reference(self, reference: str):
+        """Return a derived parts case for a reference."""
+        if self.workflow_state_service is not None:
+            return await self.workflow_state_service.get_parts_case(reference=reference)
+
+        open_request_ids = [
+            record.request_id
+            for record in self._matching_records_for_reference(reference)
+            if record.status not in {"resolved", "cancelled"}
+        ]
+        return type(
+            "FallbackPartsCase",
+            (),
+            {
+                "reference": reference,
+                "stage_label": "Tracked Requests Only",
+                "status": "open" if open_request_ids else "inactive",
+                "open_request_ids": open_request_ids,
+                "assigned_parts_user_id": None,
+                "next_action": "Review the tracked request and confirm the next parts step.",
+                "blocker": None,
+                "latest_status_text": None,
+            },
+        )()
+
+    @staticmethod
+    def _reference_sr_id(reference: str) -> int | None:
+        candidate = reference.strip().upper()
+        if not candidate.startswith("SR-"):
+            return None
+        value = candidate[3:]
+        return int(value) if value.isdigit() else None
 
     def _build_lookup_result(
         self,

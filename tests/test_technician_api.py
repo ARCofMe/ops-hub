@@ -14,6 +14,7 @@ def test_resolve_technician_uses_mapping_subject() -> None:
         technician_directory_service=SimpleNamespace(mappings=lambda: {123: 9001}),
         parts_cannon_service=SimpleNamespace(),
         photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
     )
 
     assert service.resolve_technician(token_subject="123") == (123, 9001)
@@ -31,6 +32,7 @@ def test_get_today_normalizes_assignment_shape() -> None:
         technician_directory_service=SimpleNamespace(mappings=lambda: {123: 9001}),
         parts_cannon_service=SimpleNamespace(),
         photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
     )
 
     jobs = asyncio.run(service.get_today(technician_bluefolder_user_id=9001))
@@ -55,6 +57,7 @@ def test_submit_note_requires_text() -> None:
         technician_directory_service=SimpleNamespace(mappings=lambda: {}),
         parts_cannon_service=SimpleNamespace(),
         photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
     )
 
     result = asyncio.run(
@@ -67,3 +70,40 @@ def test_submit_note_requires_text() -> None:
     )
 
     assert result == {"success": False, "message": "A note is required."}
+
+
+def test_get_job_includes_parts_case_fields() -> None:
+    bluefolder = SimpleNamespace(
+        get_job_summary=lambda reference: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                available=True,
+                service_request_id="100",
+                address="123 Main",
+                city="Portland",
+                state="ME",
+                postal_code="04101",
+                customer_name="Pat",
+                customer_phone="555-0100",
+                service_request_status="Scheduled",
+            ),
+        )
+    )
+    workflow_state = SimpleNamespace(
+        get_parts_case=lambda sr_id: asyncio.sleep(
+            0,
+            result=SimpleNamespace(stage_label="Ready for Scheduling", next_action="Call customer to schedule."),
+        )
+    )
+    service = TechnicianApiService(
+        bluefolder_service=bluefolder,
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=workflow_state,
+    )
+
+    payload = asyncio.run(service.get_job(sr_id=100))
+
+    assert payload["partsStage"] == "Ready for Scheduling"
+    assert payload["nextAction"] == "Call customer to schedule."
