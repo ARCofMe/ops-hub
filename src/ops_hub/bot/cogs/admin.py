@@ -279,6 +279,21 @@ class AdminCog(commands.Cog):
         """Report recent dry-run notices captured by the notification service."""
         await self._send_message(interaction, await self._build_recent_notices())
 
+    @app_commands.command(name="policy_status", description="Show current workflow policy status and urgent items.")
+    async def policy_status(self, interaction: discord.Interaction) -> None:
+        """Report the current workflow policy snapshot."""
+        await self._send_deferred_message(interaction, await self._build_policy_status())
+
+    @app_commands.command(name="policy_preview", description="Preview the current workflow policy cycle without sending notices.")
+    async def policy_preview(self, interaction: discord.Interaction) -> None:
+        """Preview policy results without emitting notices."""
+        await self._send_deferred_message(interaction, await self._build_policy_preview())
+
+    @app_commands.command(name="policy_run_now", description="Run the workflow policy cycle immediately.")
+    async def policy_run_now(self, interaction: discord.Interaction) -> None:
+        """Execute the workflow policy cycle now."""
+        await self._send_deferred_message(interaction, await self._build_policy_run_now())
+
     @app_commands.command(name="technician_mappings", description="Show current technician to BlueFolder mappings.")
     async def technician_mappings(self, interaction: discord.Interaction) -> None:
         """Show the merged technician mapping set."""
@@ -518,6 +533,54 @@ class AdminCog(commands.Cog):
             lines.append(f"`{notice.topic}` via `{notice.delivery}`")
             lines.append(notice.message)
         return "\n".join(lines)
+
+    async def _build_policy_status(self) -> str:
+        """Render current workflow policy state and urgent queue items."""
+        snapshot = self.bot.container.workflow_state_service.current_snapshot()
+        urgent_items = [item for item in snapshot.attention_items if item.age_bucket == "urgent"]
+        lines = [
+            "Workflow Policy Status",
+            (
+                f"Runner: enabled every `{self.bot.settings.workflow_policy_interval_seconds}`s"
+                if self.bot.settings.enable_workflow_policy_runner
+                else "Runner: disabled"
+            ),
+            f"Attention items: `{len(snapshot.attention_items)}`",
+            f"Parts cases: `{len(snapshot.parts_cases)}`",
+            f"Workflow events: `{len(snapshot.events)}`",
+            f"Urgent items: `{len(urgent_items)}`",
+        ]
+        if urgent_items:
+            lines.extend(["", "Urgent queue"])
+            for item in urgent_items[:8]:
+                lines.append(f"`{item.reference}` `{item.stage_label}` `{item.age_hours or 0}h`")
+                if item.next_action:
+                    lines.append(f"Next action: {item.next_action}")
+        return "\n".join(lines)
+
+    async def _build_policy_preview(self) -> str:
+        """Preview the next policy cycle without sending notices."""
+        summary = await self.bot.container.workflow_state_service.run_policy_cycle(emit_notices=False)
+        return "\n".join(
+            [
+                "Workflow Policy Preview",
+                f"Attention items: `{summary['attention_items']}`",
+                f"Urgent items: `{summary['urgent_items']}`",
+                "Notices sent: `0`",
+            ]
+        )
+
+    async def _build_policy_run_now(self) -> str:
+        """Run the workflow policy cycle immediately and report the result."""
+        summary = await self.bot.container.workflow_state_service.run_policy_cycle(emit_notices=True)
+        return "\n".join(
+            [
+                "Workflow Policy Run",
+                f"Attention items: `{summary['attention_items']}`",
+                f"Urgent items: `{summary['urgent_items']}`",
+                f"Notices sent: `{summary['notices_sent']}`",
+            ]
+        )
 
     def _bluefolder_config_status(self) -> str:
         """Summarize whether BlueFolder credentials are minimally configured."""
@@ -765,7 +828,7 @@ class AdminCog(commands.Cog):
         return "\n".join(
             [
                 "Command Access",
-                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/technician_mappings`, `/bluefolder_techs`, `/export_member_map`, `/suggest_tech_map`, `/lookup_member`, `/export_technician_mappings`, `/import_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
+                "`/ops_status`, `/config_check`, `/service_status`, `/recent_notices`, `/policy_status`, `/policy_preview`, `/policy_run_now`, `/technician_mappings`, `/bluefolder_techs`, `/export_member_map`, `/suggest_tech_map`, `/lookup_member`, `/export_technician_mappings`, `/import_technician_mappings`, `/reload_technician_mappings`, `/set_technician_mapping`, `/remove_technician_mapping`, `/command_access`, `/photo_features`, `/set_photo_feature`, `/clear_photo_feature`: admin only",
                 "`/job`, `/assignments`, `/customer`: technicians, dispatchers, admins",
                 "`/eta`, `/enroute`, `/start`, `/no_answer`, `/not_home`, `/reschedule_needed`, `/note`: technicians, admins",
                 "`/mdlsn`, `/photo_archive`: technicians, admins (if enabled)",

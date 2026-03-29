@@ -52,16 +52,16 @@ class WorkflowStateService:
         """Return the current workflow snapshot."""
         return self.store.load()
 
-    async def run_policy_cycle(self) -> dict[str, int]:
-        """Refresh workflow state and emit deduplicated urgent notices."""
+    async def run_policy_cycle(self, *, emit_notices: bool = True) -> dict[str, int]:
+        """Refresh workflow state and optionally emit deduplicated urgent notices."""
         mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent"]
         notices_sent = 0
         for item in urgent_items:
-            if self._was_notified_recently(item_id=item.item_id, hours=6):
+            if emit_notices and self._was_notified_recently(item_id=item.item_id, hours=6):
                 continue
-            if self.notification_service is not None:
+            if emit_notices and self.notification_service is not None:
                 await self.notification_service.send_notice(
                     topic=f"dispatch.attention.{item.stage}",
                     message=(
@@ -71,16 +71,17 @@ class WorkflowStateService:
                         f"{item.next_action or ''}".strip()
                     ),
                 )
-            self.record_event(
-                event_type="attention_notice",
-                source="ops_hub.policy",
-                sr_id=item.sr_id,
-                reference=item.reference,
-                summary=f"Sent urgent attention notice for {item.reference}.",
-                details=item.next_action,
-                metadata={"item_id": item.item_id, "age_bucket": item.age_bucket or ""},
-            )
-            notices_sent += 1
+            if emit_notices:
+                self.record_event(
+                    event_type="attention_notice",
+                    source="ops_hub.policy",
+                    sr_id=item.sr_id,
+                    reference=item.reference,
+                    summary=f"Sent urgent attention notice for {item.reference}.",
+                    details=item.next_action,
+                    metadata={"item_id": item.item_id, "age_bucket": item.age_bucket or ""},
+                )
+                notices_sent += 1
         return {"attention_items": len(attention_items), "urgent_items": len(urgent_items), "notices_sent": notices_sent}
 
     async def get_parts_case(self, *, sr_id: int | None = None, reference: str | None = None) -> PartsCaseRecord:

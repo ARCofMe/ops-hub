@@ -13,6 +13,7 @@ from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.bot.cogs.admin import AdminCog, _build_tech_map_suggestion, _parse_mapping_import_text
 from ops_hub.core.config import Settings
 from ops_hub.core.container import build_container
+from ops_hub.models.requests import AttentionItemRecord, WorkflowStateSnapshot
 
 
 def _settings(**overrides: object) -> Settings:
@@ -178,6 +179,49 @@ def test_build_recent_notices_renders_latest_entries() -> None:
     assert "Parts lookup requested for SR-100." in result
 
 
+def test_build_policy_status_renders_current_snapshot() -> None:
+    cog = _build_cog(enable_workflow_policy_runner=True, workflow_policy_interval_seconds=300)
+    cog.bot.container.workflow_state_service.store.save(
+        WorkflowStateSnapshot(
+            updated_at="2026-03-29T10:00:00+00:00",
+            attention_items=[
+                AttentionItemRecord(
+                    item_id="dispatch:SR-100:part_ready",
+                    sr_id=100,
+                    reference="SR-100",
+                    category="dispatch",
+                    status="open",
+                    stage="part_ready",
+                    stage_label="Ready for Scheduling",
+                    age_bucket="urgent",
+                    age_hours=80,
+                    summary="Dryer repair",
+                    next_action="Schedule return visit.",
+                )
+            ],
+            parts_cases=[],
+            events=[],
+        )
+    )
+
+    result = asyncio.run(cog._build_policy_status())
+
+    assert "Workflow Policy Status" in result
+    assert "Runner: enabled every `300`s" in result
+    assert "Urgent items: `1`" in result
+    assert "`SR-100` `Ready for Scheduling` `80h`" in result
+
+
+def test_build_policy_preview_does_not_send_notices() -> None:
+    cog = _build_cog()
+
+    result = asyncio.run(cog._build_policy_preview())
+
+    assert "Workflow Policy Preview" in result
+    assert "Notices sent: `0`" in result
+    assert asyncio.run(cog.bot.container.notification_service.status()).notice_count == 0
+
+
 def test_build_technician_mappings_renders_current_map() -> None:
     cog = _build_cog(technician_bluefolder_user_map={42: 13051})
 
@@ -193,6 +237,9 @@ def test_build_command_access_describes_current_scopes() -> None:
     result = cog._build_command_access()
 
     assert "`/ops_status`" in result
+    assert "`/policy_status`" in result
+    assert "`/policy_preview`" in result
+    assert "`/policy_run_now`" in result
     assert "`/bluefolder_techs`" in result
     assert "`/export_member_map`" in result
     assert "`/suggest_tech_map`" in result
@@ -431,6 +478,48 @@ def test_admin_cog_service_status_uses_deferred_followup() -> None:
 
     assert interaction.response.deferred is True
     assert interaction.followup.messages == [{"content": "Service status ready", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_policy_status_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_build(self) -> str:
+        return "Policy status ready"
+
+    with patch.object(AdminCog, "_build_policy_status", new=fake_build):
+        asyncio.run(cog.policy_status.callback(cog, interaction))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Policy status ready", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_policy_preview_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_build(self) -> str:
+        return "Policy preview ready"
+
+    with patch.object(AdminCog, "_build_policy_preview", new=fake_build):
+        asyncio.run(cog.policy_preview.callback(cog, interaction))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Policy preview ready", "ephemeral": True, "embed": None}]
+
+
+def test_admin_cog_policy_run_now_uses_deferred_followup() -> None:
+    cog = _build_cog(admin_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_build(self) -> str:
+        return "Policy run ready"
+
+    with patch.object(AdminCog, "_build_policy_run_now", new=fake_build):
+        asyncio.run(cog.policy_run_now.callback(cog, interaction))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Policy run ready", "ephemeral": True, "embed": None}]
 
 
 def test_admin_cog_export_member_map_uses_deferred_followup() -> None:
