@@ -218,6 +218,7 @@ def test_build_policy_preview_does_not_send_notices() -> None:
     result = asyncio.run(cog._build_policy_preview())
 
     assert "Workflow Policy Preview" in result
+    assert "Topics routed: `0`" in result or "Topics routed: `1`" in result
     assert "Notices sent: `0`" in result
     assert asyncio.run(cog.bot.container.notification_service.status()).notice_count == 0
 

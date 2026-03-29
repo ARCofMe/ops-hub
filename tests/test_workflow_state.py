@@ -177,9 +177,55 @@ def test_workflow_state_policy_cycle_sends_and_dedupes_urgent_notices() -> None:
 
     assert first["urgent_items"] == 1
     assert first["notices_sent"] == 1
+    assert first["topics_count"] == 1
     assert second["notices_sent"] == 0
     assert len(notifications.records) == 1
-    assert notifications.records[0].topic == "dispatch.attention.part_ready"
+    assert notifications.records[0].topic == "dispatch.scheduling_attention"
+
+
+def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="1",
+            sr_id=100,
+            reference="SR-100",
+            category="dispatch",
+            status="open",
+            stage="part_ready",
+            stage_label="Ready for Scheduling",
+            summary="Dryer repair",
+        )
+    ) == "dispatch.scheduling_attention"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="2",
+            sr_id=101,
+            reference="SR-101",
+            category="dispatch",
+            status="open",
+            stage="issue_reported",
+            stage_label="Issue Reported",
+            summary="Washer repair",
+        )
+    ) == "dispatch.parts_issue_attention"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="3",
+            sr_id=102,
+            reference="SR-102",
+            category="dispatch",
+            status="open",
+            stage="part_received",
+            stage_label="Received",
+            summary="Oven repair",
+        )
+    ) == "parts.received_attention"
 
 
 def test_workflow_state_service_builds_service_request_timeline() -> None:

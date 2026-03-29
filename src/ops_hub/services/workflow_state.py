@@ -58,12 +58,14 @@ class WorkflowStateService:
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent"]
         notices_sent = 0
+        routed_topics: set[str] = set()
         for item in urgent_items:
+            topic = self._policy_topic_for_item(item)
             if emit_notices and self._was_notified_recently(item_id=item.item_id, hours=6):
                 continue
             if emit_notices and self.notification_service is not None:
                 await self.notification_service.send_notice(
-                    topic=f"dispatch.attention.{item.stage}",
+                    topic=topic,
                     message=(
                         f"{item.reference} needs dispatch attention. "
                         f"Stage: {item.stage_label}. "
@@ -71,6 +73,7 @@ class WorkflowStateService:
                         f"{item.next_action or ''}".strip()
                     ),
                 )
+                routed_topics.add(topic)
             if emit_notices:
                 self.record_event(
                     event_type="attention_notice",
@@ -79,10 +82,15 @@ class WorkflowStateService:
                     reference=item.reference,
                     summary=f"Sent urgent attention notice for {item.reference}.",
                     details=item.next_action,
-                    metadata={"item_id": item.item_id, "age_bucket": item.age_bucket or ""},
+                    metadata={"item_id": item.item_id, "age_bucket": item.age_bucket or "", "topic": topic},
                 )
                 notices_sent += 1
-        return {"attention_items": len(attention_items), "urgent_items": len(urgent_items), "notices_sent": notices_sent}
+        return {
+            "attention_items": len(attention_items),
+            "urgent_items": len(urgent_items),
+            "notices_sent": notices_sent,
+            "topics_count": len(routed_topics),
+        }
 
     async def get_parts_case(self, *, sr_id: int | None = None, reference: str | None = None) -> PartsCaseRecord:
         """Return a current parts-case record for one SR or reference."""
@@ -469,6 +477,16 @@ class WorkflowStateService:
             if age_hours <= cutoff_hours:
                 return True
         return False
+
+    @staticmethod
+    def _policy_topic_for_item(item: AttentionItemRecord) -> str:
+        if item.stage == "part_ready":
+            return "dispatch.scheduling_attention"
+        if item.stage == "issue_reported":
+            return "dispatch.parts_issue_attention"
+        if item.stage == "part_received":
+            return "parts.received_attention"
+        return f"dispatch.attention.{item.stage}"
 
     def _age_hours(self, raw_timestamp: str | None) -> int | None:
         parsed = self._parse_datetime(raw_timestamp)
