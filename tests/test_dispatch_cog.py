@@ -313,6 +313,73 @@ def test_dispatch_cog_attention_assign_uses_deferred_followup() -> None:
     assert interaction.followup.messages == [{"content": "Attention owner assigned", "ephemeral": True, "embed": None}]
 
 
+def test_dispatch_cog_attention_clear_owner_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_clear(self, *, sr_id, stage, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention owner cleared")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "clear_dispatch_attention_owner", new=fake_clear):
+        asyncio.run(cog.attention_clear_owner.callback(cog, interaction, sr_id=100, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention owner cleared", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_attention_unsnooze_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_unsnooze(self, *, sr_id, stage, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention unsnoozed")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "unsnooze_dispatch_attention", new=fake_unsnooze):
+        asyncio.run(cog.attention_unsnooze.callback(cog, interaction, sr_id=100, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention unsnoozed", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_attention_reopen_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_reopen(self, *, sr_id, stage, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention reopened")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "reopen_dispatch_attention", new=fake_reopen):
+        asyncio.run(cog.attention_reopen.callback(cog, interaction, sr_id=100, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention reopened", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_attention_history_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_history(self, *, sr_id, stage):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        return SimpleNamespace(message="Attention history")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "describe_dispatch_attention_history", new=fake_history):
+        asyncio.run(cog.attention_history.callback(cog, interaction, sr_id=100, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention history", "ephemeral": True, "embed": None}]
+
+
 def test_dispatch_cog_dispatch_heatmap_sends_embed() -> None:
     cog = _build_cog(dispatcher_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)

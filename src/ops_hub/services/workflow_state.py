@@ -196,6 +196,140 @@ class WorkflowStateService:
         )
         return item
 
+    def clear_attention_owner(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Clear any explicit follow-up owner on one attention item."""
+
+        def mutate(item: AttentionItemRecord) -> None:
+            item.assigned_owner_discord_user_id = None
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_owner_cleared",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Cleared dispatch attention owner for {item.reference}.",
+            details=item.stage_label,
+            metadata={"item_id": item.item_id, "stage": item.stage},
+        )
+        return item
+
+    def reopen_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Reopen one attention item and return it to active policy tracking."""
+
+        def mutate(item: AttentionItemRecord) -> None:
+            item.status = "open"
+            item.acknowledged_at = None
+            item.acknowledged_by_user_id = None
+            item.snoozed_until = None
+            item.snoozed_by_user_id = None
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_reopened",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Reopened dispatch attention for {item.reference}.",
+            details=item.stage_label,
+            metadata={"item_id": item.item_id, "stage": item.stage},
+        )
+        return item
+
+    def unsnooze_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Remove a snooze and return the attention item to open state."""
+
+        def mutate(item: AttentionItemRecord) -> None:
+            item.status = "open"
+            item.snoozed_until = None
+            item.snoozed_by_user_id = None
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_unsnoozed",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Unsnoozed dispatch attention for {item.reference}.",
+            details=item.stage_label,
+            metadata={"item_id": item.item_id, "stage": item.stage},
+        )
+        return item
+
+    def describe_attention_history(self, *, sr_id: int, stage: str | None = None) -> CommandResult:
+        """Render recent workflow-state history for one attention item."""
+        snapshot = self.store.load()
+        item = self._find_attention_item(snapshot.attention_items, sr_id=sr_id, stage=stage)
+        history = self._attention_history_events(snapshot.events, item=item)
+
+        lines = [
+            f"**Attention History {item.reference}**",
+            f"Stage: `{item.stage_label}`",
+            f"Status: `{item.status}`",
+        ]
+        if item.assigned_owner_discord_user_id is not None:
+            lines.append(f"Follow-up owner: {self._user_label(item.assigned_owner_discord_user_id)}")
+        if item.snoozed_until:
+            lines.append(f"Snoozed until: `{item.snoozed_until}`")
+        if not history:
+            lines.extend(["", "No workflow actions have been recorded for this attention item yet."])
+            return CommandResult(message="\n".join(lines))
+
+        for index, event in enumerate(history[:10], start=1):
+            lines.extend(
+                [
+                    "",
+                    f"{index}. `{event.occurred_at}` `{event.event_type}`",
+                    event.summary,
+                ]
+            )
+            if event.actor_label:
+                lines.append(f"Actor: {event.actor_label}")
+            if event.details:
+                lines.append(f"Detail: {event.details}")
+        if len(history) > 10:
+            lines.extend(["", f"...and {len(history) - 10} more workflow event(s)"])
+        return CommandResult(message="\n".join(lines))
+
     async def get_parts_case(self, *, sr_id: int | None = None, reference: str | None = None) -> PartsCaseRecord:
         """Return a current parts-case record for one SR or reference."""
         resolved_reference = reference or (f"SR-{sr_id}" if sr_id is not None else None)
@@ -586,6 +720,24 @@ class WorkflowStateService:
         item.snoozed_by_user_id = None
         if previous.acknowledged_at:
             item.status = "acknowledged"
+
+    @staticmethod
+    def _attention_history_events(
+        events: list[WorkflowEventRecord],
+        *,
+        item: AttentionItemRecord,
+    ) -> list[WorkflowEventRecord]:
+        relevant = [
+            event
+            for event in events
+            if event.metadata.get("item_id") == item.item_id
+            or (
+                event.reference == item.reference
+                and event.metadata.get("stage") == item.stage
+                and event.source.startswith("ops_hub.dispatch")
+            )
+        ]
+        return sorted(relevant, key=lambda event: event.occurred_at or "", reverse=True)
 
     def _update_attention_item(
         self,

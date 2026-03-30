@@ -244,6 +244,43 @@ def test_workflow_state_acknowledge_marks_item_and_suppresses_policy() -> None:
     assert notifications.records == []
 
 
+def test_workflow_state_lifecycle_controls_restore_open_attention_and_history() -> None:
+    notifications = NotificationService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type(
+            "DirectoryStub",
+            (),
+            {
+                "mapping_records": lambda self: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+                "discord_mention": lambda self, user_id: f"<@{user_id}>",
+            },
+        )(),
+        notification_service=notifications,
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    service.assign_attention_owner(sr_id=100, stage="part_ready", assigned_owner_discord_user_id=99, actor_user_id=77)
+    service.clear_attention_owner(sr_id=100, stage="part_ready", actor_user_id=77)
+    service.snooze_attention(sr_id=100, stage="part_ready", hours=4, actor_user_id=77)
+    service.unsnooze_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    service.acknowledge_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    reopened = service.reopen_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    summary = asyncio.run(service.run_policy_cycle())
+    history = service.describe_attention_history(sr_id=100, stage="part_ready")
+
+    assert reopened.status == "open"
+    assert reopened.acknowledged_at is None
+    assert reopened.snoozed_until is None
+    assert summary["urgent_items"] == 1
+    assert summary["notices_sent"] == 1
+    assert "attention_reopened" in history.message
+    assert "attention_unsnoozed" in history.message
+    assert "attention_owner_cleared" in history.message
+
+
 def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
     service = WorkflowStateService(
         store=WorkflowStateStore(file_path=None),
@@ -472,3 +509,33 @@ def test_dispatch_service_attention_actions_use_workflow_state() -> None:
     assert "Snoozed until:" in snoozed.message
     assert "**Acknowledged Attention Item**" in acknowledged.message
     assert "Status: `acknowledged`" in acknowledged.message
+
+
+def test_dispatch_service_attention_lifecycle_and_history_use_workflow_state() -> None:
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type("DirectoryStub", (), {"discord_mention": lambda self, user_id: f"<@{user_id}>", "mapping_records": lambda self: []})(),
+    )
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    dispatch = DispatchService(
+        adapter=object(),
+        bluefolder_service=FakeBlueFolderService(),
+        workflow_state_service=service,
+        technician_directory_service=type("DirectoryStub", (), {"discord_mention": lambda self, user_id: f"<@{user_id}>", "reverse_mappings": lambda self: {13051: 42}})(),
+    )
+
+    asyncio.run(dispatch.assign_dispatch_attention_owner(sr_id=100, stage="part_ready", assigned_owner_discord_user_id=99, actor_user_id=77))
+    cleared = asyncio.run(dispatch.clear_dispatch_attention_owner(sr_id=100, stage="part_ready", actor_user_id=77))
+    asyncio.run(dispatch.snooze_dispatch_attention(sr_id=100, stage="part_ready", hours=4, actor_user_id=77))
+    unsnoozed = asyncio.run(dispatch.unsnooze_dispatch_attention(sr_id=100, stage="part_ready", actor_user_id=77))
+    asyncio.run(dispatch.acknowledge_dispatch_attention(sr_id=100, stage="part_ready", actor_user_id=77))
+    reopened = asyncio.run(dispatch.reopen_dispatch_attention(sr_id=100, stage="part_ready", actor_user_id=77))
+    history = asyncio.run(dispatch.describe_dispatch_attention_history(sr_id=100, stage="part_ready"))
+
+    assert "**Cleared owner Attention Item**" in cleared.message
+    assert "Status: `open`" in unsnoozed.message
+    assert "**Reopened Attention Item**" in reopened.message
+    assert "**Attention History SR-100**" in history.message
+    assert "attention_reopened" in history.message

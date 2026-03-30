@@ -256,7 +256,7 @@ def test_build_command_access_describes_current_scopes() -> None:
     assert "`/photo_reminder_check`: dispatchers, admins" in result
     assert "`/part_request`, `/my_part_requests`, `/missing_part`, `/damaged_part`: technicians, parts, admins" in result
     assert "`/parts_brief`, `/parts_notes`: technicians, parts, dispatchers, admins" in result
-    assert "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/attention_ack`, `/attention_snooze`, `/attention_assign`, `/dispatch_next`, `/photo_compliance_board`: dispatchers, admins" in result
+    assert "`/tech_assignments`, `/tech_job`, `/dispatch_board`, `/dispatch_attention`, `/attention_ack`, `/attention_snooze`, `/attention_assign`, `/attention_clear_owner`, `/attention_unsnooze`, `/attention_reopen`, `/attention_history`, `/dispatch_next`, `/photo_compliance_board`: dispatchers, admins" in result
     assert "`/part`, `/part_requests`, `/part_request_detail`, `/part_update`, `/part_claim`, `/part_unclaim`, `/part_sync`, `/part_reconcile`, `/part_ordered`, `/part_eta`, `/part_tracking`, `/part_received`, `/part_ready`: parts, admins" in result
 
 

@@ -442,6 +442,80 @@ class DispatchService:
             return CommandResult(message=str(exc))
         return CommandResult(message=await self._format_attention_action_result("Assigned owner", item))
 
+    async def clear_dispatch_attention_owner(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Clear an explicit follow-up owner on one attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.clear_attention_owner(
+                sr_id=sr_id,
+                stage=stage,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Cleared owner", item))
+
+    async def reopen_dispatch_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Reopen one workflow-backed attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.reopen_attention(
+                sr_id=sr_id,
+                stage=stage,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Reopened", item))
+
+    async def unsnooze_dispatch_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Remove a snooze from one workflow-backed attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.unsnooze_attention(
+                sr_id=sr_id,
+                stage=stage,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Unsnoozed", item))
+
+    async def describe_dispatch_attention_history(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+    ) -> CommandResult:
+        """Render recent workflow-state history for one attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention history requires the workflow state service.")
+        try:
+            return self.workflow_state_service.describe_attention_history(sr_id=sr_id, stage=stage)
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+
     async def lookup_route_map(self, request: JobLookupRequest) -> RouteMapResult:
         """Return an inline route preview for the current technician/day."""
         target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id

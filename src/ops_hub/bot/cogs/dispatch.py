@@ -158,6 +158,81 @@ class DispatchCog(commands.Cog):
         )
         await self._send_deferred_result(interaction, result.message)
 
+    @app_commands.command(name="attention_clear_owner", description="Clear the explicit follow-up owner on one workflow attention item.")
+    @app_commands.describe(
+        sr_id="Service request id to update.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_clear_owner(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Clear a follow-up owner on one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.clear_dispatch_attention_owner(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="attention_unsnooze", description="Remove the current snooze from one workflow attention item.")
+    @app_commands.describe(
+        sr_id="Service request id to unsnooze.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_unsnooze(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Remove a snooze from one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.unsnooze_dispatch_attention(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="attention_reopen", description="Return one workflow attention item to open state.")
+    @app_commands.describe(
+        sr_id="Service request id to reopen.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_reopen(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Reopen one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.reopen_dispatch_attention(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="attention_history", description="Show recent workflow history for one attention item.")
+    @app_commands.describe(
+        sr_id="Service request id to inspect.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_history(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Show recent workflow history for one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.describe_dispatch_attention_history(
+            sr_id=sr_id,
+            stage=stage,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
     @app_commands.command(name="dispatch_next", description="Show the recommended next dispatch action for a specific SR.")
     async def dispatch_next(self, interaction: discord.Interaction, sr_id: int) -> None:
         """Dispatcher-focused next-action summary for a service request."""
