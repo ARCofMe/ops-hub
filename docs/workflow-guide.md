@@ -29,6 +29,15 @@ It answers:
 
 `parts_case` is the SR-level parts summary that dispatch and parts can both work from.
 
+Current attention stages include:
+
+- `issue_reported`
+- `part_received`
+- `part_ready`
+- `quote_needed`
+
+`quote_needed` is the office-facing handoff for jobs that still need customer or landlord approval, quote delivery, or prepayment before normal scheduling can continue.
+
 ## Attention Statuses
 
 Attention items currently use these statuses:
@@ -92,6 +101,13 @@ Current policy behavior:
 - urgent items without an explicit follow-up owner route through an owner-gap topic
 - long-suppressed urgent items route through a suppressed reminder topic
 
+Current stage routing includes:
+
+- `issue_reported` -> `dispatch.parts_issue_attention`
+- `part_received` -> `parts.received_attention`
+- `part_ready` -> `dispatch.scheduling_attention`
+- `quote_needed` -> `dispatch.quote_needed_attention`
+
 Examples:
 
 - `dispatch.scheduling_attention`
@@ -106,6 +122,12 @@ That means Ops Hub now distinguishes:
 - work that came back after manual reopening
 - urgent work that still has no explicit follow-up owner
 - work that has stayed hidden too long behind acknowledgement or snooze state
+
+For quote-driven jobs, this means Ops Hub can separate:
+
+- work that still needs a customer quote
+- landlord/prepayment follow-up that belongs with office staff
+- normal parts or scheduling follow-up
 
 ## Channel Routing
 

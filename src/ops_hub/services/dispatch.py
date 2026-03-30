@@ -234,11 +234,12 @@ class DispatchService:
             "issue_reported": "Issue Reported",
             "part_received": "Received",
             "part_ready": "Ready for Scheduling",
+            "quote_needed": "Quote Needed",
         }
         normalized_stage_filter = None if stage_filter is None else stage_filter.strip().lower().replace(" ", "_")
         if normalized_stage_filter is not None and normalized_stage_filter not in allowed_stages:
             return CommandResult(
-                message="Dispatch attention stage filter must be one of: `issue_reported`, `part_received`, `part_ready`."
+                message="Dispatch attention stage filter must be one of: `issue_reported`, `part_received`, `part_ready`, `quote_needed`."
             )
         allowed_age_buckets = {"fresh", "warm", "stale", "urgent"}
         normalized_age_bucket = None if age_bucket is None else age_bucket.strip().lower().replace(" ", "_")
@@ -356,7 +357,7 @@ class DispatchService:
             "**Dispatch Attention**",
             f"Scanned jobs: `{scanned_jobs}`",
             f"Attention jobs: `{len(attention_items)}`",
-            "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`",
+            "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`, `Quote Needed`",
             *(
                 [f"Stage filter: `{allowed_stages[normalized_stage_filter]}`"]
                 if normalized_stage_filter is not None

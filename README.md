@@ -26,6 +26,7 @@ Ops Hub currently focuses on:
 - tracked internal parts queue workflows where supplemental coordination is useful
 - admin/debug visibility for runtime, config, mappings, service state, and workflow policy
 - owned workflow state for attention queues, parts cases, event history, and policy-driven reminders
+- distinct office/dispatch attention flows for parts follow-up, scheduling-ready work, and quote-needed handoffs
 
 BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process today.
 
@@ -203,6 +204,8 @@ The BlueFolder-native path also supports:
 - recommended next-action guidance
 - dispatcher attention filtering by stage or technician
 - queue-based workflow objects that survive across command invocations
+
+That means statuses like `Need Parts`, `Waiting Parts`, and `Quote Needed` do not need to rely on BlueFolder comments plus Teams memory alone. Ops Hub can derive a queue item, route it to the right audience, and keep the next action and follow-up owner visible until the handoff is complete.
 
 ### Supplemental Internal Parts Queue
 

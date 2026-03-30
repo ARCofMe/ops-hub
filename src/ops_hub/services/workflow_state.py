@@ -41,6 +41,7 @@ class WorkflowStateService:
             "issue_reported": (2, 12, 24),
             "part_received": (8, 24, 72),
             "part_ready": (4, 24, 48),
+            "quote_needed": (2, 8, 24),
             "requested": (8, 24, 48),
             "ordered": (12, 48, 96),
             "received": (8, 24, 72),
@@ -538,6 +539,7 @@ class WorkflowStateService:
             "issue_reported": "Issue Reported",
             "part_received": "Received",
             "part_ready": "Ready for Scheduling",
+            "quote_needed": "Quote Needed",
         }
         normalized_stage_filter = None if stage_filter is None else stage_filter.strip().lower().replace(" ", "_")
 
@@ -560,6 +562,7 @@ class WorkflowStateService:
                 scanned_jobs += 1
                 reference = f"SR-{sr_id}"
                 snapshot = await self.bluefolder_service.get_parts_snapshot(sr_id)
+                job_summary = await self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False)
                 matching_requests = self._matching_requests(parts_records, reference)
                 parts_case = self._build_parts_case(
                     reference=reference,
@@ -568,51 +571,31 @@ class WorkflowStateService:
                     matching_requests=matching_requests,
                 )
                 parts_cases[parts_case.case_id] = parts_case
-                if snapshot is None or snapshot.stage not in allowed_stages:
-                    continue
-                if normalized_stage_filter is not None and snapshot.stage != normalized_stage_filter:
-                    continue
 
                 location = " ".join(part for part in [assignment.get("city"), assignment.get("state")] if part).strip()
                 route_label = str(assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow") or "").strip() or None
                 summary = str(assignment.get("subject") or "Unlabeled Service Request")
-                item_id = f"dispatch:{reference}:{snapshot.stage}"
-                previous = previous_items.get(item_id)
-                first_seen_at = (
-                    previous.first_seen_at
-                    if previous is not None and previous.first_seen_at
-                    else snapshot.latest_issue_at
-                    or snapshot.latest_status_at
-                    or self._now()
-                )
-                derived_age_hours = self._age_hours(first_seen_at)
-                derived_age_bucket = self._age_bucket_for_stage(snapshot.stage, derived_age_hours)
-                derived_item = AttentionItemRecord(
-                    item_id=item_id,
-                    sr_id=sr_id,
+                derived_items = self._build_assignment_attention_items(
+                    record=record,
                     reference=reference,
-                    category="dispatch",
-                    status="open",
-                    stage=snapshot.stage,
-                    stage_label=snapshot.stage_label,
-                    summary=summary,
-                    details=snapshot.latest_status_text or snapshot.latest_issue_text,
+                    sr_id=sr_id,
+                    assignment_summary=summary,
                     location=location or None,
                     route_label=route_label,
-                    owner_discord_user_id=record.discord_user_id,
-                    owner_bluefolder_user_id=record.bluefolder_user_id,
-                    next_action=self.bluefolder_service.recommend_next_action(snapshot),
-                    first_seen_at=first_seen_at,
-                    last_seen_at=self._now(),
-                    age_hours=derived_age_hours,
-                    age_bucket=derived_age_bucket,
+                    parts_snapshot=snapshot,
+                    job_summary=job_summary,
+                    previous_items=previous_items,
                 )
-                self._carry_attention_state(derived_item, previous)
-                if age_bucket is not None and derived_item.age_bucket != age_bucket:
-                    continue
-                if owner_discord_user_id is not None and derived_item.owner_discord_user_id != owner_discord_user_id:
-                    continue
-                attention_items.append(derived_item)
+                for derived_item in derived_items:
+                    if derived_item.stage not in allowed_stages:
+                        continue
+                    if normalized_stage_filter is not None and derived_item.stage != normalized_stage_filter:
+                        continue
+                    if age_bucket is not None and derived_item.age_bucket != age_bucket:
+                        continue
+                    if owner_discord_user_id is not None and derived_item.owner_discord_user_id != owner_discord_user_id:
+                        continue
+                    attention_items.append(derived_item)
 
         for reference in {record.reference for record in parts_records}:
             sr_id = self._reference_sr_id(reference)
@@ -634,6 +617,82 @@ class WorkflowStateService:
         )
         self.store.save(updated_snapshot)
         return scanned_jobs, attention_items
+
+    def _build_assignment_attention_items(
+        self,
+        *,
+        record: TechnicianMappingRecord,
+        reference: str,
+        sr_id: int,
+        assignment_summary: str,
+        location: str | None,
+        route_label: str | None,
+        parts_snapshot: PartsLifecycleSnapshot | None,
+        job_summary,
+        previous_items: dict[str, AttentionItemRecord],
+    ) -> list[AttentionItemRecord]:
+        """Build any current attention items for one assigned SR."""
+        items: list[AttentionItemRecord] = []
+        if parts_snapshot is not None:
+            item_id = f"dispatch:{reference}:{parts_snapshot.stage}"
+            previous = previous_items.get(item_id)
+            first_seen_at = (
+                previous.first_seen_at
+                if previous is not None and previous.first_seen_at
+                else parts_snapshot.latest_issue_at
+                or parts_snapshot.latest_status_at
+                or self._now()
+            )
+            derived_item = AttentionItemRecord(
+                item_id=item_id,
+                sr_id=sr_id,
+                reference=reference,
+                category="dispatch",
+                status="open",
+                stage=parts_snapshot.stage,
+                stage_label=parts_snapshot.stage_label,
+                summary=assignment_summary,
+                details=parts_snapshot.latest_status_text or parts_snapshot.latest_issue_text,
+                location=location,
+                route_label=route_label,
+                owner_discord_user_id=record.discord_user_id,
+                owner_bluefolder_user_id=record.bluefolder_user_id,
+                next_action=self.bluefolder_service.recommend_next_action(parts_snapshot),
+                first_seen_at=first_seen_at,
+                last_seen_at=self._now(),
+                age_hours=self._age_hours(first_seen_at),
+                age_bucket=self._age_bucket_for_stage(parts_snapshot.stage, self._age_hours(first_seen_at)),
+            )
+            self._carry_attention_state(derived_item, previous)
+            items.append(derived_item)
+
+        if self._is_quote_needed_status(getattr(job_summary, "service_request_status", None)):
+            item_id = f"dispatch:{reference}:quote_needed"
+            previous = previous_items.get(item_id)
+            first_seen_at = previous.first_seen_at if previous is not None and previous.first_seen_at else self._now()
+            derived_item = AttentionItemRecord(
+                item_id=item_id,
+                sr_id=sr_id,
+                reference=reference,
+                category="dispatch",
+                status="open",
+                stage="quote_needed",
+                stage_label="Quote Needed",
+                summary=assignment_summary,
+                details=f"Current SR status is `{getattr(job_summary, 'service_request_status', 'Quote Needed')}`.",
+                location=location,
+                route_label=route_label,
+                owner_discord_user_id=record.discord_user_id,
+                owner_bluefolder_user_id=record.bluefolder_user_id,
+                next_action=self._quote_needed_next_action(getattr(job_summary, "service_request_status", None)),
+                first_seen_at=first_seen_at,
+                last_seen_at=self._now(),
+                age_hours=self._age_hours(first_seen_at),
+                age_bucket=self._age_bucket_for_stage("quote_needed", self._age_hours(first_seen_at)),
+            )
+            self._carry_attention_state(derived_item, previous)
+            items.append(derived_item)
+        return items
 
     async def build_service_request_timeline(self, sr_id: int) -> ServiceRequestTimeline:
         """Build a merged SR timeline from Ops Hub events and known parts state."""
@@ -930,6 +989,8 @@ class WorkflowStateService:
             base = "dispatch.parts_issue_attention"
         elif item.stage == "part_received":
             base = "parts.received_attention"
+        elif item.stage == "quote_needed":
+            base = "dispatch.quote_needed_attention"
         else:
             base = f"dispatch.attention.{item.stage}"
         topic = base
@@ -971,6 +1032,20 @@ class WorkflowStateService:
             if latest is None or occurred_at > latest:
                 latest = occurred_at
         return latest
+
+    @staticmethod
+    def _is_quote_needed_status(service_request_status: str | None) -> bool:
+        normalized = str(service_request_status or "").strip().casefold()
+        if not normalized:
+            return False
+        return "quote needed" in normalized or normalized in {"needs quote", "quote"}
+
+    @staticmethod
+    def _quote_needed_next_action(service_request_status: str | None) -> str:
+        normalized = str(service_request_status or "").strip().casefold()
+        if "landlord" in normalized:
+            return "Office should contact the landlord, confirm quote approval or prepayment, and then move the SR forward."
+        return "Dispatch or office should contact the customer, confirm the quote path, and capture approval before scheduling."
 
     def _age_hours(self, raw_timestamp: str | None) -> int | None:
         parsed = self._parse_datetime(raw_timestamp)

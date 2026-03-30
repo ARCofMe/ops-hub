@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ops_hub.models.requests import (
     AttentionItemRecord,
+    BlueFolderJobSummary,
     PartRequestRecord,
     PartsCaseRecord,
     PartsLifecycleSnapshot,
@@ -48,6 +49,18 @@ class FakeBlueFolderService:
 
     async def get_parts_snapshot(self, sr_id: int):
         return self.snapshots.get(sr_id)
+
+    async def get_job_summary(self, reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id=reference.replace("SR-", ""),
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Scheduled",
+        )
 
     def recommend_next_action(self, snapshot: PartsLifecycleSnapshot) -> str:
         return f"Schedule follow-up for {snapshot.stage_label}."
@@ -142,6 +155,40 @@ def test_workflow_state_service_filters_attention_by_age_and_owner() -> None:
     assert len(attention_items) == 1
     assert attention_items[0].age_bucket == "urgent"
     assert attention_items[0].owner_discord_user_id == 42
+
+
+def test_workflow_state_service_derives_quote_needed_attention() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Quote Needed",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    scanned_jobs, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+
+    quote_items = [item for item in attention_items if item.stage == "quote_needed"]
+
+    assert scanned_jobs == 1
+    assert len(quote_items) == 1
+    assert quote_items[0].stage_label == "Quote Needed"
+    assert "confirm the quote path" in (quote_items[0].next_action or "")
 
 
 def test_workflow_state_service_uses_stage_specific_sla_thresholds() -> None:
@@ -425,6 +472,18 @@ def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
         ),
         qualifiers=("reopened", "owner_gap"),
     ) == "dispatch.scheduling_attention.reopened.owner_gap"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="7",
+            sr_id=106,
+            reference="SR-106",
+            category="dispatch",
+            status="open",
+            stage="quote_needed",
+            stage_label="Quote Needed",
+            summary="Dishwasher repair",
+        ),
+    ) == "dispatch.quote_needed_attention"
 
 
 def test_workflow_state_service_builds_service_request_timeline() -> None:

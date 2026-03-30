@@ -81,6 +81,15 @@ Use this when:
 
 This is one of the best commands for active triage.
 
+Stage filters currently include:
+
+- `issue_reported`
+- `part_received`
+- `part_ready`
+- `quote_needed`
+
+Use `quote_needed` when you want jobs that still need quote delivery, approval, landlord contact, or prepayment before scheduling can move.
+
 ## Queue Actions
 
 ### `/attention_ack`
@@ -165,6 +174,14 @@ Use this when:
 6. Use `/dispatch_next` for specific follow-up guidance
 7. Use `/customer` when you need the right contact information
 8. Use `/photo_compliance_board` when photo follow-up matters
+
+For jobs in a quote path:
+
+1. Use `/dispatch_attention stage:quote_needed`
+2. Use `/customer` to confirm who should be contacted
+3. Assign an owner with `/attention_assign`
+4. Acknowledge it once the quote or approval path is actively in motion
+5. Reopen it if customer or landlord approval falls through and the item needs active escalation again
 
 ## Policy Behavior
 

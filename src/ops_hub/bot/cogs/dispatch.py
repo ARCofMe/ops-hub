@@ -70,7 +70,7 @@ class DispatchCog(commands.Cog):
 
     @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
     @app_commands.describe(
-        stage="Optional stage filter: issue_reported, part_received, or part_ready.",
+        stage="Optional stage filter: issue_reported, part_received, part_ready, or quote_needed.",
         age="Optional age filter: fresh, warm, stale, or urgent.",
         bluefolder_user_id="Optional BlueFolder technician user id to narrow the view.",
         owner_discord_user_id="Optional Discord technician user id to narrow by owner.",
