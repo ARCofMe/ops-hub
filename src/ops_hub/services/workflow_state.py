@@ -78,10 +78,20 @@ class WorkflowStateService:
         mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent" and item.status == "open"]
+        reopened_urgent_items = [item for item in urgent_items if self._was_reopened_recently(item=item, hours=24)]
+        suppressed_urgent_items = [
+            item
+            for item in attention_items
+            if item.age_bucket == "urgent"
+            and item.status != "open"
+            and self._suppression_age_hours(item=item) >= 24
+        ]
         notices_sent = 0
+        suppressed_reminders_sent = 0
         routed_topics: set[str] = set()
         for item in urgent_items:
-            topic = self._policy_topic_for_item(item)
+            notice_kind = "reopened" if item in reopened_urgent_items else "urgent"
+            topic = self._policy_topic_for_item(item, notice_kind=notice_kind)
             if emit_notices and self._was_notified_recently(item_id=item.item_id, hours=6):
                 continue
             if emit_notices and self.notification_service is not None:
@@ -97,19 +107,66 @@ class WorkflowStateService:
                 routed_topics.add(topic)
             if emit_notices:
                 self.record_event(
-                    event_type="attention_notice",
+                    event_type="attention_reopened_notice" if notice_kind == "reopened" else "attention_notice",
                     source="ops_hub.policy",
                     sr_id=item.sr_id,
                     reference=item.reference,
-                    summary=f"Sent urgent attention notice for {item.reference}.",
+                    summary=(
+                        f"Sent reopened urgent attention notice for {item.reference}."
+                        if notice_kind == "reopened"
+                        else f"Sent urgent attention notice for {item.reference}."
+                    ),
                     details=item.next_action,
-                    metadata={"item_id": item.item_id, "age_bucket": item.age_bucket or "", "topic": topic},
+                    metadata={
+                        "item_id": item.item_id,
+                        "age_bucket": item.age_bucket or "",
+                        "topic": topic,
+                        "notice_kind": notice_kind,
+                    },
                 )
                 notices_sent += 1
+        for item in suppressed_urgent_items:
+            topic = self._policy_topic_for_item(item, notice_kind="suppressed")
+            if emit_notices and self._was_policy_event_recently(
+                item_id=item.item_id,
+                event_types={"attention_suppressed_reminder"},
+                hours=24,
+            ):
+                continue
+            if emit_notices and self.notification_service is not None:
+                await self.notification_service.send_notice(
+                    topic=topic,
+                    message=(
+                        f"{item.reference} remains urgent but is currently `{item.status}`. "
+                        f"Stage: {item.stage_label}. "
+                        f"Age: {item.age_hours or 0}h ({item.age_bucket}). "
+                        f"Review whether it should stay suppressed."
+                    ),
+                )
+                routed_topics.add(topic)
+            if emit_notices:
+                self.record_event(
+                    event_type="attention_suppressed_reminder",
+                    source="ops_hub.policy",
+                    sr_id=item.sr_id,
+                    reference=item.reference,
+                    summary=f"Sent suppressed urgent reminder for {item.reference}.",
+                    details=item.next_action,
+                    metadata={
+                        "item_id": item.item_id,
+                        "age_bucket": item.age_bucket or "",
+                        "topic": topic,
+                        "notice_kind": "suppressed",
+                    },
+                )
+                suppressed_reminders_sent += 1
         return {
             "attention_items": len(attention_items),
             "urgent_items": len(urgent_items),
+            "reopened_urgent_items": len(reopened_urgent_items),
+            "suppressed_urgent_items": len(suppressed_urgent_items),
             "notices_sent": notices_sent,
+            "suppressed_reminders_sent": suppressed_reminders_sent,
             "topics_count": len(routed_topics),
         }
 
@@ -825,10 +882,27 @@ class WorkflowStateService:
         return (datetime.now(UTC) + timedelta(hours=hours)).isoformat(timespec="seconds")
 
     def _was_notified_recently(self, *, item_id: str, hours: int) -> bool:
+        return self._was_policy_event_recently(
+            item_id=item_id,
+            event_types={"attention_notice", "attention_reopened_notice"},
+            hours=hours,
+            allowed_sources={"ops_hub.policy"},
+        )
+
+    def _was_policy_event_recently(
+        self,
+        *,
+        item_id: str,
+        event_types: set[str],
+        hours: int,
+        allowed_sources: set[str] | None = None,
+    ) -> bool:
         cutoff_hours = max(hours, 0)
         now = datetime.now(UTC)
         for event in reversed(self.store.load().events):
-            if event.source != "ops_hub.policy" or event.event_type != "attention_notice":
+            if allowed_sources is not None and event.source not in allowed_sources:
+                continue
+            if event.event_type not in event_types:
                 continue
             if event.metadata.get("item_id") != item_id:
                 continue
@@ -841,14 +915,53 @@ class WorkflowStateService:
         return False
 
     @staticmethod
-    def _policy_topic_for_item(item: AttentionItemRecord) -> str:
+    def _policy_topic_for_item(item: AttentionItemRecord, *, notice_kind: str = "urgent") -> str:
         if item.stage == "part_ready":
-            return "dispatch.scheduling_attention"
-        if item.stage == "issue_reported":
-            return "dispatch.parts_issue_attention"
-        if item.stage == "part_received":
-            return "parts.received_attention"
-        return f"dispatch.attention.{item.stage}"
+            base = "dispatch.scheduling_attention"
+        elif item.stage == "issue_reported":
+            base = "dispatch.parts_issue_attention"
+        elif item.stage == "part_received":
+            base = "parts.received_attention"
+        else:
+            base = f"dispatch.attention.{item.stage}"
+        if notice_kind == "reopened":
+            return f"{base}.reopened"
+        if notice_kind == "suppressed":
+            return f"{base}.suppressed"
+        return base
+
+    def _was_reopened_recently(self, *, item: AttentionItemRecord, hours: int) -> bool:
+        return self._was_policy_event_recently(
+            item_id=item.item_id,
+            event_types={"attention_reopened"},
+            hours=hours,
+            allowed_sources={"ops_hub.dispatch"},
+        )
+
+    def _suppression_age_hours(self, *, item: AttentionItemRecord) -> int:
+        relevant_event_types = {"attention_acknowledged", "attention_snoozed"}
+        latest = self._latest_event_time(item_id=item.item_id, event_types=relevant_event_types)
+        if latest is None:
+            latest = self._parse_datetime(item.acknowledged_at or item.snoozed_until)
+        if latest is None:
+            return 0
+        return max(int((datetime.now(UTC) - latest).total_seconds() // 3600), 0)
+
+    def _latest_event_time(self, *, item_id: str, event_types: set[str]) -> datetime | None:
+        latest: datetime | None = None
+        for event in self.store.load().events:
+            if event.source not in {"ops_hub.dispatch", "ops_hub.policy"}:
+                continue
+            if event.event_type not in event_types:
+                continue
+            if event.metadata.get("item_id") != item_id:
+                continue
+            occurred_at = self._parse_datetime(event.occurred_at)
+            if occurred_at is None:
+                continue
+            if latest is None or occurred_at > latest:
+                latest = occurred_at
+        return latest
 
     def _age_hours(self, raw_timestamp: str | None) -> int | None:
         parsed = self._parse_datetime(raw_timestamp)

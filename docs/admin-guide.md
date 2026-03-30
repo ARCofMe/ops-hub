@@ -8,6 +8,9 @@ This guide covers the admin and support commands in Ops Hub.
 - `/config_check`
 - `/service_status`
 - `/recent_notices`
+- `/policy_status`
+- `/policy_preview`
+- `/policy_run_now`
 - `/bluefolder_techs`
 - `/export_member_map`
 - `/suggest_tech_map`
@@ -40,10 +43,28 @@ Use these when:
 ### Notices and routing
 
 - `/recent_notices`
+- `/policy_status`
+- `/policy_preview`
+- `/policy_run_now`
 
 Use this when:
 
 - you want to confirm dispatch or parts notices are firing
+- you want to see urgent open vs urgent suppressed counts
+- you want to preview policy behavior without sending live notices
+- you want to force one policy cycle during support or cutover work
+
+### Workflow-state visibility
+
+- `/service_status`
+- `/policy_status`
+
+Use these when:
+
+- you need the current queue status mix
+- you want to confirm follow-up owner coverage
+- you want to see whether urgent work is open or currently suppressed
+- you need to confirm that reopened or suppressed-reminder behavior is working
 
 ### Technician mapping management
 
@@ -79,5 +100,7 @@ Use these when:
 
 - verify mappings before debugging role problems
 - use `service_status` before assuming a BlueFolder bug
+- use `policy_preview` before `policy_run_now` when testing routing changes
+- check `policy_status` and `recent_notices` together when validating escalation behavior
 - keep feature toggles explicit when testing risky workflows
 - patch issues in Ops Hub, not in the older bot

@@ -21,10 +21,11 @@ Ops Hub currently focuses on:
 
 - BlueFolder job lookups and service request context
 - technician assignment views
-- dispatcher assignment, board, triage, and next-action views
+- dispatcher assignment, board, triage, next-action, and queue-control views
 - BlueFolder-native parts comment/update flows
 - tracked internal parts queue workflows where supplemental coordination is useful
-- admin/debug visibility for runtime, config, mappings, and service state
+- admin/debug visibility for runtime, config, mappings, service state, and workflow policy
+- owned workflow state for attention queues, parts cases, event history, and policy-driven reminders
 
 BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process today.
 
@@ -39,6 +40,7 @@ If you are using the bot day to day:
 - `docs/dispatch-guide.md`
 - `docs/parts-guide.md`
 - `docs/admin-guide.md`
+- `docs/workflow-guide.md`
 
 If you are operating or deploying the bot:
 
@@ -83,6 +85,13 @@ Dispatch / admin:
 - `/tech_job`
 - `/dispatch_board`
 - `/dispatch_attention`
+- `/attention_ack`
+- `/attention_snooze`
+- `/attention_assign`
+- `/attention_clear_owner`
+- `/attention_unsnooze`
+- `/attention_reopen`
+- `/attention_history`
 - `/dispatch_next`
 
 Technician / parts / admin:
@@ -133,6 +142,9 @@ Admin only:
 - `/config_check`
 - `/service_status`
 - `/recent_notices`
+- `/policy_status`
+- `/policy_preview`
+- `/policy_run_now`
 - `/bluefolder_techs`
 - `/export_member_map`
 - `/suggest_tech_map`
@@ -190,6 +202,7 @@ The BlueFolder-native path also supports:
 - normalized lifecycle stage summaries
 - recommended next-action guidance
 - dispatcher attention filtering by stage or technician
+- queue-based workflow objects that survive across command invocations
 
 ### Supplemental Internal Parts Queue
 
@@ -213,6 +226,36 @@ That queue is supplemental. The long-term direction is still BlueFolder-centered
 - Most replies are ephemeral, which means only the person who ran the command sees the reply
 - BlueFolder is still the main operational record
 - Ops Hub helps the team move faster inside Discord while still writing the important updates back to BlueFolder
+- Dispatch queue actions now persist as Ops Hub workflow state, not just one-off command output
+
+## Workflow State
+
+Ops Hub now has a real workflow-state layer for dispatch and parts.
+
+Current workflow objects:
+
+- `attention_item`
+- `parts_case`
+
+Current queue states:
+
+- `open`
+- `acknowledged`
+- `snoozed`
+
+Dispatch can now:
+
+- inspect queue state with `/dispatch_board`, `/dispatch_attention`, and `/attention_history`
+- mutate queue state with `/attention_ack`, `/attention_snooze`, `/attention_assign`, `/attention_clear_owner`, `/attention_unsnooze`, and `/attention_reopen`
+- work from a persisted audit trail instead of only ephemeral command output
+
+The policy runner now distinguishes:
+
+- urgent open items
+- reopened urgent items
+- long-suppressed urgent items
+
+See `docs/workflow-guide.md` for the operator model.
 
 ## Quick Start
 
@@ -238,6 +281,12 @@ To enable Discord notice routing, optionally set:
 - `OPS_HUB_NOTIFICATION_CHANNEL_ID` for a default notice channel
 - `OPS_HUB_NOTIFICATION_CHANNEL_MAP` to route topic families like `parts` or `dispatch` to specific channels
 
+To enable background workflow policy execution, also set:
+
+- `OPS_HUB_ENABLE_WORKFLOW_POLICY_RUNNER=true`
+- `OPS_HUB_WORKFLOW_POLICY_INTERVAL_SECONDS`
+- optionally `OPS_HUB_WORKFLOW_STATE_FILE` to persist workflow state to disk
+
 To enable the technician app API, also set:
 
 - `OPS_HUB_ENABLE_TECHNICIAN_API=true`
@@ -251,6 +300,8 @@ Current technician app routes:
 - `GET /tech/me/today`
 - `GET /tech/jobs`
 - `GET /tech/jobs/<sr_id>`
+- `GET /tech/jobs/<sr_id>/parts`
+- `GET /tech/jobs/<sr_id>/timeline`
 - `POST /tech/jobs/<sr_id>/status`
 - `POST /tech/jobs/<sr_id>/notes`
 - `POST /tech/jobs/<sr_id>/parts`

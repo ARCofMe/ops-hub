@@ -592,6 +592,8 @@ class AdminCog(commands.Cog):
                 "Workflow Policy Preview",
                 f"Attention items: `{summary['attention_items']}`",
                 f"Urgent items: `{summary['urgent_items']}`",
+                f"Reopened urgent items: `{summary['reopened_urgent_items']}`",
+                f"Suppressed urgent items: `{summary['suppressed_urgent_items']}`",
                 f"Topics routed: `{summary['topics_count']}`",
                 "Notices sent: `0`",
             ]
@@ -605,8 +607,11 @@ class AdminCog(commands.Cog):
                 "Workflow Policy Run",
                 f"Attention items: `{summary['attention_items']}`",
                 f"Urgent items: `{summary['urgent_items']}`",
+                f"Reopened urgent items: `{summary['reopened_urgent_items']}`",
+                f"Suppressed urgent items: `{summary['suppressed_urgent_items']}`",
                 f"Topics routed: `{summary['topics_count']}`",
                 f"Notices sent: `{summary['notices_sent']}`",
+                f"Suppressed reminders sent: `{summary['suppressed_reminders_sent']}`",
             ]
         )
 

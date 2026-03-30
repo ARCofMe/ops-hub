@@ -183,6 +183,66 @@ def test_workflow_state_policy_cycle_sends_and_dedupes_urgent_notices() -> None:
     assert notifications.records[0].topic == "dispatch.scheduling_attention"
 
 
+def test_workflow_state_policy_cycle_routes_reopened_urgent_items_separately() -> None:
+    notifications = NotificationService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type(
+            "DirectoryStub",
+            (),
+            {
+                "mapping_records": lambda self: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+                "discord_mention": lambda self, user_id: f"<@{user_id}>",
+            },
+        )(),
+        notification_service=notifications,
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    service.reopen_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    summary = asyncio.run(service.run_policy_cycle())
+
+    assert summary["urgent_items"] == 1
+    assert summary["reopened_urgent_items"] == 1
+    assert summary["notices_sent"] == 1
+    assert notifications.records[0].topic == "dispatch.scheduling_attention.reopened"
+
+
+def test_workflow_state_policy_cycle_reminds_on_long_suppressed_urgent_items() -> None:
+    notifications = NotificationService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type(
+            "DirectoryStub",
+            (),
+            {
+                "mapping_records": lambda self: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+                "discord_mention": lambda self, user_id: f"<@{user_id}>",
+            },
+        )(),
+        notification_service=notifications,
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    service.acknowledge_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    snapshot = service.current_snapshot()
+    snapshot.events[-1].occurred_at = "2026-03-20T10:00:00+00:00"
+    service.store.save(snapshot)
+
+    first = asyncio.run(service.run_policy_cycle())
+    second = asyncio.run(service.run_policy_cycle())
+
+    assert first["urgent_items"] == 0
+    assert first["suppressed_urgent_items"] == 1
+    assert first["suppressed_reminders_sent"] == 1
+    assert notifications.records[0].topic == "dispatch.scheduling_attention.suppressed"
+    assert second["suppressed_reminders_sent"] == 0
+
+
 def test_workflow_state_actions_persist_across_refresh_and_suppress_policy() -> None:
     notifications = NotificationService()
     service = WorkflowStateService(
@@ -324,6 +384,32 @@ def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
             summary="Oven repair",
         )
     ) == "parts.received_attention"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="4",
+            sr_id=103,
+            reference="SR-103",
+            category="dispatch",
+            status="open",
+            stage="part_ready",
+            stage_label="Ready for Scheduling",
+            summary="Range repair",
+        ),
+        notice_kind="reopened",
+    ) == "dispatch.scheduling_attention.reopened"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="5",
+            sr_id=104,
+            reference="SR-104",
+            category="dispatch",
+            status="acknowledged",
+            stage="part_ready",
+            stage_label="Ready for Scheduling",
+            summary="Fridge repair",
+        ),
+        notice_kind="suppressed",
+    ) == "dispatch.scheduling_attention.suppressed"
 
 
 def test_workflow_state_service_builds_service_request_timeline() -> None:

@@ -11,6 +11,13 @@ This guide covers the main dispatch workflows in Ops Hub.
 - `/tech_job`
 - `/dispatch_board`
 - `/dispatch_attention`
+- `/attention_ack`
+- `/attention_snooze`
+- `/attention_assign`
+- `/attention_clear_owner`
+- `/attention_unsnooze`
+- `/attention_reopen`
+- `/attention_history`
 - `/dispatch_next`
 - `/photo_compliance_board`
 
@@ -62,6 +69,7 @@ Use this when:
 
 - you want a team view across mapped technicians
 - you want to see who is active today
+- you want queue counts, status mix, owner coverage, and urgent suppression at a glance
 
 ### `/dispatch_attention`
 
@@ -69,8 +77,63 @@ Use this when:
 
 - you want jobs that need attention now
 - you want to filter by stage or technician
+- you want to inspect follow-up owner, status, snooze state, and next action
 
 This is one of the best commands for active triage.
+
+## Queue Actions
+
+### `/attention_ack`
+
+Use this when:
+
+- you have seen the item
+- follow-up is actively in motion
+- you want to suppress the normal urgent notice path for now
+
+### `/attention_snooze`
+
+Use this when:
+
+- follow-up should intentionally wait
+- you do not want the item treated as open right now
+
+Do not use this as a substitute for ownership. If a person is working it now, use `/attention_assign` and usually `/attention_ack`.
+
+### `/attention_assign`
+
+Use this when:
+
+- one person should clearly own next follow-up
+- you want queue ownership to show up in board metrics and detail views
+
+### `/attention_clear_owner`
+
+Use this when:
+
+- the current follow-up owner is no longer correct
+- ownership should return to the queue
+
+### `/attention_unsnooze`
+
+Use this when:
+
+- the wait period is over
+- the item should return to active queue handling without a full reopen flow
+
+### `/attention_reopen`
+
+Use this when:
+
+- acknowledged or snoozed work needs to go back to active policy tracking
+- you want reopened urgent work to be treated as active escalation again
+
+### `/attention_history`
+
+Use this when:
+
+- the current queue state does not make sense
+- you want to see acknowledgement, snooze, owner, reopen, and policy reminder events for one SR
 
 ### `/dispatch_next`
 
@@ -96,6 +159,25 @@ Use this when:
 
 1. Use `/dispatch_board` for the day view
 2. Use `/dispatch_attention` for actionable jobs
-3. Use `/dispatch_next` for specific follow-up guidance
-4. Use `/customer` when you need the right contact information
-5. Use `/photo_compliance_board` when photo follow-up matters
+3. Use `/attention_assign` to make ownership explicit
+4. Use `/attention_ack` or `/attention_snooze` to reflect real queue state
+5. Use `/attention_history` if the status looks wrong or stale
+6. Use `/dispatch_next` for specific follow-up guidance
+7. Use `/customer` when you need the right contact information
+8. Use `/photo_compliance_board` when photo follow-up matters
+
+## Policy Behavior
+
+Ops Hub policy now distinguishes:
+
+- newly urgent open work
+- reopened urgent work
+- long-suppressed urgent work
+
+That means queue actions are not just cosmetic. They affect:
+
+- what gets routed
+- what gets suppressed
+- what gets re-escalated later
+
+If you want the detailed system behavior, see `workflow-guide.md`.

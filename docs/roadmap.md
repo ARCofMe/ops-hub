@@ -126,6 +126,18 @@ Primary outcome targets:
 - less dispatcher thrash
 - faster technician updates
 
+## Current Progress
+
+The shared workflow-state foundation is now in place:
+
+- `attention_item` and `parts_case` are real persisted workflow objects
+- dispatch works from queue views instead of only one-off lookups
+- queue actions support ownership, acknowledge, snooze, unsnooze, reopen, and history
+- the policy runner distinguishes urgent, reopened-urgent, and suppressed-urgent reminders
+- dispatch and admin surfaces expose queue metrics and urgent suppression state
+
+The next frontier is less about introducing the workflow layer and more about sharpening how it drives role-specific execution.
+
 ## 90-Day Delivery Plan
 
 ### Phase 1: Days 1-30

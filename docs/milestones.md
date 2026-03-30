@@ -151,3 +151,15 @@ Treat this as the point where Ops Hub is the primary operations bot, not the mig
 4. Expand the technician API into a real field workflow surface
 5. Add metrics, escalation, and policy-driven follow-up
 6. Revisit photo ingest after the revised concept is ready
+
+## Current Phase Notes
+
+Recently completed:
+
+- queue-first dispatch workflow state
+- manual attention lifecycle controls
+- queue history and audit trail
+- queue metrics and suppression visibility
+- differentiated policy routing for reopened urgent and long-suppressed urgent work
+
+Documentation now needs to stay current with the workflow-state system as a first-class product surface, not just the legacy command list.
