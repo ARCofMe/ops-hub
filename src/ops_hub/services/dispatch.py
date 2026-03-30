@@ -267,11 +267,15 @@ class DispatchService:
                     [
                         f"`{item.reference}` {item.summary}",
                         f"Stage: `{item.stage_label}`",
-                        *( [f"Age: `{item.age_bucket}` ({item.age_hours}h)"] if item.age_bucket and item.age_hours is not None else [] ),
+                        *([f"Age: `{item.age_bucket}` ({item.age_hours}h)"] if item.age_bucket and item.age_hours is not None else []),
                         f"Technician: {await self._technician_label(bluefolder_user_id=item.owner_bluefolder_user_id)}",
-                        *( [f"Location: {item.location}"] if item.location else [] ),
-                        *( [f"Window: `{item.route_label}`"] if item.route_label else [] ),
-                        *( [f"Next action: {item.next_action}"] if item.next_action else [] ),
+                        *([f"Follow-up owner: {await self._technician_label(discord_user_id=item.assigned_owner_discord_user_id)}"] if item.assigned_owner_discord_user_id is not None else []),
+                        *([f"Status: `{item.status}`"] if item.status != "open" else []),
+                        *([f"Snoozed until: `{item.snoozed_until}`"] if item.snoozed_until else []),
+                        *([f"Acknowledged by: {await self._technician_label(discord_user_id=item.acknowledged_by_user_id)}"] if item.acknowledged_by_user_id is not None else []),
+                        *([f"Location: {item.location}"] if item.location else []),
+                        *([f"Window: `{item.route_label}`"] if item.route_label else []),
+                        *([f"Next action: {item.next_action}"] if item.next_action else []),
                     ]
                 )
                 for item in derived_attention_items
@@ -373,6 +377,70 @@ class DispatchService:
         if len(attention_items) > 20:
             lines.extend(["", f"...and {len(attention_items) - 20} more attention job(s)"])
         return CommandResult(message="\n".join(lines))
+
+    async def acknowledge_dispatch_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Acknowledge one workflow-backed attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.acknowledge_attention(
+                sr_id=sr_id,
+                stage=stage,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Acknowledged", item))
+
+    async def snooze_dispatch_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        hours: int,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Snooze one workflow-backed attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.snooze_attention(
+                sr_id=sr_id,
+                stage=stage,
+                hours=hours,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Snoozed", item))
+
+    async def assign_dispatch_attention_owner(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        assigned_owner_discord_user_id: int,
+        actor_user_id: int,
+    ) -> CommandResult:
+        """Assign an explicit follow-up owner on one attention item."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.assign_attention_owner(
+                sr_id=sr_id,
+                stage=stage,
+                assigned_owner_discord_user_id=assigned_owner_discord_user_id,
+                actor_user_id=actor_user_id,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        return CommandResult(message=await self._format_attention_action_result("Assigned owner", item))
 
     async def lookup_route_map(self, request: JobLookupRequest) -> RouteMapResult:
         """Return an inline route preview for the current technician/day."""
@@ -620,6 +688,25 @@ class DispatchService:
             discord_user_id=record.discord_user_id,
             bluefolder_user_id=record.bluefolder_user_id,
         )
+
+    async def _format_attention_action_result(self, action: str, item) -> str:
+        """Render a concise response for one attention mutation."""
+        lines = [
+            f"**{action} Attention Item**",
+            f"Reference: `{item.reference}`",
+            f"Stage: `{item.stage_label}`",
+            f"Status: `{item.status}`",
+        ]
+        if item.assigned_owner_discord_user_id is not None:
+            lines.append(
+                "Follow-up owner: "
+                f"{await self._technician_label(discord_user_id=item.assigned_owner_discord_user_id)}"
+            )
+        if item.snoozed_until:
+            lines.append(f"Snoozed until: `{item.snoozed_until}`")
+        if item.next_action:
+            lines.append(f"Next action: {item.next_action}")
+        return "\n".join(lines)
 
     async def _technician_label(
         self,

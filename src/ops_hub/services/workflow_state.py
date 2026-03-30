@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from ops_hub.models.requests import (
@@ -56,7 +56,7 @@ class WorkflowStateService:
         """Refresh workflow state and optionally emit deduplicated urgent notices."""
         mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
         _, attention_items = await self.refresh_dispatch_attention(mappings)
-        urgent_items = [item for item in attention_items if item.age_bucket == "urgent"]
+        urgent_items = [item for item in attention_items if item.age_bucket == "urgent" and item.status == "open"]
         notices_sent = 0
         routed_topics: set[str] = set()
         for item in urgent_items:
@@ -91,6 +91,110 @@ class WorkflowStateService:
             "notices_sent": notices_sent,
             "topics_count": len(routed_topics),
         }
+
+    def acknowledge_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Acknowledge one attention item and suppress policy noise until it changes."""
+        def mutate(item: AttentionItemRecord) -> None:
+            self._apply_acknowledge(item)
+            item.acknowledged_by_user_id = actor_user_id
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_acknowledged",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Acknowledged dispatch attention for {item.reference}.",
+            details=item.stage_label,
+            metadata={"item_id": item.item_id, "stage": item.stage},
+        )
+        return item
+
+    def snooze_attention(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        hours: int,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Snooze one attention item for a bounded number of hours."""
+        snooze_hours = max(hours, 1)
+
+        def mutate(item: AttentionItemRecord) -> None:
+            item.status = "snoozed"
+            item.snoozed_until = self._shift_now(hours=snooze_hours)
+            item.snoozed_by_user_id = actor_user_id
+            item.acknowledged_at = None
+            item.acknowledged_by_user_id = None
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_snoozed",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Snoozed dispatch attention for {item.reference}.",
+            details=f"{item.stage_label} until {item.snoozed_until}",
+            metadata={"item_id": item.item_id, "stage": item.stage, "hours": str(snooze_hours)},
+        )
+        return item
+
+    def assign_attention_owner(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        assigned_owner_discord_user_id: int,
+        actor_user_id: int,
+    ) -> AttentionItemRecord:
+        """Assign one attention item to a specific follow-up owner."""
+
+        def mutate(item: AttentionItemRecord) -> None:
+            item.assigned_owner_discord_user_id = assigned_owner_discord_user_id
+
+        item = self._update_attention_item(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=actor_user_id,
+            mutate=mutate,
+        )
+        self.record_event(
+            event_type="attention_owner_assigned",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=item.reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=f"Assigned dispatch attention owner for {item.reference}.",
+            details=f"{item.stage_label} -> {self._user_label(assigned_owner_discord_user_id)}",
+            metadata={
+                "item_id": item.item_id,
+                "stage": item.stage,
+                "assigned_owner_discord_user_id": str(assigned_owner_discord_user_id),
+            },
+        )
+        return item
 
     async def get_parts_case(self, *, sr_id: int | None = None, reference: str | None = None) -> PartsCaseRecord:
         """Return a current parts-case record for one SR or reference."""
@@ -263,32 +367,32 @@ class WorkflowStateService:
                 )
                 derived_age_hours = self._age_hours(first_seen_at)
                 derived_age_bucket = self._age_bucket_for_stage(snapshot.stage, derived_age_hours)
-                if age_bucket is not None and derived_age_bucket != age_bucket:
-                    continue
-                if owner_discord_user_id is not None and record.discord_user_id != owner_discord_user_id:
-                    continue
-                attention_items.append(
-                    AttentionItemRecord(
-                        item_id=item_id,
-                        sr_id=sr_id,
-                        reference=reference,
-                        category="dispatch",
-                        status="open",
-                        stage=snapshot.stage,
-                        stage_label=snapshot.stage_label,
-                        summary=summary,
-                        details=snapshot.latest_status_text or snapshot.latest_issue_text,
-                        location=location or None,
-                        route_label=route_label,
-                        owner_discord_user_id=record.discord_user_id,
-                        owner_bluefolder_user_id=record.bluefolder_user_id,
-                        next_action=self.bluefolder_service.recommend_next_action(snapshot),
-                        first_seen_at=first_seen_at,
-                        last_seen_at=self._now(),
-                        age_hours=derived_age_hours,
-                        age_bucket=derived_age_bucket,
-                    )
+                derived_item = AttentionItemRecord(
+                    item_id=item_id,
+                    sr_id=sr_id,
+                    reference=reference,
+                    category="dispatch",
+                    status="open",
+                    stage=snapshot.stage,
+                    stage_label=snapshot.stage_label,
+                    summary=summary,
+                    details=snapshot.latest_status_text or snapshot.latest_issue_text,
+                    location=location or None,
+                    route_label=route_label,
+                    owner_discord_user_id=record.discord_user_id,
+                    owner_bluefolder_user_id=record.bluefolder_user_id,
+                    next_action=self.bluefolder_service.recommend_next_action(snapshot),
+                    first_seen_at=first_seen_at,
+                    last_seen_at=self._now(),
+                    age_hours=derived_age_hours,
+                    age_bucket=derived_age_bucket,
                 )
+                self._carry_attention_state(derived_item, previous)
+                if age_bucket is not None and derived_item.age_bucket != age_bucket:
+                    continue
+                if owner_discord_user_id is not None and derived_item.owner_discord_user_id != owner_discord_user_id:
+                    continue
+                attention_items.append(derived_item)
 
         for reference in {record.reference for record in parts_records}:
             sr_id = self._reference_sr_id(reference)
@@ -461,6 +565,79 @@ class WorkflowStateService:
         if self.technician_directory_service is not None:
             return self.technician_directory_service.discord_mention(user_id)
         return f"<@{user_id}>"
+
+    def _carry_attention_state(
+        self,
+        item: AttentionItemRecord,
+        previous: AttentionItemRecord | None,
+    ) -> None:
+        """Preserve manual workflow actions when the derived item is recomputed."""
+        if previous is None:
+            return
+        item.assigned_owner_discord_user_id = previous.assigned_owner_discord_user_id
+        item.acknowledged_at = previous.acknowledged_at
+        item.acknowledged_by_user_id = previous.acknowledged_by_user_id
+        item.snoozed_until = previous.snoozed_until
+        item.snoozed_by_user_id = previous.snoozed_by_user_id
+        if self._is_snooze_active(previous):
+            item.status = "snoozed"
+            return
+        item.snoozed_until = None
+        item.snoozed_by_user_id = None
+        if previous.acknowledged_at:
+            item.status = "acknowledged"
+
+    def _update_attention_item(
+        self,
+        *,
+        sr_id: int,
+        stage: str | None,
+        actor_user_id: int,
+        mutate,
+    ) -> AttentionItemRecord:
+        """Update one persisted attention item in place."""
+        snapshot = self.store.load()
+        item = self._find_attention_item(snapshot.attention_items, sr_id=sr_id, stage=stage)
+        mutate(item)
+        item.last_seen_at = self._now()
+        snapshot.updated_at = self._now()
+        self.store.save(snapshot)
+        return item
+
+    def _apply_acknowledge(self, item: AttentionItemRecord) -> None:
+        item.status = "acknowledged"
+        item.acknowledged_at = self._now()
+        item.snoozed_until = None
+        item.snoozed_by_user_id = None
+
+    def _find_attention_item(
+        self,
+        items: list[AttentionItemRecord],
+        *,
+        sr_id: int,
+        stage: str | None,
+    ) -> AttentionItemRecord:
+        reference = f"SR-{sr_id}"
+        normalized_stage = None if stage is None else stage.strip().lower().replace(" ", "_")
+        matches = [item for item in items if item.sr_id == sr_id or item.reference == reference]
+        if normalized_stage is not None:
+            matches = [item for item in matches if item.stage == normalized_stage]
+        if not matches:
+            target = f"{reference} ({normalized_stage})" if normalized_stage is not None else reference
+            raise ValueError(f"No attention item is currently available for {target}.")
+        if len(matches) > 1:
+            raise ValueError(f"Multiple attention items match {reference}; provide a stage.")
+        return matches[0]
+
+    def _is_snooze_active(self, item: AttentionItemRecord) -> bool:
+        snoozed_until = self._parse_datetime(item.snoozed_until)
+        if snoozed_until is None:
+            return False
+        return snoozed_until > datetime.now(UTC)
+
+    @staticmethod
+    def _shift_now(*, hours: int) -> str:
+        return (datetime.now(UTC) + timedelta(hours=hours)).isoformat(timespec="seconds")
 
     def _was_notified_recently(self, *, item_id: str, hours: int) -> bool:
         cutoff_hours = max(hours, 0)

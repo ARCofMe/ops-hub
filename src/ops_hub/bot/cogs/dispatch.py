@@ -95,6 +95,69 @@ class DispatchCog(commands.Cog):
         )
         await self._send_deferred_result(interaction, result.message)
 
+    @app_commands.command(name="attention_ack", description="Acknowledge one workflow attention item.")
+    @app_commands.describe(
+        sr_id="Service request id to acknowledge.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_ack(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Acknowledge one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.acknowledge_dispatch_attention(
+            sr_id=sr_id,
+            stage=stage,
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="attention_snooze", description="Snooze one workflow attention item for a few hours.")
+    @app_commands.describe(
+        sr_id="Service request id to snooze.",
+        hours="How long to snooze the item.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_snooze(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        hours: app_commands.Range[int, 1, 72],
+        stage: str | None = None,
+    ) -> None:
+        """Snooze one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.snooze_dispatch_attention(
+            sr_id=sr_id,
+            stage=stage,
+            hours=int(hours),
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="attention_assign", description="Assign a follow-up owner to one workflow attention item.")
+    @app_commands.describe(
+        sr_id="Service request id to assign.",
+        owner_discord_user_id="Discord user id that should own the follow-up.",
+        stage="Optional stage when an SR has more than one attention item.",
+    )
+    async def attention_assign(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        owner_discord_user_id: int,
+        stage: str | None = None,
+    ) -> None:
+        """Assign a follow-up owner on one dispatch attention item."""
+        result = await self.bot.container.dispatch_service.assign_dispatch_attention_owner(
+            sr_id=sr_id,
+            stage=stage,
+            assigned_owner_discord_user_id=owner_discord_user_id,
+            actor_user_id=interaction.user.id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
     @app_commands.command(name="dispatch_next", description="Show the recommended next dispatch action for a specific SR.")
     async def dispatch_next(self, interaction: discord.Interaction, sr_id: int) -> None:
         """Dispatcher-focused next-action summary for a service request."""

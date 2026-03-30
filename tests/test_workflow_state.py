@@ -183,6 +183,67 @@ def test_workflow_state_policy_cycle_sends_and_dedupes_urgent_notices() -> None:
     assert notifications.records[0].topic == "dispatch.scheduling_attention"
 
 
+def test_workflow_state_actions_persist_across_refresh_and_suppress_policy() -> None:
+    notifications = NotificationService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type(
+            "DirectoryStub",
+            (),
+            {
+                "mapping_records": lambda self: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+                "discord_mention": lambda self, user_id: f"<@{user_id}>",
+            },
+        )(),
+        notification_service=notifications,
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    assigned = service.assign_attention_owner(sr_id=100, stage="part_ready", assigned_owner_discord_user_id=99, actor_user_id=77)
+    assert assigned.assigned_owner_discord_user_id == 99
+    snoozed = service.snooze_attention(sr_id=100, stage="part_ready", hours=4, actor_user_id=77)
+    assert snoozed.status == "snoozed"
+
+    first = asyncio.run(service.run_policy_cycle())
+    refreshed = service.current_snapshot().attention_items[0]
+
+    assert refreshed.status == "snoozed"
+    assert refreshed.assigned_owner_discord_user_id == 99
+    assert first["urgent_items"] == 0
+    assert first["notices_sent"] == 0
+    assert notifications.records == []
+
+
+def test_workflow_state_acknowledge_marks_item_and_suppresses_policy() -> None:
+    notifications = NotificationService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type(
+            "DirectoryStub",
+            (),
+            {
+                "mapping_records": lambda self: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+                "discord_mention": lambda self, user_id: f"<@{user_id}>",
+            },
+        )(),
+        notification_service=notifications,
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    acknowledged = service.acknowledge_attention(sr_id=100, stage="part_ready", actor_user_id=77)
+    summary = asyncio.run(service.run_policy_cycle())
+
+    assert acknowledged.status == "acknowledged"
+    assert acknowledged.acknowledged_by_user_id == 77
+    assert summary["urgent_items"] == 0
+    assert summary["notices_sent"] == 0
+    assert notifications.records == []
+
+
 def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
     service = WorkflowStateService(
         store=WorkflowStateStore(file_path=None),
@@ -260,7 +321,7 @@ class FakeWorkflowStateService:
                 sr_id=100,
                 reference="SR-100",
                 category="dispatch",
-                status="open",
+                status="snoozed",
                 stage="part_ready",
                 stage_label="Ready for Scheduling",
                 summary="Dryer repair",
@@ -268,9 +329,12 @@ class FakeWorkflowStateService:
                 route_label="AM",
                 owner_discord_user_id=42,
                 owner_bluefolder_user_id=13051,
+                assigned_owner_discord_user_id=99,
                 next_action="Schedule the return visit.",
                 age_hours=80,
                 age_bucket="urgent",
+                snoozed_until="2026-03-29T12:00:00+00:00",
+                acknowledged_by_user_id=77,
             )
         ]
 
@@ -317,6 +381,8 @@ def test_dispatch_service_uses_workflow_state_attention_items() -> None:
     assert "`SR-100` Dryer repair" in result.message
     assert "Next action: Schedule the return visit." in result.message
     assert "Age: `urgent` (80h)" in result.message
+    assert "Follow-up owner: <@99>" in result.message
+    assert "Status: `snoozed`" in result.message
 
 
 def test_dispatch_board_uses_workflow_state_queues() -> None:
@@ -359,3 +425,50 @@ def test_dispatch_board_uses_workflow_state_queues() -> None:
     assert "**Open Parts Cases**" in result.message
     assert "Tracked requests: `1`" in result.message
     assert "**Technician Load**" in result.message
+
+
+def test_dispatch_service_attention_actions_use_workflow_state() -> None:
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        technician_directory_service=type("DirectoryStub", (), {"discord_mention": lambda self, user_id: f"<@{user_id}>"})(),
+    )
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    dispatch = DispatchService(
+        adapter=object(),
+        bluefolder_service=FakeBlueFolderService(),
+        workflow_state_service=service,
+        technician_directory_service=type("DirectoryStub", (), {"discord_mention": lambda self, user_id: f"<@{user_id}>", "reverse_mappings": lambda self: {13051: 42}})(),
+    )
+
+    assigned = asyncio.run(
+        dispatch.assign_dispatch_attention_owner(
+            sr_id=100,
+            stage="part_ready",
+            assigned_owner_discord_user_id=99,
+            actor_user_id=77,
+        )
+    )
+    snoozed = asyncio.run(
+        dispatch.snooze_dispatch_attention(
+            sr_id=100,
+            stage="part_ready",
+            hours=4,
+            actor_user_id=77,
+        )
+    )
+    acknowledged = asyncio.run(
+        dispatch.acknowledge_dispatch_attention(
+            sr_id=100,
+            stage="part_ready",
+            actor_user_id=77,
+        )
+    )
+
+    assert "**Assigned owner Attention Item**" in assigned.message
+    assert "Follow-up owner: <@99>" in assigned.message
+    assert "**Snoozed Attention Item**" in snoozed.message
+    assert "Snoozed until:" in snoozed.message
+    assert "**Acknowledged Attention Item**" in acknowledged.message
+    assert "Status: `acknowledged`" in acknowledged.message

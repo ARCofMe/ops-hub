@@ -396,6 +396,11 @@ class AttentionItemRecord:
     last_seen_at: str | None = None
     age_hours: int | None = None
     age_bucket: str | None = None
+    assigned_owner_discord_user_id: int | None = None
+    acknowledged_at: str | None = None
+    acknowledged_by_user_id: int | None = None
+    snoozed_until: str | None = None
+    snoozed_by_user_id: int | None = None
 
 
 @dataclass(slots=True)

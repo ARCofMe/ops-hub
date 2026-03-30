@@ -252,6 +252,67 @@ def test_dispatch_cog_dispatch_next_uses_workflow_state_result() -> None:
     assert interaction.followup.messages == [{"content": "Next action ready", "ephemeral": True, "embed": None}]
 
 
+def test_dispatch_cog_attention_ack_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_ack(self, *, sr_id, stage, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention acknowledged")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "acknowledge_dispatch_attention", new=fake_ack):
+        asyncio.run(cog.attention_ack.callback(cog, interaction, sr_id=100, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention acknowledged", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_attention_snooze_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_snooze(self, *, sr_id, stage, hours, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert hours == 6
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention snoozed")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "snooze_dispatch_attention", new=fake_snooze):
+        asyncio.run(cog.attention_snooze.callback(cog, interaction, sr_id=100, hours=6, stage="part_ready"))
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention snoozed", "ephemeral": True, "embed": None}]
+
+
+def test_dispatch_cog_attention_assign_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_assign(self, *, sr_id, stage, assigned_owner_discord_user_id, actor_user_id):
+        assert sr_id == 100
+        assert stage == "part_ready"
+        assert assigned_owner_discord_user_id == 42
+        assert actor_user_id == 99
+        return SimpleNamespace(message="Attention owner assigned")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "assign_dispatch_attention_owner", new=fake_assign):
+        asyncio.run(
+            cog.attention_assign.callback(
+                cog,
+                interaction,
+                sr_id=100,
+                owner_discord_user_id=42,
+                stage="part_ready",
+            )
+        )
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Attention owner assigned", "ephemeral": True, "embed": None}]
+
+
 def test_dispatch_cog_dispatch_heatmap_sends_embed() -> None:
     cog = _build_cog(dispatcher_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]), guild=None)
