@@ -17,9 +17,21 @@ class TechnicianDirectoryService:
     settings: Settings
     store: OperatorMappingStore
 
-    def resolve_identity(self, *, user_id: int, role_ids: set[int]) -> TechnicianIdentity:
+    def resolve_identity(
+        self,
+        *,
+        user_id: int,
+        role_ids: set[int],
+        has_administrator_permission: bool = False,
+        is_guild_owner: bool = False,
+    ) -> TechnicianIdentity:
         """Return the current Ops Hub identity for a Discord user."""
-        is_admin = user_id in self.settings.admin_user_ids or bool(role_ids & set(self.settings.admin_role_ids))
+        is_admin = (
+            user_id in self.settings.admin_user_ids
+            or bool(role_ids & set(self.settings.admin_role_ids))
+            or has_administrator_permission
+            or is_guild_owner
+        )
         is_parts = (
             is_admin
             or user_id in self.settings.parts_user_ids

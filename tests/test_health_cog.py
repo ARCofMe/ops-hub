@@ -46,11 +46,17 @@ def _settings(**overrides: object) -> Settings:
 class _DummyUser:
     id: int
     roles: list[object] | None = None
+    guild_permissions: object | None = None
+
+    def __post_init__(self) -> None:
+        if self.guild_permissions is None:
+            self.guild_permissions = type("Perms", (), {"administrator": False})()
 
 
 @dataclass(slots=True)
 class _DummyInteraction:
     user: _DummyUser
+    guild: object | None = None
     response: object | None = None
 
     def __post_init__(self) -> None:
@@ -145,6 +151,31 @@ def test_build_help_text_lists_parts_and_admin_surfaces_for_admin_user() -> None
     assert "/part_tracking" in result
     assert "/technician_mappings" in result
     assert "/policy_run_now" in result
+
+
+def test_build_help_text_lists_admin_surface_for_discord_administrator() -> None:
+    settings = _settings()
+    bot = OpsHubBot(settings=settings, container=build_container(settings))
+    cog = HealthCog(bot)
+    perms = type("Perms", (), {"administrator": True})()
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[], guild_permissions=perms))
+
+    result = cog._build_help_text(interaction)
+
+    assert "**Admin**" in result
+    assert "/policy_run_now" in result
+
+
+def test_build_help_text_lists_admin_surface_for_guild_owner() -> None:
+    settings = _settings()
+    bot = OpsHubBot(settings=settings, container=build_container(settings))
+    cog = HealthCog(bot)
+    guild = type("Guild", (), {"owner_id": 42})()
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]), guild=guild)
+
+    result = cog._build_help_text(interaction)
+
+    assert "**Admin**" in result
 
 
 def test_ping_command_sends_ephemeral_pong() -> None:

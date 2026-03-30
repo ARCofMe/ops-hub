@@ -294,9 +294,15 @@ class DispatchCog(commands.Cog):
         """Resolve the invoking Discord user into an Ops Hub dispatcher/admin identity."""
         user_roles = getattr(interaction.user, "roles", None)
         role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
+        guild_permissions = getattr(interaction.user, "guild_permissions", None)
+        has_administrator_permission = bool(getattr(guild_permissions, "administrator", False))
+        guild = getattr(interaction, "guild", None)
+        is_guild_owner = bool(guild is not None and getattr(guild, "owner_id", None) == interaction.user.id)
         return self.bot.container.technician_directory_service.resolve_identity(
             user_id=interaction.user.id,
             role_ids=role_ids,
+            has_administrator_permission=has_administrator_permission,
+            is_guild_owner=is_guild_owner,
         )
 
     async def _technician_dispatch_mappings(

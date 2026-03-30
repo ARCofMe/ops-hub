@@ -94,9 +94,15 @@ class HealthCog(commands.Cog):
         user_id = getattr(user, "id", 0)
         user_roles = getattr(user, "roles", None)
         role_ids = {getattr(role, "id", None) for role in user_roles or [] if getattr(role, "id", None) is not None}
+        guild_permissions = getattr(user, "guild_permissions", None)
+        has_administrator_permission = bool(getattr(guild_permissions, "administrator", False))
+        guild = getattr(interaction, "guild", None)
+        is_guild_owner = bool(guild is not None and getattr(guild, "owner_id", None) == user_id)
         return self.bot.container.technician_directory_service.resolve_identity(
             user_id=user_id,
             role_ids=role_ids,
+            has_administrator_permission=has_administrator_permission,
+            is_guild_owner=is_guild_owner,
         )
 
 
