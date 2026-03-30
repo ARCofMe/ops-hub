@@ -90,6 +90,12 @@ Stage filters currently include:
 
 Use `quote_needed` when you want jobs that still need quote delivery, approval, landlord contact, or prepayment before scheduling can move.
 
+Within that stage, Ops Hub now differentiates:
+
+- customer quote follow-up
+- landlord or tenant approval follow-up
+- COD or prepayment follow-up
+
 ## Queue Actions
 
 ### `/attention_ack`

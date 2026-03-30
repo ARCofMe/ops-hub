@@ -189,6 +189,76 @@ def test_workflow_state_service_derives_quote_needed_attention() -> None:
     assert len(quote_items) == 1
     assert quote_items[0].stage_label == "Quote Needed"
     assert "confirm the quote path" in (quote_items[0].next_action or "")
+    assert quote_items[0].item_id.endswith(":customer")
+    assert "Customer quote approval" in (quote_items[0].details or "")
+
+
+def test_workflow_state_service_derives_landlord_quote_attention() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Quote Needed - Landlord Approval",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    _, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+
+    quote_items = [item for item in attention_items if item.stage == "quote_needed"]
+
+    assert len(quote_items) == 1
+    assert quote_items[0].item_id.endswith(":landlord")
+    assert "landlord" in (quote_items[0].next_action or "").casefold()
+    assert "Landlord or tenant approval" in (quote_items[0].details or "")
+
+
+def test_workflow_state_service_derives_prepayment_quote_attention() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Quote Needed - COD Prepayment",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    _, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+
+    quote_items = [item for item in attention_items if item.stage == "quote_needed"]
+
+    assert len(quote_items) == 1
+    assert quote_items[0].item_id.endswith(":prepayment")
+    assert "prepayment" in (quote_items[0].next_action or "").casefold()
+    assert "COD or prepayment approval" in (quote_items[0].details or "")
 
 
 def test_workflow_state_service_uses_stage_specific_sla_thresholds() -> None:
@@ -484,6 +554,31 @@ def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
             summary="Dishwasher repair",
         ),
     ) == "dispatch.quote_needed_attention"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="8:landlord",
+            sr_id=107,
+            reference="SR-107",
+            category="dispatch",
+            status="open",
+            stage="quote_needed",
+            stage_label="Quote Needed",
+            summary="Oven repair",
+        ),
+    ) == "dispatch.quote_needed_attention.landlord"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="9:prepayment",
+            sr_id=108,
+            reference="SR-108",
+            category="dispatch",
+            status="open",
+            stage="quote_needed",
+            stage_label="Quote Needed",
+            summary="Range repair",
+        ),
+        qualifiers=("owner_gap",),
+    ) == "dispatch.quote_needed_attention.prepayment.owner_gap"
 
 
 def test_workflow_state_service_builds_service_request_timeline() -> None:

@@ -667,8 +667,10 @@ class WorkflowStateService:
             items.append(derived_item)
 
         if self._is_quote_needed_status(getattr(job_summary, "service_request_status", None)):
-            item_id = f"dispatch:{reference}:quote_needed"
+            quote_subtype = self._quote_needed_subtype(getattr(job_summary, "service_request_status", None))
+            item_id = f"dispatch:{reference}:quote_needed:{quote_subtype}"
             previous = previous_items.get(item_id)
+            status_text = getattr(job_summary, "service_request_status", None)
             first_seen_at = previous.first_seen_at if previous is not None and previous.first_seen_at else self._now()
             derived_item = AttentionItemRecord(
                 item_id=item_id,
@@ -679,12 +681,12 @@ class WorkflowStateService:
                 stage="quote_needed",
                 stage_label="Quote Needed",
                 summary=assignment_summary,
-                details=f"Current SR status is `{getattr(job_summary, 'service_request_status', 'Quote Needed')}`.",
+                details=self._quote_needed_details(status_text),
                 location=location,
                 route_label=route_label,
                 owner_discord_user_id=record.discord_user_id,
                 owner_bluefolder_user_id=record.bluefolder_user_id,
-                next_action=self._quote_needed_next_action(getattr(job_summary, "service_request_status", None)),
+                next_action=self._quote_needed_next_action(status_text),
                 first_seen_at=first_seen_at,
                 last_seen_at=self._now(),
                 age_hours=self._age_hours(first_seen_at),
@@ -994,6 +996,10 @@ class WorkflowStateService:
         else:
             base = f"dispatch.attention.{item.stage}"
         topic = base
+        if item.stage == "quote_needed":
+            quote_subtype = WorkflowStateService._quote_needed_subtype_from_item(item)
+            if quote_subtype != "customer":
+                topic = f"{topic}.{quote_subtype}"
         for qualifier in qualifiers:
             normalized = qualifier.strip().lower().replace(" ", "_")
             if normalized:
@@ -1041,10 +1047,40 @@ class WorkflowStateService:
         return "quote needed" in normalized or normalized in {"needs quote", "quote"}
 
     @staticmethod
-    def _quote_needed_next_action(service_request_status: str | None) -> str:
+    def _quote_needed_subtype(service_request_status: str | None) -> str:
         normalized = str(service_request_status or "").strip().casefold()
-        if "landlord" in normalized:
+        if any(token in normalized for token in ("landlord", "tenant")):
+            return "landlord"
+        if any(token in normalized for token in ("prepay", "pre-payment", "pre payment", "cod")):
+            return "prepayment"
+        return "customer"
+
+    @staticmethod
+    def _quote_needed_subtype_from_item(item: AttentionItemRecord) -> str:
+        if item.stage != "quote_needed":
+            return "customer"
+        parts = item.item_id.rsplit(":", 1)
+        if len(parts) == 2 and parts[1] in {"customer", "landlord", "prepayment"}:
+            return parts[1]
+        return "customer"
+
+    @staticmethod
+    def _quote_needed_details(service_request_status: str | None) -> str:
+        normalized = str(service_request_status or "").strip()
+        subtype = WorkflowStateService._quote_needed_subtype(service_request_status)
+        if subtype == "landlord":
+            return f"Current SR status is `{normalized or 'Quote Needed'}`. Landlord or tenant approval is blocking scheduling."
+        if subtype == "prepayment":
+            return f"Current SR status is `{normalized or 'Quote Needed'}`. COD or prepayment approval is blocking scheduling."
+        return f"Current SR status is `{normalized or 'Quote Needed'}`. Customer quote approval is blocking scheduling."
+
+    @staticmethod
+    def _quote_needed_next_action(service_request_status: str | None) -> str:
+        subtype = WorkflowStateService._quote_needed_subtype(service_request_status)
+        if subtype == "landlord":
             return "Office should contact the landlord, confirm quote approval or prepayment, and then move the SR forward."
+        if subtype == "prepayment":
+            return "Office should confirm COD pricing or prepayment, collect approval, and then return the SR to scheduling."
         return "Dispatch or office should contact the customer, confirm the quote path, and capture approval before scheduling."
 
     def _age_hours(self, raw_timestamp: str | None) -> int | None:

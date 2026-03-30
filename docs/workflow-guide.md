@@ -38,6 +38,12 @@ Current attention stages include:
 
 `quote_needed` is the office-facing handoff for jobs that still need customer or landlord approval, quote delivery, or prepayment before normal scheduling can continue.
 
+Ops Hub currently distinguishes these quote subtypes under the same stage:
+
+- customer quote follow-up
+- landlord or tenant approval follow-up
+- COD or prepayment follow-up
+
 ## Attention Statuses
 
 Attention items currently use these statuses:
@@ -107,6 +113,11 @@ Current stage routing includes:
 - `part_received` -> `parts.received_attention`
 - `part_ready` -> `dispatch.scheduling_attention`
 - `quote_needed` -> `dispatch.quote_needed_attention`
+
+Quote-needed routing becomes more specific when possible:
+
+- landlord/tenant quote work -> `dispatch.quote_needed_attention.landlord`
+- COD or prepayment work -> `dispatch.quote_needed_attention.prepayment`
 
 Examples:
 
