@@ -150,12 +150,7 @@ class DispatchService:
             scanned_jobs, attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
             snapshot = self.workflow_state_service.current_snapshot()
             open_parts_cases = [case for case in snapshot.parts_cases if case.status == "open"]
-            stage_counts: dict[str, int] = {}
-            age_counts: dict[str, int] = {}
-            for item in attention_items:
-                stage_counts[item.stage_label] = stage_counts.get(item.stage_label, 0) + 1
-                if item.age_bucket is not None:
-                    age_counts[item.age_bucket] = age_counts.get(item.age_bucket, 0) + 1
+            metrics = self.workflow_state_service.attention_metrics(snapshot)
 
             lines.extend(
                 [
@@ -166,15 +161,25 @@ class DispatchService:
                     "**Attention Queues**",
                 ]
             )
-            if stage_counts:
-                for stage_label, count in sorted(stage_counts.items()):
+            if metrics["stage_counts"]:
+                for stage_label, count in sorted(metrics["stage_counts"].items()):
                     lines.append(f"{stage_label}: `{count}`")
             else:
                 lines.append("No active attention queues.")
-            if age_counts:
+            if metrics["status_counts"]:
+                lines.extend(["", "**Queue Status**"])
+                for status, count in sorted(metrics["status_counts"].items()):
+                    lines.append(f"{status}: `{count}`")
+                lines.append(f"Assigned follow-up owners: `{metrics['assigned_owner_items']}`")
+                lines.append(f"Unassigned follow-up owners: `{metrics['unassigned_owner_items']}`")
+            if metrics["age_counts"]:
                 lines.extend(["", "**Age Buckets**"])
-                for bucket, count in sorted(age_counts.items()):
+                for bucket, count in sorted(metrics["age_counts"].items()):
                     lines.append(f"{bucket}: `{count}`")
+            if metrics["urgent_open_items"] or metrics["urgent_suppressed_items"]:
+                lines.extend(["", "**Urgent State**"])
+                lines.append(f"Open urgent: `{metrics['urgent_open_items']}`")
+                lines.append(f"Suppressed urgent: `{metrics['urgent_suppressed_items']}`")
 
             if attention_items:
                 lines.extend(["", "**Top Attention**"])

@@ -507,11 +507,23 @@ class AdminCog(commands.Cog):
             f"Last notification topic: `{notifications.last_topic or 'none'}`",
         ]
         workflow_snapshot = self.bot.container.workflow_state_service.current_snapshot()
+        workflow_metrics = self.bot.container.workflow_state_service.attention_metrics(workflow_snapshot)
         lines.extend(
             [
                 f"Workflow attention items: `{len(workflow_snapshot.attention_items)}`",
                 f"Workflow parts cases: `{len(workflow_snapshot.parts_cases)}`",
                 f"Workflow events: `{len(workflow_snapshot.events)}`",
+                "Workflow attention status: "
+                + ", ".join(
+                    f"{status} `{count}`" for status, count in sorted(workflow_metrics["status_counts"].items())
+                )
+                if workflow_metrics["status_counts"]
+                else "Workflow attention status: unavailable",
+                (
+                    "Workflow urgent state: "
+                    f"open `{workflow_metrics['urgent_open_items']}`, "
+                    f"suppressed `{workflow_metrics['urgent_suppressed_items']}`"
+                ),
             ]
         )
         features = photo.get("features", "")
@@ -537,7 +549,8 @@ class AdminCog(commands.Cog):
     async def _build_policy_status(self) -> str:
         """Render current workflow policy state and urgent queue items."""
         snapshot = self.bot.container.workflow_state_service.current_snapshot()
-        urgent_items = [item for item in snapshot.attention_items if item.age_bucket == "urgent"]
+        metrics = self.bot.container.workflow_state_service.attention_metrics(snapshot)
+        urgent_items = [item for item in snapshot.attention_items if item.age_bucket == "urgent" and item.status == "open"]
         lines = [
             "Workflow Policy Status",
             (
@@ -548,8 +561,21 @@ class AdminCog(commands.Cog):
             f"Attention items: `{len(snapshot.attention_items)}`",
             f"Parts cases: `{len(snapshot.parts_cases)}`",
             f"Workflow events: `{len(snapshot.events)}`",
-            f"Urgent items: `{len(urgent_items)}`",
+            f"Urgent open items: `{metrics['urgent_open_items']}`",
+            f"Urgent suppressed items: `{metrics['urgent_suppressed_items']}`",
         ]
+        if metrics["status_counts"]:
+            lines.extend(["", "Queue status"])
+            for status, count in sorted(metrics["status_counts"].items()):
+                lines.append(f"{status}: `{count}`")
+        lines.extend(
+            [
+                "",
+                "Follow-up ownership",
+                f"Assigned owners: `{metrics['assigned_owner_items']}`",
+                f"Unassigned owners: `{metrics['unassigned_owner_items']}`",
+            ]
+        )
         if urgent_items:
             lines.extend(["", "Urgent queue"])
             for item in urgent_items[:8]:

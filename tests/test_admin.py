@@ -161,6 +161,8 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "Workflow attention items: `0`" in result
     assert "Workflow parts cases: `0`" in result
     assert "Workflow events: `0`" in result
+    assert "Workflow attention status: unavailable" in result
+    assert "Workflow urgent state: open `0`, suppressed `0`" in result
 
 
 def test_build_recent_notices_renders_latest_entries() -> None:
@@ -197,6 +199,19 @@ def test_build_policy_status_renders_current_snapshot() -> None:
                     age_hours=80,
                     summary="Dryer repair",
                     next_action="Schedule return visit.",
+                    assigned_owner_discord_user_id=42,
+                ),
+                AttentionItemRecord(
+                    item_id="dispatch:SR-101:part_received",
+                    sr_id=101,
+                    reference="SR-101",
+                    category="dispatch",
+                    status="snoozed",
+                    stage="part_received",
+                    stage_label="Received",
+                    age_bucket="urgent",
+                    age_hours=90,
+                    summary="Washer repair",
                 )
             ],
             parts_cases=[],
@@ -208,7 +223,13 @@ def test_build_policy_status_renders_current_snapshot() -> None:
 
     assert "Workflow Policy Status" in result
     assert "Runner: enabled every `300`s" in result
-    assert "Urgent items: `1`" in result
+    assert "Urgent open items: `1`" in result
+    assert "Urgent suppressed items: `1`" in result
+    assert "Queue status" in result
+    assert "open: `1`" in result
+    assert "snoozed: `1`" in result
+    assert "Assigned owners: `1`" in result
+    assert "Unassigned owners: `1`" in result
     assert "`SR-100` `Ready for Scheduling` `80h`" in result
 
 

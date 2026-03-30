@@ -52,6 +52,27 @@ class WorkflowStateService:
         """Return the current workflow snapshot."""
         return self.store.load()
 
+    def attention_metrics(self, snapshot: WorkflowStateSnapshot | None = None) -> dict[str, object]:
+        """Summarize current attention state for reporting surfaces."""
+        current_snapshot = snapshot or self.store.load()
+        items = current_snapshot.attention_items
+        status_counts = self._count_by(items, key=lambda item: item.status)
+        stage_counts = self._count_by(items, key=lambda item: item.stage_label)
+        age_counts = self._count_by(items, key=lambda item: item.age_bucket or "unknown")
+        assigned_owner_items = sum(1 for item in items if item.assigned_owner_discord_user_id is not None)
+        urgent_open_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status == "open")
+        urgent_suppressed_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status != "open")
+        return {
+            "total_items": len(items),
+            "status_counts": status_counts,
+            "stage_counts": stage_counts,
+            "age_counts": age_counts,
+            "assigned_owner_items": assigned_owner_items,
+            "unassigned_owner_items": max(len(items) - assigned_owner_items, 0),
+            "urgent_open_items": urgent_open_items,
+            "urgent_suppressed_items": urgent_suppressed_items,
+        }
+
     async def run_policy_cycle(self, *, emit_notices: bool = True) -> dict[str, int]:
         """Refresh workflow state and optionally emit deduplicated urgent notices."""
         mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
@@ -738,6 +759,18 @@ class WorkflowStateService:
             )
         ]
         return sorted(relevant, key=lambda event: event.occurred_at or "", reverse=True)
+
+    @staticmethod
+    def _count_by(
+        items: list[AttentionItemRecord],
+        *,
+        key,
+    ) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for item in items:
+            label = str(key(item) or "unknown")
+            counts[label] = counts.get(label, 0) + 1
+        return counts
 
     def _update_attention_item(
         self,

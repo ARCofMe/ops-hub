@@ -394,6 +394,18 @@ class FakeWorkflowStateService:
             ]
         )
 
+    def attention_metrics(self, snapshot=None):
+        return {
+            "total_items": 1,
+            "status_counts": {"snoozed": 1},
+            "stage_counts": {"Ready for Scheduling": 1},
+            "age_counts": {"urgent": 1},
+            "assigned_owner_items": 1,
+            "unassigned_owner_items": 0,
+            "urgent_open_items": 0,
+            "urgent_suppressed_items": 1,
+        }
+
 
 def test_dispatch_service_uses_workflow_state_attention_items() -> None:
     class DispatchBlueFolderStub:
@@ -457,8 +469,13 @@ def test_dispatch_board_uses_workflow_state_queues() -> None:
 
     assert "**Attention Queues**" in result.message
     assert "Ready for Scheduling: `1`" in result.message
+    assert "**Queue Status**" in result.message
+    assert "snoozed: `1`" in result.message
+    assert "Assigned follow-up owners: `1`" in result.message
     assert "**Age Buckets**" in result.message
     assert "urgent: `1`" in result.message
+    assert "**Urgent State**" in result.message
+    assert "Suppressed urgent: `1`" in result.message
     assert "**Open Parts Cases**" in result.message
     assert "Tracked requests: `1`" in result.message
     assert "**Technician Load**" in result.message
@@ -539,3 +556,22 @@ def test_dispatch_service_attention_lifecycle_and_history_use_workflow_state() -
     assert "**Reopened Attention Item**" in reopened.message
     assert "**Attention History SR-100**" in history.message
     assert "attention_reopened" in history.message
+
+
+def test_workflow_state_attention_metrics_report_status_and_urgency() -> None:
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+    )
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    service.assign_attention_owner(sr_id=100, stage="part_ready", assigned_owner_discord_user_id=99, actor_user_id=77)
+    service.snooze_attention(sr_id=100, stage="part_ready", hours=4, actor_user_id=77)
+
+    metrics = service.attention_metrics()
+
+    assert metrics["total_items"] == 1
+    assert metrics["status_counts"] == {"snoozed": 1}
+    assert metrics["assigned_owner_items"] == 1
+    assert metrics["urgent_open_items"] == 0
+    assert metrics["urgent_suppressed_items"] == 1
