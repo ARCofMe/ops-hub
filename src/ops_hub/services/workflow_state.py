@@ -79,6 +79,7 @@ class WorkflowStateService:
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent" and item.status == "open"]
         reopened_urgent_items = [item for item in urgent_items if self._was_reopened_recently(item=item, hours=24)]
+        owner_gap_urgent_items = [item for item in urgent_items if item.assigned_owner_discord_user_id is None]
         suppressed_urgent_items = [
             item
             for item in attention_items
@@ -90,8 +91,12 @@ class WorkflowStateService:
         suppressed_reminders_sent = 0
         routed_topics: set[str] = set()
         for item in urgent_items:
-            notice_kind = "reopened" if item in reopened_urgent_items else "urgent"
-            topic = self._policy_topic_for_item(item, notice_kind=notice_kind)
+            qualifiers: list[str] = []
+            if item in reopened_urgent_items:
+                qualifiers.append("reopened")
+            if item in owner_gap_urgent_items:
+                qualifiers.append("owner_gap")
+            topic = self._policy_topic_for_item(item, qualifiers=tuple(qualifiers))
             if emit_notices and self._was_notified_recently(item_id=item.item_id, hours=6):
                 continue
             if emit_notices and self.notification_service is not None:
@@ -106,14 +111,16 @@ class WorkflowStateService:
                 )
                 routed_topics.add(topic)
             if emit_notices:
+                notice_kind = ".".join(qualifiers) if qualifiers else "urgent"
+                is_reopened_notice = "reopened" in qualifiers
                 self.record_event(
-                    event_type="attention_reopened_notice" if notice_kind == "reopened" else "attention_notice",
+                    event_type="attention_reopened_notice" if is_reopened_notice else "attention_notice",
                     source="ops_hub.policy",
                     sr_id=item.sr_id,
                     reference=item.reference,
                     summary=(
                         f"Sent reopened urgent attention notice for {item.reference}."
-                        if notice_kind == "reopened"
+                        if is_reopened_notice
                         else f"Sent urgent attention notice for {item.reference}."
                     ),
                     details=item.next_action,
@@ -126,7 +133,7 @@ class WorkflowStateService:
                 )
                 notices_sent += 1
         for item in suppressed_urgent_items:
-            topic = self._policy_topic_for_item(item, notice_kind="suppressed")
+            topic = self._policy_topic_for_item(item, qualifiers=("suppressed",))
             if emit_notices and self._was_policy_event_recently(
                 item_id=item.item_id,
                 event_types={"attention_suppressed_reminder"},
@@ -164,6 +171,7 @@ class WorkflowStateService:
             "attention_items": len(attention_items),
             "urgent_items": len(urgent_items),
             "reopened_urgent_items": len(reopened_urgent_items),
+            "owner_gap_urgent_items": len(owner_gap_urgent_items),
             "suppressed_urgent_items": len(suppressed_urgent_items),
             "notices_sent": notices_sent,
             "suppressed_reminders_sent": suppressed_reminders_sent,
@@ -915,7 +923,7 @@ class WorkflowStateService:
         return False
 
     @staticmethod
-    def _policy_topic_for_item(item: AttentionItemRecord, *, notice_kind: str = "urgent") -> str:
+    def _policy_topic_for_item(item: AttentionItemRecord, *, qualifiers: tuple[str, ...] = ()) -> str:
         if item.stage == "part_ready":
             base = "dispatch.scheduling_attention"
         elif item.stage == "issue_reported":
@@ -924,11 +932,12 @@ class WorkflowStateService:
             base = "parts.received_attention"
         else:
             base = f"dispatch.attention.{item.stage}"
-        if notice_kind == "reopened":
-            return f"{base}.reopened"
-        if notice_kind == "suppressed":
-            return f"{base}.suppressed"
-        return base
+        topic = base
+        for qualifier in qualifiers:
+            normalized = qualifier.strip().lower().replace(" ", "_")
+            if normalized:
+                topic = f"{topic}.{normalized}"
+        return topic
 
     def _was_reopened_recently(self, *, item: AttentionItemRecord, hours: int) -> bool:
         return self._was_policy_event_recently(

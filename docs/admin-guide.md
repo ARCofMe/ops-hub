@@ -51,6 +51,7 @@ Use this when:
 
 - you want to confirm dispatch or parts notices are firing
 - you want to see urgent open vs urgent suppressed counts
+- you want to see whether urgent items are missing an explicit owner
 - you want to preview policy behavior without sending live notices
 - you want to force one policy cycle during support or cutover work
 

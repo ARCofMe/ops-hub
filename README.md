@@ -281,6 +281,15 @@ To enable Discord notice routing, optionally set:
 - `OPS_HUB_NOTIFICATION_CHANNEL_ID` for a default notice channel
 - `OPS_HUB_NOTIFICATION_CHANNEL_MAP` to route topic families like `parts` or `dispatch` to specific channels
 
+Notification routing is prefix-based, so more specific queue-policy topics can go to different audiences.
+
+Example prefixes:
+
+- `dispatch.scheduling_attention.owner_gap`
+- `dispatch.scheduling_attention.reopened`
+- `dispatch.scheduling_attention.suppressed`
+- `parts.received_attention`
+
 To enable background workflow policy execution, also set:
 
 - `OPS_HUB_ENABLE_WORKFLOW_POLICY_RUNNER=true`

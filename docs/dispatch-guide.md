@@ -172,6 +172,7 @@ Ops Hub policy now distinguishes:
 
 - newly urgent open work
 - reopened urgent work
+- urgent work with no explicit follow-up owner
 - long-suppressed urgent work
 
 That means queue actions are not just cosmetic. They affect:

@@ -89,19 +89,42 @@ Current policy behavior:
 
 - new urgent open items route through the normal stage-based urgent topic
 - reopened urgent items route through a reopened-specific topic
+- urgent items without an explicit follow-up owner route through an owner-gap topic
 - long-suppressed urgent items route through a suppressed reminder topic
 
 Examples:
 
 - `dispatch.scheduling_attention`
 - `dispatch.scheduling_attention.reopened`
+- `dispatch.scheduling_attention.owner_gap`
+- `dispatch.scheduling_attention.reopened.owner_gap`
 - `dispatch.scheduling_attention.suppressed`
 
 That means Ops Hub now distinguishes:
 
 - fresh urgent work
 - work that came back after manual reopening
+- urgent work that still has no explicit follow-up owner
 - work that has stayed hidden too long behind acknowledgement or snooze state
+
+## Channel Routing
+
+Notification routing is prefix-based.
+
+That means you can send different workflow-policy topics to different channels with `OPS_HUB_NOTIFICATION_CHANNEL_MAP`.
+
+Example:
+
+```json
+{
+  "dispatch.scheduling_attention.owner_gap": 123456789012345678,
+  "dispatch.scheduling_attention.reopened": 234567890123456789,
+  "dispatch.scheduling_attention.suppressed": 345678901234567890,
+  "dispatch": 456789012345678901
+}
+```
+
+More specific prefixes win before broader ones.
 
 ## Metrics
 

@@ -176,11 +176,12 @@ def test_workflow_state_policy_cycle_sends_and_dedupes_urgent_notices() -> None:
     second = asyncio.run(service.run_policy_cycle())
 
     assert first["urgent_items"] == 1
+    assert first["owner_gap_urgent_items"] == 1
     assert first["notices_sent"] == 1
     assert first["topics_count"] == 1
     assert second["notices_sent"] == 0
     assert len(notifications.records) == 1
-    assert notifications.records[0].topic == "dispatch.scheduling_attention"
+    assert notifications.records[0].topic == "dispatch.scheduling_attention.owner_gap"
 
 
 def test_workflow_state_policy_cycle_routes_reopened_urgent_items_separately() -> None:
@@ -206,8 +207,9 @@ def test_workflow_state_policy_cycle_routes_reopened_urgent_items_separately() -
 
     assert summary["urgent_items"] == 1
     assert summary["reopened_urgent_items"] == 1
+    assert summary["owner_gap_urgent_items"] == 1
     assert summary["notices_sent"] == 1
-    assert notifications.records[0].topic == "dispatch.scheduling_attention.reopened"
+    assert notifications.records[0].topic == "dispatch.scheduling_attention.reopened.owner_gap"
 
 
 def test_workflow_state_policy_cycle_reminds_on_long_suppressed_urgent_items() -> None:
@@ -395,7 +397,7 @@ def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
             stage_label="Ready for Scheduling",
             summary="Range repair",
         ),
-        notice_kind="reopened",
+        qualifiers=("reopened",),
     ) == "dispatch.scheduling_attention.reopened"
     assert service._policy_topic_for_item(
         AttentionItemRecord(
@@ -408,8 +410,21 @@ def test_workflow_state_policy_topics_vary_by_queue_type() -> None:
             stage_label="Ready for Scheduling",
             summary="Fridge repair",
         ),
-        notice_kind="suppressed",
+        qualifiers=("suppressed",),
     ) == "dispatch.scheduling_attention.suppressed"
+    assert service._policy_topic_for_item(
+        AttentionItemRecord(
+            item_id="6",
+            sr_id=105,
+            reference="SR-105",
+            category="dispatch",
+            status="open",
+            stage="part_ready",
+            stage_label="Ready for Scheduling",
+            summary="Microwave repair",
+        ),
+        qualifiers=("reopened", "owner_gap"),
+    ) == "dispatch.scheduling_attention.reopened.owner_gap"
 
 
 def test_workflow_state_service_builds_service_request_timeline() -> None:
