@@ -51,6 +51,7 @@ If you are operating or deploying the bot:
 If you are shaping the next product phase:
 
 - `docs/roadmap.md`
+- `docs/frontend-architecture.md`
 
 ## Current Roles
 
