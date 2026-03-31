@@ -145,6 +145,154 @@ class TechnicianApiService:
             ),
         }
 
+    async def log_call_ahead(
+        self,
+        *,
+        sr_id: int,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+        minutes: int | None = None,
+    ) -> dict[str, object]:
+        """Record a customer call-ahead as an ETA-driven field update."""
+        eta_minutes = minutes if minutes is not None and minutes > 0 else 30
+        result = await self.bluefolder_service.log_route_update(
+            sr_id,
+            update_type="eta",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            minutes=eta_minutes,
+            notify_dispatch=True,
+        )
+        return {
+            "success": True,
+            "message": result.message,
+            "callAheadMinutes": eta_minutes,
+        }
+
+    async def report_quote_needed(
+        self,
+        *,
+        sr_id: int,
+        details: str,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+        subtype: str | None = None,
+    ) -> dict[str, object]:
+        """Record a structured quote-needed handoff for office follow-up."""
+        cleaned = " ".join((details or "").split()).strip()
+        quote_subtype = self._normalize_quote_subtype(subtype)
+        note_bits = ["Quote needed"]
+        if quote_subtype != "customer":
+            note_bits.append(f"({quote_subtype})")
+        if cleaned:
+            note_bits.append(f"- {cleaned}")
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="note",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=" ".join(note_bits),
+            notify_dispatch=True,
+        )
+        self.workflow_state_service.record_event(
+            event_type="quote_needed_reported",
+            source="ops_hub.field",
+            sr_id=sr_id,
+            summary=f"Technician reported quote-needed follow-up for SR-{sr_id}.",
+            actor_user_id=technician_discord_user_id,
+            details=cleaned or None,
+            metadata={"quote_subtype": quote_subtype},
+        )
+        return {
+            "success": True,
+            "message": result.message,
+            "quoteSubtype": quote_subtype,
+        }
+
+    async def report_reschedule_needed(
+        self,
+        *,
+        sr_id: int,
+        reason: str,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+    ) -> dict[str, object]:
+        """Record a reschedule-needed handoff for dispatch."""
+        cleaned = " ".join((reason or "").split()).strip()
+        if not cleaned:
+            return {"success": False, "message": "A reschedule reason is required."}
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="reschedule_needed",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=cleaned,
+            notify_dispatch=True,
+        )
+        return {"success": True, "message": result.message}
+
+    async def get_job_photo_status(self, *, sr_id: int) -> dict[str, object]:
+        """Return structured photo-compliance state for a service request."""
+        if not self.photo_ingest_service.feature_flags.is_enabled("photo_mailbox_scan"):
+            return {
+                "enabled": False,
+                "srId": sr_id,
+                "mailboxStatus": "disabled",
+                "message": "Photo mailbox scan is currently disabled.",
+                "totalPhotos": 0,
+                "foundTags": [],
+                "missingTags": [],
+                "records": [],
+                "shouldNotify": False,
+                "reason": "Photo mailbox scan is disabled.",
+            }
+
+        summary = await self.photo_ingest_service.adapter.get_photo_compliance_summary(sr_id)
+        reminder = await self.photo_ingest_service.evaluate_photo_reminder(sr_id, send_notice=False)
+        return {
+            "enabled": True,
+            "srId": sr_id,
+            "mailboxStatus": summary.mailbox_status,
+            "message": summary.message,
+            "totalPhotos": summary.total_photos,
+            "foundTags": summary.found_tags,
+            "missingTags": summary.missing_tags,
+            "records": [
+                {
+                    "subject": record.subject,
+                    "fromEmail": record.from_email,
+                    "receivedAt": record.received_at,
+                    "attachmentCount": record.attachment_count,
+                    "attachmentNames": record.attachment_names,
+                }
+                for record in summary.matched_records
+            ],
+            "shouldNotify": "Should notify: `yes`" in reminder.message,
+            "reason": self._extract_photo_reminder_reason(reminder.message),
+        }
+
+    async def evaluate_job_photo_compliance(
+        self,
+        *,
+        sr_id: int,
+        status_override: str | None = None,
+        send_notice: bool = False,
+    ) -> dict[str, object]:
+        """Evaluate photo reminder state in a client-friendly shape."""
+        result = await self.photo_ingest_service.evaluate_photo_reminder(
+            sr_id,
+            status_override=status_override,
+            send_notice=send_notice,
+        )
+        return {
+            "success": True,
+            "srId": sr_id,
+            "message": result.message,
+            "shouldNotify": "Should notify: `yes`" in result.message,
+            "reason": self._extract_photo_reminder_reason(result.message),
+            "noticeRequested": send_notice,
+        }
+
     def resolve_technician(self, *, token_subject: str | None = None, technician_id: str | None = None) -> tuple[int, int] | None:
         """Resolve Discord and BlueFolder IDs from the caller context."""
         resolved_discord = None
@@ -235,3 +383,19 @@ class TechnicianApiService:
             "distanceMiles": item.get("distanceMiles"),
             "equipment": item.get("equipment"),
         }
+
+    @staticmethod
+    def _normalize_quote_subtype(subtype: str | None) -> str:
+        normalized = str(subtype or "").strip().casefold().replace(" ", "_").replace("-", "_")
+        if normalized in {"landlord", "tenant"}:
+            return "landlord"
+        if normalized in {"prepayment", "prepay", "cod"}:
+            return "prepayment"
+        return "customer"
+
+    @staticmethod
+    def _extract_photo_reminder_reason(message: str) -> str:
+        for line in message.splitlines():
+            if line.startswith("Reason: "):
+                return line.removeprefix("Reason: ").strip()
+        return message.strip()

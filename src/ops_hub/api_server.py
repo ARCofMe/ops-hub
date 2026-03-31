@@ -63,6 +63,12 @@ async def dispatch_technician_api_request(
         return HTTPStatus.OK, payload
 
     if method == "GET" and route_path.startswith("/tech/jobs/"):
+        if route_path.endswith("/photos"):
+            sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/photos")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            return HTTPStatus.OK, await container.technician_api_service.get_job_photo_status(sr_id=sr_id)
+
         if route_path.endswith("/parts"):
             sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/parts")
             if sr_id is None:
@@ -114,6 +120,54 @@ async def dispatch_technician_api_request(
             details=str(payload_body.get("details") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/call_ahead"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/call_ahead")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.log_call_ahead(
+            sr_id=sr_id,
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+            minutes=payload_body.get("minutes") if isinstance(payload_body.get("minutes"), int) else None,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/quote_needed"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/quote_needed")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.report_quote_needed(
+            sr_id=sr_id,
+            details=str(payload_body.get("details") or ""),
+            subtype=str(payload_body.get("subtype") or ""),
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/reschedule"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/reschedule")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.report_reschedule_needed(
+            sr_id=sr_id,
+            reason=str(payload_body.get("reason") or ""),
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/photo_compliance"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/photo_compliance")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.evaluate_job_photo_compliance(
+            sr_id=sr_id,
+            status_override=str(payload_body.get("statusOverride") or "") or None,
+            send_notice=bool(payload_body.get("sendNotice")),
         )
         return HTTPStatus.OK, payload
 

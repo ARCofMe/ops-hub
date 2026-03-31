@@ -47,24 +47,23 @@ The existing technician API already gives Ops Hub a useful starting point:
 - `GET /tech/me/today`
 - `GET /tech/jobs`
 - `GET /tech/jobs/{sr_id}`
+- `GET /tech/jobs/{sr_id}/photos`
 - `GET /tech/jobs/{sr_id}/parts`
 - `GET /tech/jobs/{sr_id}/timeline`
+- `POST /tech/jobs/{sr_id}/call_ahead`
 - `POST /tech/jobs/{sr_id}/status`
 - `POST /tech/jobs/{sr_id}/notes`
 - `POST /tech/jobs/{sr_id}/parts`
+- `POST /tech/jobs/{sr_id}/quote_needed`
+- `POST /tech/jobs/{sr_id}/reschedule`
+- `POST /tech/jobs/{sr_id}/photo_compliance`
 - `POST /tech/jobs/{sr_id}/photos/prepare`
 
 These routes are implemented in [api_server.py](/home/ner0tic/Documents/Projects/ARCoM/ops-hub/src/ops_hub/api_server.py).
 
 ### Technician App API MVP
 
-The technician app should keep using the current routes and then expand with:
-
-- `GET /tech/jobs/{sr_id}/photos`
-- `POST /tech/jobs/{sr_id}/call_ahead`
-- `POST /tech/jobs/{sr_id}/quote_needed`
-- `POST /tech/jobs/{sr_id}/reschedule`
-- `POST /tech/jobs/{sr_id}/photo_compliance`
+The next technician API expansion after the current routes should focus on richer photo upload and structured job-close flows, not on queue-control actions.
 
 The technician app should not need queue-control actions like assign owner or snooze.
 

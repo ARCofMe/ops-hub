@@ -313,11 +313,16 @@ Current technician app routes:
 - `GET /tech/me/today`
 - `GET /tech/jobs`
 - `GET /tech/jobs/<sr_id>`
+- `GET /tech/jobs/<sr_id>/photos`
 - `GET /tech/jobs/<sr_id>/parts`
 - `GET /tech/jobs/<sr_id>/timeline`
+- `POST /tech/jobs/<sr_id>/call_ahead`
 - `POST /tech/jobs/<sr_id>/status`
 - `POST /tech/jobs/<sr_id>/notes`
 - `POST /tech/jobs/<sr_id>/parts`
+- `POST /tech/jobs/<sr_id>/quote_needed`
+- `POST /tech/jobs/<sr_id>/reschedule`
+- `POST /tech/jobs/<sr_id>/photo_compliance`
 - `POST /tech/jobs/<sr_id>/photos/prepare`
 
 Requests use `Authorization: Bearer <token>` and resolve the technician from either:

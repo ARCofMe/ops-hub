@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from ops_hub.models.requests import ArchivedPhotoRecord, PhotoComplianceSummary
 from ops_hub.services.technician_api import TechnicianApiService
 
 
@@ -107,3 +108,128 @@ def test_get_job_includes_parts_case_fields() -> None:
 
     assert payload["partsStage"] == "Ready for Scheduling"
     assert payload["nextAction"] == "Call customer to schedule."
+
+
+def test_log_call_ahead_defaults_to_thirty_minutes() -> None:
+    calls: list[dict[str, object]] = []
+
+    async def log_route_update(sr_id: int, **kwargs):
+        calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="ETA logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_route_update=log_route_update),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.log_call_ahead(sr_id=100, technician_discord_user_id=1, technician_bluefolder_user_id=2)
+    )
+
+    assert result["success"] is True
+    assert result["callAheadMinutes"] == 30
+    assert calls[0]["minutes"] == 30
+    assert calls[0]["notify_dispatch"] is True
+
+
+def test_report_quote_needed_logs_note_and_workflow_event() -> None:
+    note_calls: list[dict[str, object]] = []
+    workflow_events: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        note_calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Quote note logged")
+
+    workflow_state = SimpleNamespace(record_event=lambda **kwargs: workflow_events.append(kwargs))
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=workflow_state,
+    )
+
+    result = asyncio.run(
+        service.report_quote_needed(
+            sr_id=100,
+            details="Landlord must approve COD repair.",
+            subtype="landlord",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result["quoteSubtype"] == "landlord"
+    assert "Quote needed (landlord)" in note_calls[0]["details"]
+    assert workflow_events[0]["event_type"] == "quote_needed_reported"
+    assert workflow_events[0]["metadata"] == {"quote_subtype": "landlord"}
+
+
+def test_report_reschedule_needed_requires_reason() -> None:
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.report_reschedule_needed(
+            sr_id=100,
+            reason="   ",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result == {"success": False, "message": "A reschedule reason is required."}
+
+
+def test_get_job_photo_status_returns_structured_payload() -> None:
+    async def get_photo_compliance_summary(sr_id: int):
+        return PhotoComplianceSummary(
+            sr_id=sr_id,
+            mailbox_status="present",
+            message="Found matching archived photos.",
+            matched_records=[
+                ArchivedPhotoRecord(
+                    subject="SR-100 photos",
+                    from_email="tech@example.com",
+                    received_at="2026-03-31T08:30:00Z",
+                    attachment_count=4,
+                    attachment_names=["sr100-tag.jpg"],
+                )
+            ],
+            total_photos=4,
+            found_tags=["before", "after"],
+            missing_tags=["tag"],
+        )
+
+    async def evaluate_photo_reminder(sr_id: int, *, status_override=None, send_notice=False):
+        _ = (sr_id, status_override, send_notice)
+        return SimpleNamespace(message="Should notify: `yes`\nReason: Missing required archived photos.")
+
+    photo_ingest = SimpleNamespace(
+        feature_flags=SimpleNamespace(is_enabled=lambda flag: flag == "photo_mailbox_scan"),
+        adapter=SimpleNamespace(get_photo_compliance_summary=get_photo_compliance_summary),
+        evaluate_photo_reminder=evaluate_photo_reminder,
+    )
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=photo_ingest,
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    payload = asyncio.run(service.get_job_photo_status(sr_id=100))
+
+    assert payload["enabled"] is True
+    assert payload["mailboxStatus"] == "present"
+    assert payload["shouldNotify"] is True
+    assert payload["records"][0]["attachmentCount"] == 4
+    assert payload["reason"] == "Missing required archived photos."
