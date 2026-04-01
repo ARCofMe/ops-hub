@@ -32,6 +32,12 @@ BlueFolder remains the primary business source of truth for operational job and 
 
 The next product phase is to make Ops Hub own more of the system-of-action layer for queues, next actions, role-specific workflow views, and operational follow-up while still respecting BlueFolder as a core system of record.
 
+Current app-facing backend surfaces now cover:
+
+- technician mobile workflow routes
+- dispatch board, queue, SR detail, route preview, and heatmap routes
+- parts board, parts case, tracked request, and BlueFolder-native parts update routes
+
 ## Start Here
 
 If you are using the bot day to day:

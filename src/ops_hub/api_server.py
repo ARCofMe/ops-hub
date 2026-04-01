@@ -138,6 +138,200 @@ async def dispatch_technician_api_request(
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             return HTTPStatus.OK, payload
 
+        if method == "GET" and route_path == "/dispatch/routes/preview":
+            bluefolder_user_id = _query_int(query, "bluefolder_user_id")
+            if bluefolder_user_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "bluefolder_user_id is required."}
+            payload = await container.dispatch_service.get_dispatch_route_payload(
+                technician_bluefolder_user_id=bluefolder_user_id,
+                origin_address=(query.get("origin_address") or [None])[0],
+                destination_address=(query.get("destination_address") or [None])[0],
+            )
+            return HTTPStatus.OK, payload
+
+        if method == "GET" and route_path == "/dispatch/routes/heatmap":
+            payload = await container.dispatch_service.get_dispatch_heatmap_payload(
+                technician_bluefolder_user_id=_query_int(query, "bluefolder_user_id")
+            )
+            return HTTPStatus.OK, payload
+
+    if route_path.startswith("/parts"):
+        parts_user = _resolve_parts_identity(
+            container=container,
+            parts_subject=headers.get("X-Parts-Subject"),
+            parts_id=(query.get("parts_user_id") or [None])[0],
+        )
+        if parts_user is None:
+            return HTTPStatus.FORBIDDEN, {"success": False, "message": "Parts or admin identity could not be resolved."}
+        parts_user_id = parts_user.discord_user_id
+
+        if method == "GET" and route_path == "/parts/board":
+            return HTTPStatus.OK, await container.parts_cannon_service.get_parts_board_payload()
+
+        if method == "GET" and route_path == "/parts/cases":
+            return HTTPStatus.OK, await container.parts_cannon_service.get_parts_cases_payload(
+                stage=(query.get("stage") or [None])[0],
+                age=(query.get("age") or [None])[0],
+                assigned_parts_user_id=_query_int(query, "assigned_parts_user_id"),
+                status=(query.get("status") or [None])[0],
+                reference=(query.get("reference") or [None])[0],
+            )
+
+        if method == "GET" and route_path.startswith("/parts/cases/"):
+            if route_path.endswith("/timeline"):
+                reference = _path_tail(route_path[: -len("/timeline")], prefix="/parts/cases/")
+                if not reference:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts case reference."}
+                return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_timeline_payload(reference=reference)
+            reference = _path_tail(route_path, prefix="/parts/cases/")
+            if not reference:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts case reference."}
+            return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_payload(reference=reference)
+
+        if method == "GET" and route_path == "/parts/requests":
+            return HTTPStatus.OK, await container.parts_cannon_service.get_parts_requests_payload(
+                status=(query.get("status") or [None])[0],
+                assigned_parts_user_id=_query_int(query, "assigned_parts_user_id"),
+                requested_by_user_id=_query_int(query, "requested_by_user_id"),
+                reference=(query.get("reference") or [None])[0],
+                only_unsynced=((query.get("only_unsynced") or ["false"])[0].strip().lower() == "true"),
+            )
+
+        if method == "GET" and route_path.startswith("/parts/requests/"):
+            request_id = _path_int(route_path, prefix="/parts/requests/")
+            if request_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts request id."}
+            try:
+                return HTTPStatus.OK, await container.parts_cannon_service.get_parts_request_payload(request_id=request_id)
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        payload_body = body or {}
+        if method == "POST" and route_path == "/parts/requests/sync":
+            return HTTPStatus.OK, await container.parts_cannon_service.sync_requests_payload()
+
+        if method == "POST" and route_path == "/parts/requests/reconcile":
+            return HTTPStatus.OK, await container.parts_cannon_service.reconcile_requests_payload()
+
+        if method == "POST" and route_path.startswith("/parts/requests/"):
+            action_match = _path_action(route_path, prefix="/parts/requests/")
+            if action_match is None:
+                return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            request_id_text, action = action_match
+            if not request_id_text.isdigit():
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts request id."}
+            request_id = int(request_id_text)
+            try:
+                if action == "claim":
+                    assigned_parts_user_id = payload_body.get("assignedPartsUserId")
+                    if assigned_parts_user_id is not None and not isinstance(assigned_parts_user_id, int):
+                        return HTTPStatus.BAD_REQUEST, {
+                            "success": False,
+                            "message": "assignedPartsUserId must be an integer when provided.",
+                        }
+                    payload = await container.parts_cannon_service.claim_request_payload(
+                        request_id=request_id,
+                        parts_user_id=assigned_parts_user_id if isinstance(assigned_parts_user_id, int) else parts_user_id,
+                        actor_user_id=parts_user_id,
+                    )
+                elif action == "unclaim":
+                    payload = await container.parts_cannon_service.claim_request_payload(
+                        request_id=request_id,
+                        parts_user_id=None,
+                        actor_user_id=parts_user_id,
+                    )
+                elif action == "status":
+                    status_value = str(payload_body.get("status") or "")
+                    if not status_value:
+                        return HTTPStatus.BAD_REQUEST, {"success": False, "message": "status is required."}
+                    payload = await container.parts_cannon_service.update_request_payload(
+                        request_id=request_id,
+                        status=status_value,
+                        actor_user_id=parts_user_id,
+                    )
+                else:
+                    return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            return HTTPStatus.OK, payload
+
+        if method == "POST" and route_path.startswith("/parts/sr/"):
+            action_match = _path_action(route_path, prefix="/parts/sr/")
+            if action_match is None:
+                return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            sr_id_text, action = action_match
+            if not sr_id_text.isdigit():
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            sr_id = int(sr_id_text)
+
+            update_type = None
+            details = None
+            metadata = None
+            if action == "ordered":
+                vendor = str(payload_body.get("vendor") or "").strip()
+                if not vendor:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "vendor is required."}
+                update_type = "part_ordered"
+                details = str(payload_body.get("details") or "Order submitted.")
+                metadata = {"vendor": vendor}
+                eta_value = str(payload_body.get("eta") or "").strip()
+                if eta_value:
+                    metadata["eta"] = eta_value
+            elif action == "eta":
+                eta_value = str(payload_body.get("eta") or "").strip()
+                if not eta_value:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "eta is required."}
+                update_type = "part_eta"
+                details = str(payload_body.get("details") or "ETA updated.")
+                metadata = {"eta": eta_value}
+                carrier = str(payload_body.get("carrier") or "").strip()
+                if carrier:
+                    metadata["carrier"] = carrier
+            elif action == "tracking":
+                tracking_number = str(payload_body.get("trackingNumber") or "").strip()
+                if not tracking_number:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "trackingNumber is required."}
+                update_type = "part_tracking"
+                details = str(payload_body.get("details") or "Tracking posted.")
+                metadata = {"tracking_number": tracking_number}
+                carrier = str(payload_body.get("carrier") or "").strip()
+                eta_value = str(payload_body.get("eta") or "").strip()
+                if carrier:
+                    metadata["carrier"] = carrier
+                if eta_value:
+                    metadata["eta"] = eta_value
+            elif action == "received":
+                update_type = "part_received"
+                details = str(payload_body.get("details") or "")
+                if not details:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "details is required."}
+                received_from = str(payload_body.get("receivedFrom") or "").strip()
+                metadata = {"received_from": received_from} if received_from else None
+            elif action == "ready":
+                update_type = "part_ready"
+                details = str(payload_body.get("details") or "")
+                if not details:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "details is required."}
+                ready_note = str(payload_body.get("readyNote") or "").strip()
+                metadata = {"ready_note": ready_note} if ready_note else None
+            else:
+                return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+
+            result = await container.bluefolder_service.log_parts_update(
+                sr_id,
+                update_type=update_type,
+                details=details,
+                requested_by_user_id=parts_user_id,
+                requested_by_label=container.technician_directory_service.discord_mention(parts_user_id),
+                metadata=metadata,
+            )
+            return HTTPStatus.OK, {
+                "success": True,
+                "message": result.message,
+                "srId": sr_id,
+                "updateType": update_type,
+            }
+
     technician = container.technician_api_service.resolve_technician(
         token_subject=headers.get("X-Technician-Subject"),
         technician_id=(query.get("technician_id") or [None])[0],
@@ -294,6 +488,21 @@ def _resolve_dispatcher_identity(*, container: ServiceContainer, dispatcher_subj
         return None
     identity = container.technician_directory_service.resolve_identity(user_id=raw_user_id, role_ids=set())
     if not (identity.is_dispatcher or identity.is_admin):
+        return None
+    return identity
+
+
+def _resolve_parts_identity(*, container: ServiceContainer, parts_subject: str | None, parts_id: str | None):
+    """Resolve a parts or admin caller from header/query context."""
+    raw_user_id = None
+    if parts_id and parts_id.isdigit():
+        raw_user_id = int(parts_id)
+    elif parts_subject and parts_subject.isdigit():
+        raw_user_id = int(parts_subject)
+    if raw_user_id is None:
+        return None
+    identity = container.technician_directory_service.resolve_identity(user_id=raw_user_id, role_ids=set())
+    if not (identity.is_parts or identity.is_admin):
         return None
     return identity
 

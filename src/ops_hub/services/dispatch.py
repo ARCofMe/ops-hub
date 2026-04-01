@@ -704,6 +704,209 @@ class DispatchService:
             ],
         }
 
+    async def get_dispatch_route_payload(
+        self,
+        *,
+        technician_bluefolder_user_id: int,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
+    ) -> dict[str, object]:
+        """Return a structured route preview payload for one technician."""
+        request = JobLookupRequest(
+            reference=None,
+            requested_by_user_id=0,
+            technician_bluefolder_user_id=None,
+            target_bluefolder_user_id=technician_bluefolder_user_id,
+            route_origin_address=origin_address,
+            route_destination_address=destination_address,
+        )
+        target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id
+        if target_user_id is None:
+            return {
+                "success": False,
+                "message": "Route map lookup requires a mapped BlueFolder user. Add a technician mapping first.",
+                "technicianBluefolderUserId": technician_bluefolder_user_id,
+                "stops": [],
+            }
+
+        assignments = await self._assignments_for_user(target_user_id)
+        technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
+        if not assignments:
+            return {
+                "success": True,
+                "message": f"No current assignments were found for {technician_label}.",
+                "technicianBluefolderUserId": target_user_id,
+                "technicianLabel": technician_label,
+                "assignmentsConsidered": 0,
+                "mappableStops": 0,
+                "skippedWithoutAddress": 0,
+                "originAddress": None,
+                "destinationAddress": None,
+                "routeUrl": None,
+                "imageUrl": None,
+                "stops": [],
+            }
+
+        stops: list[dict[str, str]] = []
+        missing_address_count = 0
+        for assignment in assignments[:10]:
+            sr_id = assignment.get("serviceRequestId")
+            if not isinstance(sr_id, str) or not sr_id.strip():
+                continue
+            summary = await self.bluefolder_service.get_job_summary(
+                f"SR-{sr_id}",
+                include_customer_contacts=False,
+            )
+            if not summary.available or not summary.address:
+                missing_address_count += 1
+                continue
+            address = self._format_summary_address(summary)
+            if not address:
+                missing_address_count += 1
+                continue
+            stops.append(
+                {
+                    "label": f"SR-{sr_id}",
+                    "srId": sr_id,
+                    "address": address,
+                    "subject": summary.subject or assignment.get("subject") or "Service Request",
+                }
+            )
+
+        if not stops:
+            return {
+                "success": False,
+                "message": (
+                    f"Current assignments were found for {technician_label}, but no mappable addresses "
+                    "were available from BlueFolder."
+                ),
+                "technicianBluefolderUserId": target_user_id,
+                "technicianLabel": technician_label,
+                "assignmentsConsidered": len(assignments),
+                "mappableStops": 0,
+                "skippedWithoutAddress": missing_address_count,
+                "originAddress": self._clean_route_endpoint(request.route_origin_address),
+                "destinationAddress": self._clean_route_endpoint(request.route_destination_address),
+                "routeUrl": None,
+                "imageUrl": None,
+                "stops": [],
+            }
+
+        route_origin_address = self._clean_route_endpoint(request.route_origin_address)
+        route_destination_address = self._clean_route_endpoint(request.route_destination_address)
+
+        try:
+            route_url, image_url = await self.adapter.build_route_map_urls(
+                stops,
+                origin_address=route_origin_address,
+                destination_address=route_destination_address,
+            )
+        except TypeError:
+            route_url, image_url = await self.adapter.build_route_map_urls(stops)
+
+        return {
+            "success": True,
+            "message": f"Route map ready for {technician_label}.",
+            "technicianBluefolderUserId": target_user_id,
+            "technicianLabel": technician_label,
+            "assignmentsConsidered": len(assignments),
+            "mappableStops": len(stops),
+            "skippedWithoutAddress": missing_address_count,
+            "originAddress": route_origin_address,
+            "destinationAddress": route_destination_address,
+            "routeUrl": route_url,
+            "imageUrl": image_url,
+            "stops": stops,
+        }
+
+    async def get_dispatch_heatmap_payload(
+        self,
+        *,
+        technician_bluefolder_user_id: int | None = None,
+    ) -> dict[str, object]:
+        """Return a structured assignment heatmap payload."""
+        mappings = self._dispatch_mappings()
+        if not mappings:
+            return {
+                "success": False,
+                "message": "Dispatch heatmap requires at least one technician mapping.",
+                "scannedJobs": 0,
+                "uniqueMappedLocations": 0,
+                "imageUrl": None,
+                "hotspots": [],
+            }
+
+        if technician_bluefolder_user_id is not None:
+            mappings = [record for record in mappings if record.bluefolder_user_id == technician_bluefolder_user_id]
+            if not mappings:
+                return {
+                    "success": False,
+                    "message": (
+                        "Dispatch heatmap could not find a technician mapping for "
+                        f"{await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)}."
+                    ),
+                    "scannedJobs": 0,
+                    "uniqueMappedLocations": 0,
+                    "imageUrl": None,
+                    "hotspots": [],
+                }
+
+        hotspot_counts: dict[str, int] = {}
+        address_labels: dict[str, str] = {}
+        scanned_jobs = 0
+        for record in mappings:
+            assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            for assignment in assignments[:10]:
+                sr_id = assignment.get("serviceRequestId")
+                if not isinstance(sr_id, str) or not sr_id.strip():
+                    continue
+                scanned_jobs += 1
+                summary = await self.bluefolder_service.get_job_summary(
+                    f"SR-{sr_id}",
+                    include_customer_contacts=False,
+                )
+                address = self._format_summary_address(summary)
+                if not summary.available or not address:
+                    continue
+                hotspot_counts[address] = hotspot_counts.get(address, 0) + 1
+                address_labels.setdefault(address, summary.city or summary.address or address)
+
+        if not hotspot_counts:
+            return {
+                "success": False,
+                "message": "No mappable assignment addresses were available for the current heatmap.",
+                "scannedJobs": scanned_jobs,
+                "uniqueMappedLocations": 0,
+                "imageUrl": None,
+                "hotspots": [],
+            }
+
+        hotspots = [
+            {
+                "address": address,
+                "count": count,
+                "label": address_labels.get(address, address),
+            }
+            for address, count in sorted(hotspot_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        image_url = await self.adapter.build_heat_map_url(
+            [{"address": item["address"], "count": item["count"]} for item in hotspots]
+        )
+        return {
+            "success": True,
+            "message": "Dispatch heatmap ready.",
+            "technicianBluefolderUserId": technician_bluefolder_user_id,
+            "technicianLabel": (
+                await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)
+                if technician_bluefolder_user_id is not None
+                else None
+            ),
+            "scannedJobs": scanned_jobs,
+            "uniqueMappedLocations": len(hotspots),
+            "imageUrl": image_url,
+            "hotspots": hotspots,
+        }
+
     async def acknowledge_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
         """Acknowledge one attention item by item id."""
         item = self._get_attention_item_for_action(item_id=item_id)

@@ -491,6 +491,227 @@ class PartsCannonService:
             cancelled_count=counts["cancelled"],
         )
 
+    async def get_parts_board_payload(self) -> dict[str, object]:
+        """Return a structured parts-board payload for frontend clients."""
+        queue_summary = self.queue_summary()
+        cases = await self._current_parts_cases()
+        open_cases = [case for case in cases if case.status == "open"]
+        case_metrics = self._parts_case_metrics(cases)
+        open_requests = [
+            await self._record_payload(record)
+            for record in self.request_store.load()
+            if record.status not in {"resolved", "cancelled"}
+        ]
+        return {
+            "queueSummary": self._queue_summary_payload(queue_summary),
+            "caseMetrics": case_metrics,
+            "openCases": [await self._parts_case_payload(case) for case in open_cases[:20]],
+            "openTrackedRequests": open_requests[:20],
+            "supportedRequestStatuses": list(PARTS_REQUEST_STATUSES),
+        }
+
+    async def get_parts_cases_payload(
+        self,
+        *,
+        stage: str | None = None,
+        age: str | None = None,
+        assigned_parts_user_id: int | None = None,
+        status: str | None = None,
+        reference: str | None = None,
+    ) -> dict[str, object]:
+        """Return structured parts-case list payload."""
+        normalized_stage = None if stage is None else stage.strip().lower().replace(" ", "_")
+        normalized_age = None if age is None else age.strip().lower().replace(" ", "_")
+        normalized_status = None if status is None else status.strip().lower()
+        normalized_reference = None if reference is None else reference.strip().upper()
+
+        cases = await self._current_parts_cases()
+        if normalized_stage is not None:
+            cases = [case for case in cases if case.stage == normalized_stage]
+        if normalized_age is not None:
+            cases = [case for case in cases if case.age_bucket == normalized_age]
+        if assigned_parts_user_id is not None:
+            cases = [case for case in cases if case.assigned_parts_user_id == assigned_parts_user_id]
+        if normalized_status is not None:
+            cases = [case for case in cases if case.status == normalized_status]
+        if normalized_reference is not None:
+            cases = [case for case in cases if case.reference.upper() == normalized_reference]
+        return {
+            "filters": {
+                "stage": normalized_stage,
+                "age": normalized_age,
+                "assignedPartsUserId": assigned_parts_user_id,
+                "status": normalized_status,
+                "reference": normalized_reference,
+            },
+            "items": [await self._parts_case_payload(case) for case in cases],
+        }
+
+    async def get_parts_case_payload(self, *, reference: str) -> dict[str, object]:
+        """Return one parts case plus its tracked requests."""
+        case = await self._parts_case_for_reference(reference.strip())
+        matching_records = self._matching_records_for_reference(case.reference)
+        return {
+            "case": await self._parts_case_payload(case),
+            "trackedRequests": [await self._record_payload(record) for record in matching_records],
+        }
+
+    async def get_parts_case_timeline_payload(self, *, reference: str) -> dict[str, object]:
+        """Return workflow timeline for one parts case reference."""
+        case = await self._parts_case_for_reference(reference.strip())
+        if self.workflow_state_service is None:
+            return {
+                "reference": case.reference,
+                "srId": case.sr_id,
+                "entries": [],
+            }
+
+        if case.sr_id is not None:
+            timeline = await self.workflow_state_service.build_service_request_timeline(case.sr_id)
+            entries = [
+                {
+                    "occurredAt": entry.occurred_at,
+                    "source": entry.source,
+                    "eventType": entry.event_type,
+                    "summary": entry.summary,
+                    "details": entry.details,
+                    "actorLabel": entry.actor_label,
+                }
+                for entry in timeline.entries
+            ]
+            return {
+                "reference": timeline.reference,
+                "srId": timeline.sr_id,
+                "entries": entries,
+            }
+
+        snapshot = self.workflow_state_service.current_snapshot()
+        normalized_reference = case.reference.strip().casefold()
+        events = [
+            event
+            for event in snapshot.events
+            if (event.reference or "").strip().casefold() == normalized_reference
+        ]
+        events.sort(key=lambda item: item.occurred_at, reverse=True)
+        return {
+            "reference": case.reference,
+            "srId": None,
+            "entries": [
+                {
+                    "occurredAt": event.occurred_at,
+                    "source": event.source,
+                    "eventType": event.event_type,
+                    "summary": event.summary,
+                    "details": event.details,
+                    "actorLabel": event.actor_label,
+                }
+                for event in events[:50]
+            ],
+        }
+
+    async def get_parts_requests_payload(
+        self,
+        *,
+        status: str | None = None,
+        assigned_parts_user_id: int | None = None,
+        requested_by_user_id: int | None = None,
+        reference: str | None = None,
+        only_unsynced: bool = False,
+    ) -> dict[str, object]:
+        """Return structured tracked-request list payload."""
+        normalized_status = None if status is None else self._normalize_status(status)
+        normalized_reference = None if reference is None else reference.strip().upper()
+        records = self.request_store.load()
+        if normalized_status is not None:
+            records = [record for record in records if record.status == normalized_status]
+        if assigned_parts_user_id is not None:
+            records = [record for record in records if record.assigned_parts_user_id == assigned_parts_user_id]
+        if requested_by_user_id is not None:
+            records = [record for record in records if record.requested_by_user_id == requested_by_user_id]
+        if normalized_reference is not None:
+            records = [record for record in records if record.reference.strip().upper() == normalized_reference]
+        if only_unsynced:
+            records = [
+                record
+                for record in records
+                if record.last_synced_at is None and record.status not in {"resolved", "cancelled"}
+            ]
+        return {
+            "filters": {
+                "status": normalized_status,
+                "assignedPartsUserId": assigned_parts_user_id,
+                "requestedByUserId": requested_by_user_id,
+                "reference": normalized_reference,
+                "onlyUnsynced": only_unsynced,
+            },
+            "items": [await self._record_payload(record) for record in records],
+        }
+
+    async def get_parts_request_payload(self, *, request_id: int) -> dict[str, object]:
+        """Return one tracked request plus its derived case."""
+        record = self._find_record(request_id)
+        if record is None:
+            raise ValueError(f"Parts request `{request_id}` was not found.")
+        case = await self._parts_case_for_reference(record.reference)
+        return {
+            "request": await self._record_payload(record),
+            "case": await self._parts_case_payload(case),
+        }
+
+    async def claim_request_payload(self, *, request_id: int, parts_user_id: int | None, actor_user_id: int) -> dict[str, object]:
+        """Assign or clear a tracked request and return the updated payload."""
+        result = await self.claim_request(
+            PartRequestClaim(
+                request_id=request_id,
+                parts_user_id=parts_user_id,
+                updated_by_user_id=actor_user_id,
+            )
+        )
+        record = self._find_record(request_id)
+        if record is None:
+            raise ValueError(f"Parts request `{request_id}` was not found.")
+        return {
+            "success": True,
+            "message": result.message,
+            "request": await self._record_payload(record),
+        }
+
+    async def update_request_payload(self, *, request_id: int, status: str, actor_user_id: int) -> dict[str, object]:
+        """Update a tracked request status and return the updated payload."""
+        result = await self.update_request(
+            PartRequestUpdate(
+                request_id=request_id,
+                status=status,
+                updated_by_user_id=actor_user_id,
+            )
+        )
+        record = self._find_record(request_id)
+        if record is None:
+            raise ValueError(f"Parts request `{request_id}` was not found.")
+        return {
+            "success": True,
+            "message": result.message,
+            "request": await self._record_payload(record),
+        }
+
+    async def sync_requests_payload(self) -> dict[str, object]:
+        """Run queue export and return a structured response."""
+        result = await self.sync_requests_to_parts_system()
+        return {
+            "success": True,
+            "message": result.message,
+            "queueSummary": self._queue_summary_payload(self.queue_summary()),
+        }
+
+    async def reconcile_requests_payload(self) -> dict[str, object]:
+        """Run queue reconcile and return a structured response."""
+        result = await self.reconcile_requests_from_parts_system()
+        return {
+            "success": True,
+            "message": result.message,
+            "queueSummary": self._queue_summary_payload(self.queue_summary()),
+        }
+
     def _normalize_status(self, status: str) -> str | None:
         """Normalize a requested parts status and reject unsupported values."""
         candidate = status.strip().lower()
@@ -528,16 +749,141 @@ class PartsCannonService:
             "FallbackPartsCase",
             (),
             {
+                "case_id": f"parts:{reference.strip().upper()}",
                 "reference": reference,
+                "sr_id": self._reference_sr_id(reference),
+                "stage": "tracked_requests_only",
                 "stage_label": "Tracked Requests Only",
                 "status": "open" if open_request_ids else "inactive",
                 "open_request_ids": open_request_ids,
                 "assigned_parts_user_id": None,
+                "requested_by_user_id": None,
+                "technician_bluefolder_user_id": None,
                 "next_action": "Review the tracked request and confirm the next parts step.",
                 "blocker": None,
                 "latest_status_text": None,
+                "latest_issue_text": None,
+                "updated_at": None,
+                "age_hours": None,
+                "age_bucket": None,
             },
         )()
+
+    async def _current_parts_cases(self):
+        """Return the current derived parts-case list, refreshing shared workflow state when available."""
+        if self.workflow_state_service is not None:
+            mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
+            await self.workflow_state_service.refresh_dispatch_attention(mappings)
+            return list(self.workflow_state_service.current_snapshot().parts_cases)
+
+        references = {record.reference for record in self.request_store.load()}
+        return [await self._parts_case_for_reference(reference) for reference in sorted(references)]
+
+    def _queue_summary_payload(self, summary: PartsRequestQueueSummary) -> dict[str, int]:
+        """Serialize queue-summary counts for API responses."""
+        return {
+            "totalRequests": summary.total_requests,
+            "openRequests": summary.open_requests,
+            "assignedRequests": summary.assigned_requests,
+            "unassignedRequests": summary.unassigned_requests,
+            "syncedRequests": summary.synced_requests,
+            "requestedCount": summary.requested_count,
+            "orderedCount": summary.ordered_count,
+            "receivedCount": summary.received_count,
+            "resolvedCount": summary.resolved_count,
+            "cancelledCount": summary.cancelled_count,
+        }
+
+    def _parts_case_metrics(self, cases) -> dict[str, object]:
+        """Build aggregate metrics for the current parts-case list."""
+        stage_counts: dict[str, int] = {}
+        status_counts: dict[str, int] = {}
+        age_counts: dict[str, int] = {}
+        assigned_cases = 0
+        for case in cases:
+            stage_counts[case.stage] = stage_counts.get(case.stage, 0) + 1
+            status_counts[case.status] = status_counts.get(case.status, 0) + 1
+            if case.age_bucket is not None:
+                age_counts[case.age_bucket] = age_counts.get(case.age_bucket, 0) + 1
+            if case.assigned_parts_user_id is not None:
+                assigned_cases += 1
+        return {
+            "stageCounts": stage_counts,
+            "statusCounts": status_counts,
+            "ageCounts": age_counts,
+            "assignedCases": assigned_cases,
+            "unassignedCases": max(len(cases) - assigned_cases, 0),
+        }
+
+    async def _parts_case_payload(self, case) -> dict[str, object]:
+        """Serialize one derived parts case for API responses."""
+        return {
+            "caseId": case.case_id,
+            "reference": case.reference,
+            "srId": case.sr_id,
+            "stage": case.stage,
+            "stageLabel": case.stage_label,
+            "status": case.status,
+            "openRequestIds": case.open_request_ids,
+            "assignedPartsUserId": case.assigned_parts_user_id,
+            "assignedPartsLabel": (
+                self._discord_user_label(case.assigned_parts_user_id)
+                if case.assigned_parts_user_id is not None
+                else None
+            ),
+            "requestedByUserId": case.requested_by_user_id,
+            "requestedByLabel": (
+                self._discord_user_label(case.requested_by_user_id)
+                if case.requested_by_user_id is not None
+                else None
+            ),
+            "technicianBluefolderUserId": case.technician_bluefolder_user_id,
+            "technicianLabel": (
+                self._technician_mapping_label_from_bluefolder(case.technician_bluefolder_user_id)
+                if case.technician_bluefolder_user_id is not None
+                else None
+            ),
+            "latestStatusText": case.latest_status_text,
+            "latestIssueText": case.latest_issue_text,
+            "blocker": case.blocker,
+            "nextAction": case.next_action,
+            "updatedAt": case.updated_at,
+            "ageHours": case.age_hours,
+            "ageBucket": case.age_bucket,
+        }
+
+    async def _record_payload(self, record: PartRequestRecord) -> dict[str, object]:
+        """Serialize one tracked parts request for API responses."""
+        case = await self._parts_case_for_reference(record.reference)
+        return {
+            "requestId": record.request_id,
+            "reference": record.reference,
+            "description": record.description,
+            "requestedByUserId": record.requested_by_user_id,
+            "requestedByLabel": self._discord_user_label(record.requested_by_user_id),
+            "technicianBluefolderUserId": record.technician_bluefolder_user_id,
+            "technicianLabel": (
+                self._technician_mapping_label(record) if record.technician_bluefolder_user_id is not None else None
+            ),
+            "assignedPartsUserId": record.assigned_parts_user_id,
+            "assignedPartsLabel": (
+                self._discord_user_label(record.assigned_parts_user_id)
+                if record.assigned_parts_user_id is not None
+                else None
+            ),
+            "status": record.status,
+            "createdAt": record.created_at,
+            "updatedAt": record.updated_at,
+            "lastSyncedAt": record.last_synced_at,
+            "lastReconciledAt": record.last_reconciled_at,
+            "downstreamNote": record.downstream_note,
+            "caseId": case.case_id,
+            "caseStage": case.stage,
+            "caseStageLabel": case.stage_label,
+            "caseStatus": case.status,
+            "nextAction": case.next_action,
+            "blocker": case.blocker,
+        }
 
     @staticmethod
     def _reference_sr_id(reference: str) -> int | None:
@@ -640,3 +986,7 @@ class PartsCannonService:
             discord_user_id=record.requested_by_user_id,
             bluefolder_user_id=record.technician_bluefolder_user_id,
         )
+
+    def _technician_mapping_label_from_bluefolder(self, bluefolder_user_id: int) -> str:
+        """Render a technician label from a BlueFolder user id."""
+        return self._technician_label(bluefolder_user_id=bluefolder_user_id)

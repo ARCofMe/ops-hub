@@ -76,6 +76,8 @@ Dispatch-facing endpoints that expose workflow state directly:
 - `GET /dispatch/attention/{item_id}`
 - `GET /dispatch/sr/{sr_id}/timeline`
 - `GET /dispatch/sr/{sr_id}/customer`
+- `GET /dispatch/routes/preview`
+- `GET /dispatch/routes/heatmap`
 - `POST /dispatch/attention/{item_id}/ack`
 - `POST /dispatch/attention/{item_id}/snooze`
 - `POST /dispatch/attention/{item_id}/unsnooze`
@@ -92,21 +94,34 @@ Useful query filters:
 - `status`
 - `reference`
 
+Current route-planning support:
+
+- route preview can be loaded per technician with optional `origin_address` and `destination_address`
+- assignment heatmaps can be loaded team-wide or for one technician
+- schedule writeback is still a later phase
+
 The next dispatch API expansion after the current routes should add route-planning and schedule-writeback endpoints when the dispatch web starts absorbing more of the old route planner.
 
 ### Parts App API MVP
 
 Add parts-facing endpoints around `parts_case` instead of raw request rows:
 
+- `GET /parts/board`
 - `GET /parts/cases`
 - `GET /parts/cases/{reference}`
-- `POST /parts/cases/{reference}/claim`
-- `POST /parts/cases/{reference}/ordered`
-- `POST /parts/cases/{reference}/eta`
-- `POST /parts/cases/{reference}/tracking`
-- `POST /parts/cases/{reference}/received`
-- `POST /parts/cases/{reference}/ready`
 - `GET /parts/cases/{reference}/timeline`
+- `GET /parts/requests`
+- `GET /parts/requests/{request_id}`
+- `POST /parts/requests/{request_id}/claim`
+- `POST /parts/requests/{request_id}/unclaim`
+- `POST /parts/requests/{request_id}/status`
+- `POST /parts/requests/sync`
+- `POST /parts/requests/reconcile`
+- `POST /parts/sr/{sr_id}/ordered`
+- `POST /parts/sr/{sr_id}/eta`
+- `POST /parts/sr/{sr_id}/tracking`
+- `POST /parts/sr/{sr_id}/received`
+- `POST /parts/sr/{sr_id}/ready`
 
 Useful query filters:
 
@@ -115,6 +130,14 @@ Useful query filters:
 - `assigned_parts_user_id`
 - `reference`
 - `status`
+
+Current parts-app support is split intentionally:
+
+- `parts_case` routes give the board and case detail that the app should center on
+- tracked-request routes expose the supplemental internal queue
+- BlueFolder-native parts lifecycle writes are available as `/parts/sr/{sr_id}/...` routes so the app can update the real system of record without going through Discord
+
+The next parts API expansion after the current routes should add direct case-level mutation endpoints if the app needs them. Right now the clean write path is still service-request based because BlueFolder is the system of record for ordered/ETA/tracking/received/ready updates.
 
 ## Existing Projects
 
