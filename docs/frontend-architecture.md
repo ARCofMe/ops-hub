@@ -59,7 +59,7 @@ The existing technician API already gives Ops Hub a useful starting point:
 - `POST /tech/jobs/{sr_id}/photo_compliance`
 - `POST /tech/jobs/{sr_id}/photos/prepare`
 
-These routes are implemented in [api_server.py](/home/ner0tic/Documents/Projects/ARCoM/ops-hub/src/ops_hub/api_server.py).
+These routes are implemented in [`src/ops_hub/api_server.py`](../src/ops_hub/api_server.py).
 
 ### Technician App API MVP
 
@@ -74,6 +74,8 @@ Dispatch-facing endpoints that expose workflow state directly:
 - `GET /dispatch/board`
 - `GET /dispatch/attention`
 - `GET /dispatch/attention/{item_id}`
+- `GET /dispatch/sr/{sr_id}/timeline`
+- `GET /dispatch/sr/{sr_id}/customer`
 - `POST /dispatch/attention/{item_id}/ack`
 - `POST /dispatch/attention/{item_id}/snooze`
 - `POST /dispatch/attention/{item_id}/unsnooze`
@@ -90,11 +92,7 @@ Useful query filters:
 - `status`
 - `reference`
 
-The next dispatch API expansion after the current routes should add:
-
-- `GET /dispatch/sr/{sr_id}/timeline`
-- `GET /dispatch/sr/{sr_id}/customer`
-- route-planning and schedule-writeback endpoints when the dispatch web starts absorbing more of the old route planner
+The next dispatch API expansion after the current routes should add route-planning and schedule-writeback endpoints when the dispatch web starts absorbing more of the old route planner.
 
 ### Parts App API MVP
 
@@ -122,14 +120,14 @@ Useful query filters:
 
 ### Technician App
 
-There is already a native Android project in [ARCoMTechApp](/home/ner0tic/Documents/Projects/ARCoM/ARCoMTechApp).
+There is already a native Android project in `ARCoMTechApp`.
 
 Important observations:
 
-- it already has an Ops Hub repository in [OpsHubFieldOpsRepository.kt](/home/ner0tic/Documents/Projects/ARCoM/ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt)
-- it already has a backend seam in [RepositoryProvider.kt](/home/ner0tic/Documents/Projects/ARCoM/ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt)
+- it already has an Ops Hub repository in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt`
+- it already has a backend seam in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt`
 - it still supports direct BlueFolder mode
-- it already has technician-oriented workflow logic in [JobWorkflow.kt](/home/ner0tic/Documents/Projects/ARCoM/ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/workflow/JobWorkflow.kt)
+- it already has technician-oriented workflow logic in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/workflow/JobWorkflow.kt`
 
 That means the tech app should evolve by deepening the Ops Hub path, not by treating BlueFolder-direct as the long-term primary mode.
 
@@ -142,7 +140,7 @@ Recommended direction:
 
 ### Dispatch App
 
-There is an existing route-planning app in [dispatcher-routing-app](/home/ner0tic/Documents/Projects/ARCoM/dispatcher-routing-app).
+There is an existing route-planning app in `dispatcher-routing-app`.
 
 That app is still useful, but it should become a dispatch module, not the whole dispatch product.
 

@@ -210,3 +210,55 @@ def test_dispatch_posts_attention_ack() -> None:
     assert status == HTTPStatus.OK
     assert payload["item_id"] == "dispatch:SR-100:quote_needed:landlord"
     assert payload["actor_user_id"] == 99
+
+
+def test_dispatch_returns_sr_customer_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            get_dispatch_sr_customer_payload=lambda **_: asyncio.sleep(0, result={"reference": "SR-100", "customerName": "Pat"})
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/sr/100/customer",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"reference": "SR-100", "customerName": "Pat"}
+
+
+def test_dispatch_returns_sr_timeline_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            get_dispatch_sr_timeline_payload=lambda **_: asyncio.sleep(0, result={"reference": "SR-100", "entries": []})
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/sr/100/timeline",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"reference": "SR-100", "entries": []}

@@ -654,6 +654,56 @@ class DispatchService:
             "history": [self._workflow_event_payload(event) for event in history[:20]],
         }
 
+    async def get_dispatch_sr_customer_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return structured customer and location detail for one SR."""
+        summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+        address = self._format_summary_address(summary) if summary.available else None
+        return {
+            "srId": int(summary.service_request_id) if summary.available and str(summary.service_request_id or "").isdigit() else sr_id,
+            "reference": f"SR-{summary.service_request_id or sr_id}",
+            "available": summary.available,
+            "integrationStatus": summary.integration_status,
+            "message": summary.message,
+            "subject": summary.subject,
+            "customerName": summary.customer_name,
+            "customerPhone": summary.customer_phone,
+            "status": summary.service_request_status,
+            "address": address,
+            "customerId": summary.customer_id,
+            "customerLocationId": summary.customer_location_id,
+            "contacts": [
+                {
+                    "name": contact.name,
+                    "title": contact.title,
+                    "phone": contact.phone,
+                    "email": contact.email,
+                    "isPrimary": contact.is_primary,
+                }
+                for contact in summary.customer_contacts
+            ],
+        }
+
+    async def get_dispatch_sr_timeline_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return structured SR timeline detail for dispatch clients."""
+        if self.workflow_state_service is None:
+            raise ValueError("Dispatch SR timeline requires the workflow state service.")
+        timeline = await self.workflow_state_service.build_service_request_timeline(sr_id)
+        return {
+            "srId": timeline.sr_id,
+            "reference": timeline.reference,
+            "entries": [
+                {
+                    "occurredAt": entry.occurred_at,
+                    "source": entry.source,
+                    "eventType": entry.event_type,
+                    "summary": entry.summary,
+                    "details": entry.details,
+                    "actorLabel": entry.actor_label,
+                }
+                for entry in timeline.entries
+            ],
+        }
+
     async def acknowledge_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
         """Acknowledge one attention item by item id."""
         item = self._get_attention_item_for_action(item_id=item_id)

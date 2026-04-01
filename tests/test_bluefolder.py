@@ -1822,3 +1822,68 @@ def test_dispatch_service_returns_attention_item_detail_payload() -> None:
 
     assert payload["item"]["itemId"] == attention_item.item_id
     assert payload["history"][0]["eventType"] == "attention_owner_assigned"
+
+
+def test_dispatch_service_returns_structured_sr_customer_payload() -> None:
+    async def get_job_summary(reference: str):
+        _ = reference
+        return SimpleNamespace(
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Pat",
+            customer_phone="555-0100",
+            service_request_status="Scheduled",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+            customer_id="77",
+            customer_location_id="88",
+            customer_contacts=(
+                SimpleNamespace(name="Pat", title="Owner", phone="555-0100", email="pat@example.com", is_primary=True),
+            ),
+        )
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_job_summary=get_job_summary),
+    )
+
+    payload = asyncio.run(service.get_dispatch_sr_customer_payload(sr_id=100))
+
+    assert payload["reference"] == "SR-100"
+    assert payload["customerName"] == "Pat"
+    assert payload["contacts"][0]["isPrimary"] is True
+
+
+def test_dispatch_service_returns_structured_sr_timeline_payload() -> None:
+    async def build_service_request_timeline(sr_id: int):
+        _ = sr_id
+        return SimpleNamespace(
+            sr_id=100,
+            reference="SR-100",
+            entries=[
+                SimpleNamespace(
+                    occurred_at="2026-04-01T12:00:00Z",
+                    source="ops_hub.dispatch",
+                    event_type="attention_acknowledged",
+                    summary="Acknowledged dispatch attention for SR-100.",
+                    details="Quote Needed",
+                    actor_label="<@99>",
+                )
+            ],
+        )
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(build_service_request_timeline=build_service_request_timeline),
+    )
+
+    payload = asyncio.run(service.get_dispatch_sr_timeline_payload(sr_id=100))
+
+    assert payload["reference"] == "SR-100"
+    assert payload["entries"][0]["eventType"] == "attention_acknowledged"
