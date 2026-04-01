@@ -156,3 +156,57 @@ def test_dispatch_posts_quote_needed() -> None:
     assert payload["sr_id"] == 100
     assert payload["details"] == "Need landlord approval"
     assert payload["subtype"] == "landlord"
+
+
+def test_dispatch_returns_dispatch_board() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            get_dispatch_board_payload=lambda: asyncio.sleep(0, result={"mappedTechs": 2, "attentionJobs": 3})
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/board",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"mappedTechs": 2, "attentionJobs": 3}
+
+
+def test_dispatch_posts_attention_ack() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            acknowledge_dispatch_attention_item=lambda **kwargs: asyncio.sleep(0, result=kwargs)
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/attention/dispatch:SR-100:quote_needed:landlord/ack",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+            body={},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["item_id"] == "dispatch:SR-100:quote_needed:landlord"
+    assert payload["actor_user_id"] == 99

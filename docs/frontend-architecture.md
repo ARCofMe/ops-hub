@@ -69,7 +69,7 @@ The technician app should not need queue-control actions like assign owner or sn
 
 ### Dispatch App API MVP
 
-Add dispatch-facing endpoints that expose workflow state directly:
+Dispatch-facing endpoints that expose workflow state directly:
 
 - `GET /dispatch/board`
 - `GET /dispatch/attention`
@@ -80,8 +80,6 @@ Add dispatch-facing endpoints that expose workflow state directly:
 - `POST /dispatch/attention/{item_id}/reopen`
 - `POST /dispatch/attention/{item_id}/assign`
 - `POST /dispatch/attention/{item_id}/clear_owner`
-- `GET /dispatch/sr/{sr_id}/timeline`
-- `GET /dispatch/sr/{sr_id}/customer`
 
 Useful query filters:
 
@@ -91,6 +89,12 @@ Useful query filters:
 - `bluefolder_user_id`
 - `status`
 - `reference`
+
+The next dispatch API expansion after the current routes should add:
+
+- `GET /dispatch/sr/{sr_id}/timeline`
+- `GET /dispatch/sr/{sr_id}/customer`
+- route-planning and schedule-writeback endpoints when the dispatch web starts absorbing more of the old route planner
 
 ### Parts App API MVP
 

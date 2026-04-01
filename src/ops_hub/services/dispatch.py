@@ -522,6 +522,202 @@ class DispatchService:
         except ValueError as exc:
             return CommandResult(message=str(exc))
 
+    async def get_dispatch_board_payload(self) -> dict[str, object]:
+        """Return a structured dispatch board payload for frontend clients."""
+        mappings = self._dispatch_mappings()
+        if not mappings:
+            return {
+                "mappedTechs": 0,
+                "activeTechs": 0,
+                "totalVisibleAssignments": 0,
+                "scannedJobs": 0,
+                "attentionJobs": 0,
+                "openPartsCases": 0,
+                "attentionMetrics": {},
+                "topAttention": [],
+                "openPartsCaseItems": [],
+                "technicianLoad": [],
+            }
+
+        active_techs = 0
+        total_assignments = 0
+        technician_load: list[dict[str, object]] = []
+        for record in mappings:
+            assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            assignment_count = len(assignments)
+            total_assignments += assignment_count
+            if assignment_count > 0:
+                active_techs += 1
+            origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
+            first_assignment = assignments[0] if assignments else None
+            technician_load.append(
+                {
+                    "discordUserId": record.discord_user_id,
+                    "bluefolderUserId": record.bluefolder_user_id,
+                    "technicianLabel": await self._technician_label_for_record(record),
+                    "assignmentCount": assignment_count,
+                    "originAddress": origin_address,
+                    "nextJob": (
+                        {
+                            "srId": str(first_assignment.get("serviceRequestId") or ""),
+                            "summary": str(first_assignment.get("subject") or "Unlabeled Service Request"),
+                        }
+                        if first_assignment is not None
+                        else None
+                    ),
+                }
+            )
+
+        scanned_jobs = 0
+        attention_items = []
+        open_parts_cases: list[dict[str, object]] = []
+        metrics: dict[str, object] = {}
+        if self.workflow_state_service is not None:
+            scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
+            snapshot = self.workflow_state_service.current_snapshot()
+            attention_items = [await self._attention_item_payload(item) for item in current_attention_items]
+            open_parts_cases = [await self._parts_case_payload(case) for case in snapshot.parts_cases if case.status == "open"]
+            metrics = self.workflow_state_service.attention_metrics(snapshot)
+
+        return {
+            "mappedTechs": len(mappings),
+            "activeTechs": active_techs,
+            "totalVisibleAssignments": total_assignments,
+            "scannedJobs": scanned_jobs,
+            "attentionJobs": len(attention_items),
+            "openPartsCases": len(open_parts_cases),
+            "attentionMetrics": metrics,
+            "topAttention": attention_items[:8],
+            "openPartsCaseItems": open_parts_cases[:8],
+            "technicianLoad": technician_load,
+        }
+
+    async def get_dispatch_attention_payload(
+        self,
+        *,
+        stage: str | None = None,
+        age: str | None = None,
+        technician_bluefolder_user_id: int | None = None,
+        owner_discord_user_id: int | None = None,
+        status: str | None = None,
+        reference: str | None = None,
+    ) -> dict[str, object]:
+        """Return structured attention queue payload for frontend clients."""
+        mappings = self._dispatch_mappings()
+        if self.workflow_state_service is None:
+            return {
+                "scannedJobs": 0,
+                "filters": {
+                    "stage": stage,
+                    "age": age,
+                    "technicianBluefolderUserId": technician_bluefolder_user_id,
+                    "ownerDiscordUserId": owner_discord_user_id,
+                    "status": status,
+                    "reference": reference,
+                },
+                "items": [],
+            }
+        scanned_jobs, items = await self.workflow_state_service.refresh_dispatch_attention(
+            mappings,
+            stage_filter=stage,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
+            age_bucket=age,
+            owner_discord_user_id=owner_discord_user_id,
+        )
+        normalized_status = None if status is None else status.strip().lower()
+        normalized_reference = None if reference is None else reference.strip().upper()
+        if normalized_status is not None:
+            items = [item for item in items if item.status == normalized_status]
+        if normalized_reference is not None:
+            items = [item for item in items if item.reference.upper() == normalized_reference]
+        return {
+            "scannedJobs": scanned_jobs,
+            "filters": {
+                "stage": stage,
+                "age": age,
+                "technicianBluefolderUserId": technician_bluefolder_user_id,
+                "ownerDiscordUserId": owner_discord_user_id,
+                "status": normalized_status,
+                "reference": normalized_reference,
+            },
+            "items": [await self._attention_item_payload(item) for item in items],
+        }
+
+    async def get_dispatch_attention_item_payload(self, *, item_id: str) -> dict[str, object]:
+        """Return a single attention item plus recent workflow history."""
+        if self.workflow_state_service is None:
+            raise ValueError("Dispatch attention detail requires the workflow state service.")
+        item = self.workflow_state_service.get_attention_item(item_id=item_id)
+        history = self.workflow_state_service.attention_history(item_id=item_id)
+        return {
+            "item": await self._attention_item_payload(item),
+            "history": [self._workflow_event_payload(event) for event in history[:20]],
+        }
+
+    async def acknowledge_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
+        """Acknowledge one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.acknowledge_dispatch_attention(sr_id=item.sr_id, stage=item.stage, actor_user_id=actor_user_id)
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def snooze_dispatch_attention_item(
+        self,
+        *,
+        item_id: str,
+        hours: int,
+        actor_user_id: int,
+    ) -> dict[str, object]:
+        """Snooze one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.snooze_dispatch_attention(
+            sr_id=item.sr_id,
+            stage=item.stage,
+            hours=hours,
+            actor_user_id=actor_user_id,
+        )
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def unsnooze_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
+        """Unsnooze one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.unsnooze_dispatch_attention(sr_id=item.sr_id, stage=item.stage, actor_user_id=actor_user_id)
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def reopen_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
+        """Reopen one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.reopen_dispatch_attention(sr_id=item.sr_id, stage=item.stage, actor_user_id=actor_user_id)
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def assign_dispatch_attention_item(
+        self,
+        *,
+        item_id: str,
+        assigned_owner_discord_user_id: int,
+        actor_user_id: int,
+    ) -> dict[str, object]:
+        """Assign one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.assign_dispatch_attention_owner(
+            sr_id=item.sr_id,
+            stage=item.stage,
+            assigned_owner_discord_user_id=assigned_owner_discord_user_id,
+            actor_user_id=actor_user_id,
+        )
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def clear_dispatch_attention_item_owner(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
+        """Clear owner on one attention item by item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.clear_dispatch_attention_owner(sr_id=item.sr_id, stage=item.stage, actor_user_id=actor_user_id)
+        updated = self._get_attention_item_for_action(item_id=item.item_id)
+        return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
     async def lookup_route_map(self, request: JobLookupRequest) -> RouteMapResult:
         """Return an inline route preview for the current technician/day."""
         target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id
@@ -674,6 +870,47 @@ class DispatchService:
         text = (value or "").strip()
         return text or None
 
+    def _dispatch_mappings(self) -> list[TechnicianMappingRecord]:
+        """Return current technician mappings for dispatch surfaces."""
+        if self.technician_directory_service is None:
+            return []
+        return self.technician_directory_service.mapping_records()
+
+    def _get_attention_item_for_action(self, *, item_id: str):
+        """Resolve one attention item before mutating it."""
+        if self.workflow_state_service is None:
+            raise ValueError("Dispatch attention actions require the workflow state service.")
+        return self.workflow_state_service.get_attention_item(item_id=item_id)
+
+    async def _technician_label_payload(
+        self,
+        *,
+        discord_user_id: int | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> str | None:
+        if discord_user_id is None and bluefolder_user_id is None:
+            return None
+        return await self._technician_label(
+            discord_user_id=discord_user_id,
+            bluefolder_user_id=bluefolder_user_id,
+        )
+
+    def _workflow_event_payload(self, event) -> dict[str, object]:
+        """Serialize a workflow event for API responses."""
+        return {
+            "eventId": event.event_id,
+            "eventType": event.event_type,
+            "source": event.source,
+            "occurredAt": event.occurred_at,
+            "summary": event.summary,
+            "srId": event.sr_id,
+            "reference": event.reference,
+            "actorUserId": event.actor_user_id,
+            "actorLabel": event.actor_label,
+            "details": event.details,
+            "metadata": event.metadata,
+        }
+
     def _format_job_message(
         self,
         request: JobLookupRequest,
@@ -787,6 +1024,69 @@ class DispatchService:
         if item.next_action:
             lines.append(f"Next action: {item.next_action}")
         return "\n".join(lines)
+
+    async def _attention_item_payload(self, item) -> dict[str, object]:
+        """Serialize one attention item for API responses."""
+        return {
+            "itemId": item.item_id,
+            "srId": item.sr_id,
+            "reference": item.reference,
+            "category": item.category,
+            "status": item.status,
+            "stage": item.stage,
+            "stageLabel": item.stage_label,
+            "summary": item.summary,
+            "details": item.details,
+            "location": item.location,
+            "routeLabel": item.route_label,
+            "ownerDiscordUserId": item.owner_discord_user_id,
+            "ownerBluefolderUserId": item.owner_bluefolder_user_id,
+            "ownerLabel": await self._technician_label_payload(
+                discord_user_id=item.owner_discord_user_id,
+                bluefolder_user_id=item.owner_bluefolder_user_id,
+            ),
+            "assignedOwnerDiscordUserId": item.assigned_owner_discord_user_id,
+            "assignedOwnerLabel": await self._technician_label_payload(
+                discord_user_id=item.assigned_owner_discord_user_id,
+            ),
+            "acknowledgedAt": item.acknowledged_at,
+            "acknowledgedByUserId": item.acknowledged_by_user_id,
+            "acknowledgedByLabel": await self._technician_label_payload(
+                discord_user_id=item.acknowledged_by_user_id,
+            ),
+            "snoozedUntil": item.snoozed_until,
+            "snoozedByUserId": item.snoozed_by_user_id,
+            "nextAction": item.next_action,
+            "firstSeenAt": item.first_seen_at,
+            "lastSeenAt": item.last_seen_at,
+            "ageHours": item.age_hours,
+            "ageBucket": item.age_bucket,
+        }
+
+    async def _parts_case_payload(self, case) -> dict[str, object]:
+        """Serialize one parts case for API responses."""
+        return {
+            "caseId": case.case_id,
+            "reference": case.reference,
+            "srId": case.sr_id,
+            "stage": case.stage,
+            "stageLabel": case.stage_label,
+            "status": case.status,
+            "openRequestIds": case.open_request_ids,
+            "assignedPartsUserId": case.assigned_parts_user_id,
+            "assignedPartsLabel": await self._technician_label_payload(discord_user_id=case.assigned_parts_user_id),
+            "requestedByUserId": case.requested_by_user_id,
+            "requestedByLabel": await self._technician_label_payload(discord_user_id=case.requested_by_user_id),
+            "technicianBluefolderUserId": case.technician_bluefolder_user_id,
+            "technicianLabel": await self._technician_label_payload(bluefolder_user_id=case.technician_bluefolder_user_id),
+            "latestStatusText": case.latest_status_text,
+            "latestIssueText": case.latest_issue_text,
+            "blocker": case.blocker,
+            "nextAction": case.next_action,
+            "updatedAt": case.updated_at,
+            "ageHours": case.age_hours,
+            "ageBucket": case.age_bucket,
+        }
 
     async def _technician_label(
         self,

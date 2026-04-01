@@ -39,6 +39,90 @@ async def dispatch_technician_api_request(
     if method == "GET" and route_path == "/health":
         return HTTPStatus.OK, await container.technician_api_service.health()
 
+    if route_path.startswith("/dispatch"):
+        dispatcher = _resolve_dispatcher_identity(
+            container=container,
+            dispatcher_subject=headers.get("X-Dispatch-Subject"),
+            dispatcher_id=(query.get("dispatcher_id") or [None])[0],
+        )
+        if dispatcher is None:
+            return HTTPStatus.FORBIDDEN, {"success": False, "message": "Dispatcher or admin identity could not be resolved."}
+        dispatcher_user_id = dispatcher.discord_user_id
+
+        if method == "GET" and route_path == "/dispatch/board":
+            return HTTPStatus.OK, await container.dispatch_service.get_dispatch_board_payload()
+
+        if method == "GET" and route_path == "/dispatch/attention":
+            payload = await container.dispatch_service.get_dispatch_attention_payload(
+                stage=(query.get("stage") or [None])[0],
+                age=(query.get("age") or [None])[0],
+                technician_bluefolder_user_id=_query_int(query, "bluefolder_user_id"),
+                owner_discord_user_id=_query_int(query, "owner_discord_user_id"),
+                status=(query.get("status") or [None])[0],
+                reference=(query.get("reference") or [None])[0],
+            )
+            return HTTPStatus.OK, payload
+
+        if method == "GET" and route_path.startswith("/dispatch/attention/"):
+            item_id = _path_tail(route_path, prefix="/dispatch/attention/")
+            if not item_id:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid attention item id."}
+            try:
+                return HTTPStatus.OK, await container.dispatch_service.get_dispatch_attention_item_payload(item_id=item_id)
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        payload_body = body or {}
+        if method == "POST" and route_path.startswith("/dispatch/attention/"):
+            action_match = _path_action(route_path, prefix="/dispatch/attention/")
+            if action_match is None:
+                return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            item_id, action = action_match
+            try:
+                if action == "ack":
+                    payload = await container.dispatch_service.acknowledge_dispatch_attention_item(
+                        item_id=item_id,
+                        actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "snooze":
+                    payload = await container.dispatch_service.snooze_dispatch_attention_item(
+                        item_id=item_id,
+                        hours=int(payload_body.get("hours") or 1),
+                        actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "unsnooze":
+                    payload = await container.dispatch_service.unsnooze_dispatch_attention_item(
+                        item_id=item_id,
+                        actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "reopen":
+                    payload = await container.dispatch_service.reopen_dispatch_attention_item(
+                        item_id=item_id,
+                        actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "assign":
+                    assigned_owner_discord_user_id = int(payload_body.get("assignedOwnerDiscordUserId") or 0)
+                    if assigned_owner_discord_user_id <= 0:
+                        return HTTPStatus.BAD_REQUEST, {
+                            "success": False,
+                            "message": "assignedOwnerDiscordUserId must be a positive Discord user id.",
+                        }
+                    payload = await container.dispatch_service.assign_dispatch_attention_item(
+                        item_id=item_id,
+                        assigned_owner_discord_user_id=assigned_owner_discord_user_id,
+                        actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "clear_owner":
+                    payload = await container.dispatch_service.clear_dispatch_attention_item_owner(
+                        item_id=item_id,
+                        actor_user_id=dispatcher_user_id,
+                    )
+                else:
+                    return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            return HTTPStatus.OK, payload
+
     technician = container.technician_api_service.resolve_technician(
         token_subject=headers.get("X-Technician-Subject"),
         technician_id=(query.get("technician_id") or [None])[0],
@@ -184,6 +268,27 @@ async def dispatch_technician_api_request(
     return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
 
 
+def _resolve_dispatcher_identity(*, container: ServiceContainer, dispatcher_subject: str | None, dispatcher_id: str | None):
+    """Resolve a dispatch or admin caller from header/query context."""
+    raw_user_id = None
+    if dispatcher_id and dispatcher_id.isdigit():
+        raw_user_id = int(dispatcher_id)
+    elif dispatcher_subject and dispatcher_subject.isdigit():
+        raw_user_id = int(dispatcher_subject)
+    if raw_user_id is None:
+        return None
+    identity = container.technician_directory_service.resolve_identity(user_id=raw_user_id, role_ids=set())
+    if not (identity.is_dispatcher or identity.is_admin):
+        return None
+    return identity
+
+
+def _query_int(query: dict[str, list[str]], key: str) -> int | None:
+    """Parse one optional positive integer query parameter."""
+    value = (query.get(key) or [None])[0]
+    return int(value) if isinstance(value, str) and value.isdigit() else None
+
+
 def _path_int(path: str, *, prefix: str, suffix: str = "") -> int | None:
     """Parse an integer id from a technician API route."""
     candidate = path
@@ -193,6 +298,27 @@ def _path_int(path: str, *, prefix: str, suffix: str = "") -> int | None:
         return None
     value = candidate[len(prefix):].strip("/")
     return int(value) if value.isdigit() else None
+
+
+def _path_tail(path: str, *, prefix: str) -> str | None:
+    """Parse a trailing path segment as a raw string value."""
+    if not path.startswith(prefix):
+        return None
+    value = path[len(prefix):].strip("/")
+    return value or None
+
+
+def _path_action(path: str, *, prefix: str) -> tuple[str, str] | None:
+    """Parse /prefix/<item_id>/<action> paths."""
+    if not path.startswith(prefix):
+        return None
+    remainder = path[len(prefix):].strip("/")
+    if "/" not in remainder:
+        return None
+    item_id, action = remainder.rsplit("/", 1)
+    if not item_id or not action:
+        return None
+    return item_id, action
 
 
 @dataclass(slots=True)

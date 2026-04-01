@@ -3,10 +3,19 @@
 import asyncio
 from pathlib import Path
 import textwrap
+from types import SimpleNamespace
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
-from ops_hub.models.requests import CustomerContactSummary, JobLookupRequest, TechnicianMappingRecord
+from ops_hub.models.requests import (
+    AttentionItemRecord,
+    CustomerContactSummary,
+    JobLookupRequest,
+    PartsCaseRecord,
+    TechnicianMappingRecord,
+    WorkflowEventRecord,
+    WorkflowStateSnapshot,
+)
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.dispatch import DispatchService
 
@@ -1694,3 +1703,122 @@ def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
     assert notifications.calls == [
         ("dispatch.contact_issue", "SR-12345 no-answer logged. Customer no-answer at 12:30 PM. Details: knocked twice. Reported by Mike Smith.")
     ]
+
+
+def test_dispatch_service_returns_structured_board_payload() -> None:
+    async def get_assignments_for_user_today(user_id: int):
+        _ = user_id
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    attention_item = AttentionItemRecord(
+        item_id="dispatch:SR-100:quote_needed:landlord",
+        sr_id=100,
+        reference="SR-100",
+        category="dispatch",
+        status="open",
+        stage="quote_needed",
+        stage_label="Quote Needed",
+        summary="Dryer repair",
+        owner_discord_user_id=42,
+        owner_bluefolder_user_id=13051,
+        assigned_owner_discord_user_id=99,
+        age_hours=3,
+        age_bucket="warm",
+    )
+    parts_case = PartsCaseRecord(
+        case_id="parts:SR-100",
+        reference="SR-100",
+        sr_id=100,
+        stage="ordered",
+        stage_label="Ordered",
+        status="open",
+        open_request_ids=[7],
+        next_action="Wait for ETA.",
+        age_hours=12,
+        age_bucket="warm",
+    )
+    workflow_state = SimpleNamespace(
+        refresh_dispatch_attention=lambda mappings: asyncio.sleep(0, result=(1, [attention_item])),
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[attention_item],
+            parts_cases=[parts_case],
+            events=[],
+            updated_at="2026-04-01T10:00:00Z",
+        ),
+        attention_metrics=lambda snapshot: {
+            "total_items": 1,
+            "status_counts": {"open": 1},
+            "stage_counts": {"Quote Needed": 1},
+            "age_counts": {"warm": 1},
+            "assigned_owner_items": 1,
+            "unassigned_owner_items": 0,
+            "urgent_open_items": 0,
+            "urgent_suppressed_items": 0,
+        },
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_today=get_assignments_for_user_today,
+        get_user_name=lambda user_id: asyncio.sleep(0, result=None),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    payload = asyncio.run(service.get_dispatch_board_payload())
+
+    assert payload["mappedTechs"] == 1
+    assert payload["attentionJobs"] == 1
+    assert payload["topAttention"][0]["itemId"] == "dispatch:SR-100:quote_needed:landlord"
+    assert payload["openPartsCaseItems"][0]["reference"] == "SR-100"
+
+
+def test_dispatch_service_returns_attention_item_detail_payload() -> None:
+    attention_item = AttentionItemRecord(
+        item_id="dispatch:SR-100:quote_needed:landlord",
+        sr_id=100,
+        reference="SR-100",
+        category="dispatch",
+        status="open",
+        stage="quote_needed",
+        stage_label="Quote Needed",
+        summary="Dryer repair",
+        owner_discord_user_id=42,
+        owner_bluefolder_user_id=13051,
+    )
+    workflow_event = WorkflowEventRecord(
+        event_id="evt-1",
+        event_type="attention_owner_assigned",
+        source="ops_hub.dispatch",
+        occurred_at="2026-04-01T11:00:00Z",
+        summary="Assigned dispatch attention owner for SR-100.",
+        sr_id=100,
+        reference="SR-100",
+    )
+    workflow_state = SimpleNamespace(
+        get_attention_item=lambda item_id: attention_item,
+        attention_history=lambda item_id: [workflow_event],
+    )
+    directory = SimpleNamespace(
+        reverse_mappings=lambda: {13051: 42},
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(get_user_name=lambda user_id: asyncio.sleep(0, result=None))
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    payload = asyncio.run(service.get_dispatch_attention_item_payload(item_id=attention_item.item_id))
+
+    assert payload["item"]["itemId"] == attention_item.item_id
+    assert payload["history"][0]["eventType"] == "attention_owner_assigned"

@@ -330,6 +330,25 @@ Requests use `Authorization: Bearer <token>` and resolve the technician from eit
 - query `technician_id=<discord_user_id>`
 - header `X-Technician-Subject: <discord_user_id>`
 
+Current dispatch app routes:
+
+- `GET /dispatch/board`
+- `GET /dispatch/attention`
+- `GET /dispatch/attention/<item_id>`
+- `POST /dispatch/attention/<item_id>/ack`
+- `POST /dispatch/attention/<item_id>/snooze`
+- `POST /dispatch/attention/<item_id>/unsnooze`
+- `POST /dispatch/attention/<item_id>/reopen`
+- `POST /dispatch/attention/<item_id>/assign`
+- `POST /dispatch/attention/<item_id>/clear_owner`
+
+Dispatch requests use the same bearer token and resolve the caller from either:
+
+- query `dispatcher_id=<discord_user_id>`
+- header `X-Dispatch-Subject: <discord_user_id>`
+
+Dispatch API access currently requires the resolved user to be an Ops Hub dispatcher or admin.
+
 ## Project Layout
 
 ```text

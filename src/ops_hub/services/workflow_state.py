@@ -417,6 +417,20 @@ class WorkflowStateService:
             lines.extend(["", f"...and {len(history) - 10} more workflow event(s)"])
         return CommandResult(message="\n".join(lines))
 
+    def get_attention_item(self, *, item_id: str) -> AttentionItemRecord:
+        """Return one persisted attention item by stable item id."""
+        snapshot = self.store.load()
+        for item in snapshot.attention_items:
+            if item.item_id == item_id:
+                return item
+        raise ValueError(f"No attention item is currently available for `{item_id}`.")
+
+    def attention_history(self, *, item_id: str) -> list[WorkflowEventRecord]:
+        """Return persisted workflow history for one attention item."""
+        snapshot = self.store.load()
+        item = self.get_attention_item(item_id=item_id)
+        return self._attention_history_events(snapshot.events, item=item)
+
     async def get_parts_case(self, *, sr_id: int | None = None, reference: str | None = None) -> PartsCaseRecord:
         """Return a current parts-case record for one SR or reference."""
         resolved_reference = reference or (f"SR-{sr_id}" if sr_id is not None else None)
