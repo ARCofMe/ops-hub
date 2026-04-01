@@ -11,6 +11,7 @@ This guide covers the main dispatch workflows in Ops Hub.
 - `/tech_job`
 - `/dispatch_board`
 - `/dispatch_attention`
+- `/triage_disposition`
 - `/attention_ack`
 - `/attention_snooze`
 - `/attention_assign`
@@ -83,10 +84,40 @@ This is one of the best commands for active triage.
 
 Stage filters currently include:
 
+- `new_sr_triage`
+- `model_serial_needed`
+- `likely_parts_previsit`
+- `diagnostic_required`
+- `previsit_quote_needed`
 - `issue_reported`
 - `part_received`
 - `part_ready`
 - `quote_needed`
+
+The first five are the early first-time-fix planning stages.
+
+Use them when dispatch or service management needs to decide:
+
+- whether the SR needs technical review before booking
+- whether better model/serial data is required
+- whether a parts-first visit is realistic
+- whether a diagnostic-first visit is safer
+- whether quote or prepayment should be resolved before scheduling
+
+### `/triage_disposition`
+
+Use:
+
+- `/triage_disposition sr_id:95956 disposition:parts_first`
+- `/triage_disposition sr_id:95956 disposition:collect_info`
+
+Disposition values:
+
+- `schedule_normal`
+- `collect_info`
+- `parts_first`
+- `diag_first`
+- `quote_before_schedule`
 
 Use `quote_needed` when you want jobs that still need quote delivery, approval, landlord contact, or prepayment before scheduling can move.
 
@@ -174,12 +205,13 @@ Use this when:
 
 1. Use `/dispatch_board` for the day view
 2. Use `/dispatch_attention` for actionable jobs
-3. Use `/attention_assign` to make ownership explicit
-4. Use `/attention_ack` or `/attention_snooze` to reflect real queue state
-5. Use `/attention_history` if the status looks wrong or stale
-6. Use `/dispatch_next` for specific follow-up guidance
-7. Use `/customer` when you need the right contact information
-8. Use `/photo_compliance_board` when photo follow-up matters
+3. Use `/triage_disposition` when the job is still in a triage-stage queue
+4. Use `/attention_assign` to make ownership explicit
+5. Use `/attention_ack` or `/attention_snooze` to reflect real queue state
+6. Use `/attention_history` if the status looks wrong or stale
+7. Use `/dispatch_next` for specific follow-up guidance
+8. Use `/customer` when you need the right contact information
+9. Use `/photo_compliance_board` when photo follow-up matters
 
 For jobs in a quote path:
 

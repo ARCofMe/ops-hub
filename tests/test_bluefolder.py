@@ -856,7 +856,7 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     assert "**Dispatch Attention**" in result.message
     assert "Scanned jobs: `2`" in result.message
     assert "Attention jobs: `1`" in result.message
-    assert "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`, `Quote Needed`" in result.message
+    assert "Actionable stages: `New SR Triage`, `Model/Serial Needed`, `Likely Parts Previsit`" in result.message
     assert "1. `SR-100` Dryer repair" in result.message
     assert "Stage: `Ready for Scheduling`" in result.message
     assert "Technician: <@42>" in result.message

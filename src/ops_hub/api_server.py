@@ -63,6 +63,21 @@ async def dispatch_technician_api_request(
             )
             return HTTPStatus.OK, payload
 
+        if method == "POST" and route_path.startswith("/dispatch/triage/") and route_path.endswith("/disposition"):
+            sr_id = _path_int(route_path, prefix="/dispatch/triage/", suffix="/disposition")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            disposition = str((body or {}).get("disposition") or "")
+            if not disposition:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "disposition is required."}
+            payload = await container.dispatch_service.set_dispatch_triage_disposition(
+                sr_id=sr_id,
+                disposition=disposition,
+                actor_user_id=dispatcher_user_id,
+                details=str((body or {}).get("details") or "") or None,
+            )
+            return HTTPStatus.OK, {"success": True, "message": payload.message, "srId": sr_id, "disposition": disposition}
+
         if method == "GET" and route_path.startswith("/dispatch/sr/"):
             if route_path.endswith("/timeline"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/timeline")
@@ -131,6 +146,16 @@ async def dispatch_technician_api_request(
                     payload = await container.dispatch_service.clear_dispatch_attention_item_owner(
                         item_id=item_id,
                         actor_user_id=dispatcher_user_id,
+                    )
+                elif action == "triage_disposition":
+                    disposition = str(payload_body.get("disposition") or "")
+                    if not disposition:
+                        return HTTPStatus.BAD_REQUEST, {"success": False, "message": "disposition is required."}
+                    payload = await container.dispatch_service.set_dispatch_triage_disposition_item(
+                        item_id=item_id,
+                        disposition=disposition,
+                        actor_user_id=dispatcher_user_id,
+                        details=str(payload_body.get("details") or "") or None,
                     )
                 else:
                     return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}

@@ -231,6 +231,11 @@ class DispatchService:
             return CommandResult(message="Dispatch attention view requires at least one technician mapping.")
 
         allowed_stages = {
+            "new_sr_triage": "New SR Triage",
+            "model_serial_needed": "Model/Serial Needed",
+            "likely_parts_previsit": "Likely Parts Previsit",
+            "diagnostic_required": "Diagnostic Required",
+            "previsit_quote_needed": "Previsit Quote Needed",
             "issue_reported": "Issue Reported",
             "part_received": "Received",
             "part_ready": "Ready for Scheduling",
@@ -239,7 +244,12 @@ class DispatchService:
         normalized_stage_filter = None if stage_filter is None else stage_filter.strip().lower().replace(" ", "_")
         if normalized_stage_filter is not None and normalized_stage_filter not in allowed_stages:
             return CommandResult(
-                message="Dispatch attention stage filter must be one of: `issue_reported`, `part_received`, `part_ready`, `quote_needed`."
+                message=(
+                    "Dispatch attention stage filter must be one of: "
+                    "`new_sr_triage`, `model_serial_needed`, `likely_parts_previsit`, "
+                    "`diagnostic_required`, `previsit_quote_needed`, "
+                    "`issue_reported`, `part_received`, `part_ready`, `quote_needed`."
+                )
             )
         allowed_age_buckets = {"fresh", "warm", "stale", "urgent"}
         normalized_age_bucket = None if age_bucket is None else age_bucket.strip().lower().replace(" ", "_")
@@ -357,7 +367,11 @@ class DispatchService:
             "**Dispatch Attention**",
             f"Scanned jobs: `{scanned_jobs}`",
             f"Attention jobs: `{len(attention_items)}`",
-            "Actionable stages: `Issue Reported`, `Received`, `Ready for Scheduling`, `Quote Needed`",
+            (
+                "Actionable stages: `New SR Triage`, `Model/Serial Needed`, `Likely Parts Previsit`, "
+                "`Diagnostic Required`, `Previsit Quote Needed`, `Issue Reported`, `Received`, "
+                "`Ready for Scheduling`, `Quote Needed`"
+            ),
             *(
                 [f"Stage filter: `{allowed_stages[normalized_stage_filter]}`"]
                 if normalized_stage_filter is not None
@@ -521,6 +535,39 @@ class DispatchService:
             return self.workflow_state_service.describe_attention_history(sr_id=sr_id, stage=stage)
         except ValueError as exc:
             return CommandResult(message=str(exc))
+
+    async def set_dispatch_triage_disposition(
+        self,
+        *,
+        sr_id: int,
+        disposition: str,
+        actor_user_id: int,
+        details: str | None = None,
+    ) -> CommandResult:
+        """Record one triage disposition decision for a service request."""
+        if self.workflow_state_service is None:
+            return CommandResult(message="Dispatch triage actions require the workflow state service.")
+        try:
+            item = self.workflow_state_service.set_triage_disposition(
+                sr_id=sr_id,
+                disposition=disposition,
+                actor_user_id=actor_user_id,
+                details=details,
+            )
+        except ValueError as exc:
+            return CommandResult(message=str(exc))
+        if item is None:
+            return CommandResult(
+                message="\n".join(
+                    [
+                        f"**Triage Disposition SR-{sr_id}**",
+                        "Disposition: `schedule_normal`",
+                        "Triage queue cleared. Dispatch can schedule the SR normally.",
+                        *( [f"Detail: {details}"] if details else [] ),
+                    ]
+                )
+            )
+        return CommandResult(message=await self._format_attention_action_result("Triage disposition set", item))
 
     async def get_dispatch_board_payload(self) -> dict[str, object]:
         """Return a structured dispatch board payload for frontend clients."""
@@ -945,6 +992,24 @@ class DispatchService:
         result = await self.reopen_dispatch_attention(sr_id=item.sr_id, stage=item.stage, actor_user_id=actor_user_id)
         updated = self._get_attention_item_for_action(item_id=item.item_id)
         return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
+
+    async def set_dispatch_triage_disposition_item(
+        self,
+        *,
+        item_id: str,
+        disposition: str,
+        actor_user_id: int,
+        details: str | None = None,
+    ) -> dict[str, object]:
+        """Record triage disposition for one item id."""
+        item = self._get_attention_item_for_action(item_id=item_id)
+        result = await self.set_dispatch_triage_disposition(
+            sr_id=item.sr_id,
+            disposition=disposition,
+            actor_user_id=actor_user_id,
+            details=details,
+        )
+        return {"success": True, "message": result.message, "reference": item.reference, "srId": item.sr_id}
 
     async def assign_dispatch_attention_item(
         self,

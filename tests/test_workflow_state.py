@@ -193,6 +193,82 @@ def test_workflow_state_service_derives_quote_needed_attention() -> None:
     assert "Customer quote approval" in (quote_items[0].details or "")
 
 
+def test_workflow_state_service_derives_new_sr_triage_attention() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Need Parts/Schedule",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    _, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+
+    triage_items = [item for item in attention_items if item.stage == "new_sr_triage"]
+
+    assert len(triage_items) == 1
+    assert triage_items[0].category == "triage"
+    assert "quick technical review" in (triage_items[0].details or "")
+    assert "record the triage disposition" in (triage_items[0].next_action or "")
+
+
+def test_workflow_state_service_triage_disposition_promotes_triage_stage() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Need Parts/Schedule",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+    updated = service.set_triage_disposition(
+        sr_id=100,
+        disposition="parts_first",
+        actor_user_id=77,
+        details="Likely common failure on this model.",
+    )
+
+    assert updated is not None
+    assert updated.stage == "likely_parts_previsit"
+    assert "parts-first candidate" in (updated.details or "")
+    assert "order before the first visit" in (updated.next_action or "")
+
+    _, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+    triage_items = [item for item in attention_items if item.stage == "likely_parts_previsit"]
+    assert len(triage_items) == 1
+
+
 def test_workflow_state_service_derives_landlord_quote_attention() -> None:
     bluefolder = FakeBlueFolderService()
 

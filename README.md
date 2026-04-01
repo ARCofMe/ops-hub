@@ -93,6 +93,7 @@ Dispatch / admin:
 - `/tech_job`
 - `/dispatch_board`
 - `/dispatch_attention`
+- `/triage_disposition`
 - `/attention_ack`
 - `/attention_snooze`
 - `/attention_assign`
@@ -213,6 +214,16 @@ The BlueFolder-native path also supports:
 - queue-based workflow objects that survive across command invocations
 
 That means statuses like `Need Parts`, `Waiting Parts`, and `Quote Needed` do not need to rely on BlueFolder comments plus Teams memory alone. Ops Hub can derive a queue item, route it to the right audience, and keep the next action and follow-up owner visible until the handoff is complete.
+
+Ops Hub now also supports early triage workflow stages for first-time-fix planning:
+
+- `new_sr_triage`
+- `model_serial_needed`
+- `likely_parts_previsit`
+- `diagnostic_required`
+- `previsit_quote_needed`
+
+Those stages are workflow-state owned today. They are derived from current SR status hints and dispatcher triage decisions, even though BlueFolder is still the source record.
 
 ### Supplemental Internal Parts Queue
 

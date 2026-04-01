@@ -184,6 +184,33 @@ def test_dispatch_returns_dispatch_board() -> None:
     assert payload == {"mappedTechs": 2, "attentionJobs": 3}
 
 
+def test_dispatch_posts_triage_disposition() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            set_dispatch_triage_disposition=lambda **kwargs: asyncio.sleep(0, result=SimpleNamespace(message="Triage updated"))
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/triage/100/disposition",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+            body={"disposition": "parts_first", "details": "Likely control board"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"success": True, "message": "Triage updated", "srId": 100, "disposition": "parts_first"}
+
+
 def test_dispatch_returns_route_preview_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

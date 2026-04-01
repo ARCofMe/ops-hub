@@ -127,6 +127,7 @@ def test_build_help_text_lists_dispatch_surface_for_dispatcher_user() -> None:
 
     assert "**Dispatch**" in result
     assert "/dispatch_attention" in result
+    assert "/triage_disposition" in result
     assert "/dispatch_next" in result
     assert "/photo_compliance_board" in result
     assert "/attention_ack" in result

@@ -26,6 +26,7 @@ class HealthCog(commands.Cog):
         "`/job`, `/assignments`, `/route_map`, `/customer`",
         "`/tech_assignments`, `/tech_job`",
         "`/dispatch_board`, `/dispatch_attention`, `/dispatch_next`, `/dispatch_heatmap`, `/photo_compliance_board`",
+        "`/triage_disposition`",
         "`/attention_ack`, `/attention_snooze`, `/attention_assign`, `/attention_clear_owner`",
         "`/attention_unsnooze`, `/attention_reopen`, `/attention_history`",
         "`/parts_brief`, `/parts_notes`, `/photo_status`, `/photo_reminder_check`",

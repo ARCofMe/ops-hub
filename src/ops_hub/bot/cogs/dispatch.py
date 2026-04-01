@@ -70,7 +70,7 @@ class DispatchCog(commands.Cog):
 
     @app_commands.command(name="dispatch_attention", description="Show mapped jobs that look actionable for dispatch right now.")
     @app_commands.describe(
-        stage="Optional stage filter: issue_reported, part_received, part_ready, or quote_needed.",
+        stage="Optional stage filter: triage, parts, or quote stages.",
         age="Optional age filter: fresh, warm, stale, or urgent.",
         bluefolder_user_id="Optional BlueFolder technician user id to narrow the view.",
         owner_discord_user_id="Optional Discord technician user id to narrow by owner.",
@@ -92,6 +92,28 @@ class DispatchCog(commands.Cog):
             technician_bluefolder_user_id=bluefolder_user_id,
             age_bucket=age,
             owner_discord_user_id=owner_discord_user_id,
+        )
+        await self._send_deferred_result(interaction, result.message)
+
+    @app_commands.command(name="triage_disposition", description="Record the current triage decision for a service request.")
+    @app_commands.describe(
+        sr_id="Service request id to update.",
+        disposition="One of: schedule_normal, collect_info, parts_first, diag_first, quote_before_schedule.",
+        details="Optional intake or triage detail.",
+    )
+    async def triage_disposition(
+        self,
+        interaction: discord.Interaction,
+        sr_id: int,
+        disposition: str,
+        details: str | None = None,
+    ) -> None:
+        """Record one triage decision for dispatch workflow."""
+        result = await self.bot.container.dispatch_service.set_dispatch_triage_disposition(
+            sr_id=sr_id,
+            disposition=disposition,
+            actor_user_id=interaction.user.id,
+            details=details,
         )
         await self._send_deferred_result(interaction, result.message)
 

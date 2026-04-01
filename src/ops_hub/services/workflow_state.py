@@ -38,6 +38,11 @@ class WorkflowStateService:
     notification_service: "NotificationService | None" = None
     attention_sla_hours: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: {
+            "new_sr_triage": (2, 8, 24),
+            "model_serial_needed": (2, 8, 24),
+            "likely_parts_previsit": (4, 12, 24),
+            "diagnostic_required": (4, 12, 24),
+            "previsit_quote_needed": (2, 8, 24),
             "issue_reported": (2, 12, 24),
             "part_received": (8, 24, 72),
             "part_ready": (4, 24, 48),
@@ -382,6 +387,65 @@ class WorkflowStateService:
         )
         return item
 
+    def set_triage_disposition(
+        self,
+        *,
+        sr_id: int,
+        disposition: str,
+        actor_user_id: int,
+        details: str | None = None,
+    ) -> AttentionItemRecord | None:
+        """Persist one triage disposition decision and update any current triage item."""
+        normalized_disposition = self._normalize_triage_disposition(disposition)
+        if normalized_disposition is None:
+            raise ValueError(
+                "Triage disposition must be one of: `schedule_normal`, `collect_info`, `parts_first`, `diag_first`, `quote_before_schedule`."
+            )
+        reference = f"SR-{sr_id}"
+        triage_stage = self._triage_stage_for_disposition(normalized_disposition)
+        triage_label = self._triage_stage_label(triage_stage) if triage_stage is not None else "Schedule Normal"
+        summary = (
+            f"Set triage disposition for {reference} to {triage_label}."
+            if triage_stage is not None
+            else f"Cleared triage queue for {reference} and marked it schedule-normal."
+        )
+        self.record_event(
+            event_type="triage_disposition_set",
+            source="ops_hub.dispatch",
+            sr_id=sr_id,
+            reference=reference,
+            actor_user_id=actor_user_id,
+            actor_label=self._user_label(actor_user_id),
+            summary=summary,
+            details=details,
+            metadata={
+                "disposition": normalized_disposition,
+                **({"triage_stage": triage_stage} if triage_stage is not None else {}),
+            },
+        )
+
+        snapshot = self.store.load()
+        existing_triage_item = self._find_existing_triage_item(snapshot.attention_items, reference=reference)
+        if existing_triage_item is None:
+            return None
+        if triage_stage is None:
+            snapshot.attention_items = [item for item in snapshot.attention_items if item.item_id != existing_triage_item.item_id]
+            snapshot.updated_at = self._now()
+            self.store.save(snapshot)
+            return None
+
+        existing_triage_item.item_id = f"dispatch:{reference}:{triage_stage}"
+        existing_triage_item.stage = triage_stage
+        existing_triage_item.stage_label = self._triage_stage_label(triage_stage)
+        existing_triage_item.details = self._triage_details(stage=triage_stage, service_request_status=None, user_details=details)
+        existing_triage_item.next_action = self._triage_next_action(stage=triage_stage)
+        existing_triage_item.last_seen_at = self._now()
+        existing_triage_item.age_hours = self._age_hours(existing_triage_item.first_seen_at)
+        existing_triage_item.age_bucket = self._age_bucket_for_stage(triage_stage, existing_triage_item.age_hours)
+        snapshot.updated_at = self._now()
+        self.store.save(snapshot)
+        return existing_triage_item
+
     def describe_attention_history(self, *, sr_id: int, stage: str | None = None) -> CommandResult:
         """Render recent workflow-state history for one attention item."""
         snapshot = self.store.load()
@@ -550,6 +614,11 @@ class WorkflowStateService:
     ) -> tuple[int, list[AttentionItemRecord]]:
         """Derive and persist current dispatch attention items."""
         allowed_stages = {
+            "new_sr_triage": "New SR Triage",
+            "model_serial_needed": "Model/Serial Needed",
+            "likely_parts_previsit": "Likely Parts Previsit",
+            "diagnostic_required": "Diagnostic Required",
+            "previsit_quote_needed": "Previsit Quote Needed",
             "issue_reported": "Issue Reported",
             "part_received": "Received",
             "part_ready": "Ready for Scheduling",
@@ -647,6 +716,43 @@ class WorkflowStateService:
     ) -> list[AttentionItemRecord]:
         """Build any current attention items for one assigned SR."""
         items: list[AttentionItemRecord] = []
+        status_text = getattr(job_summary, "service_request_status", None)
+        triage_disposition = self._triage_disposition_for_reference(reference=reference)
+        triage_stage = self._triage_stage_from_status(status_text)
+        if triage_disposition is not None:
+            triage_stage = self._triage_stage_for_disposition(triage_disposition)
+        if triage_stage is not None:
+            item_id = f"dispatch:{reference}:{triage_stage}"
+            previous = previous_items.get(item_id) or self._find_existing_triage_item(previous_items.values(), reference=reference)
+            first_seen_at = (
+                previous.first_seen_at
+                if previous is not None and previous.first_seen_at
+                else self._triage_first_seen_at(reference=reference)
+                or self._now()
+            )
+            triage_item = AttentionItemRecord(
+                item_id=item_id,
+                sr_id=sr_id,
+                reference=reference,
+                category="triage",
+                status="open",
+                stage=triage_stage,
+                stage_label=self._triage_stage_label(triage_stage),
+                summary=assignment_summary,
+                details=self._triage_details(stage=triage_stage, service_request_status=status_text),
+                location=location,
+                route_label=route_label,
+                owner_discord_user_id=record.discord_user_id,
+                owner_bluefolder_user_id=record.bluefolder_user_id,
+                next_action=self._triage_next_action(stage=triage_stage),
+                first_seen_at=first_seen_at,
+                last_seen_at=self._now(),
+                age_hours=self._age_hours(first_seen_at),
+                age_bucket=self._age_bucket_for_stage(triage_stage, self._age_hours(first_seen_at)),
+            )
+            self._carry_attention_state(triage_item, previous)
+            items.append(triage_item)
+
         if parts_snapshot is not None:
             item_id = f"dispatch:{reference}:{parts_snapshot.stage}"
             previous = previous_items.get(item_id)
@@ -680,11 +786,10 @@ class WorkflowStateService:
             self._carry_attention_state(derived_item, previous)
             items.append(derived_item)
 
-        if self._is_quote_needed_status(getattr(job_summary, "service_request_status", None)):
-            quote_subtype = self._quote_needed_subtype(getattr(job_summary, "service_request_status", None))
+        if self._is_quote_needed_status(status_text):
+            quote_subtype = self._quote_needed_subtype(status_text)
             item_id = f"dispatch:{reference}:quote_needed:{quote_subtype}"
             previous = previous_items.get(item_id)
-            status_text = getattr(job_summary, "service_request_status", None)
             first_seen_at = previous.first_seen_at if previous is not None and previous.first_seen_at else self._now()
             derived_item = AttentionItemRecord(
                 item_id=item_id,
@@ -999,7 +1104,15 @@ class WorkflowStateService:
 
     @staticmethod
     def _policy_topic_for_item(item: AttentionItemRecord, *, qualifiers: tuple[str, ...] = ()) -> str:
-        if item.stage == "part_ready":
+        if item.stage in {
+            "new_sr_triage",
+            "model_serial_needed",
+            "likely_parts_previsit",
+            "diagnostic_required",
+            "previsit_quote_needed",
+        }:
+            base = f"dispatch.triage_attention.{item.stage}"
+        elif item.stage == "part_ready":
             base = "dispatch.scheduling_attention"
         elif item.stage == "issue_reported":
             base = "dispatch.parts_issue_attention"
@@ -1096,6 +1209,115 @@ class WorkflowStateService:
         if subtype == "prepayment":
             return "Office should confirm COD pricing or prepayment, collect approval, and then return the SR to scheduling."
         return "Dispatch or office should contact the customer, confirm the quote path, and capture approval before scheduling."
+
+    @staticmethod
+    def _triage_stage_label(stage: str | None) -> str:
+        labels = {
+            "new_sr_triage": "New SR Triage",
+            "model_serial_needed": "Model/Serial Needed",
+            "likely_parts_previsit": "Likely Parts Previsit",
+            "diagnostic_required": "Diagnostic Required",
+            "previsit_quote_needed": "Previsit Quote Needed",
+        }
+        return labels.get(stage or "", "Unknown Triage Stage")
+
+    @staticmethod
+    def _normalize_triage_disposition(disposition: str | None) -> str | None:
+        candidate = str(disposition or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if candidate in {"schedule_normal", "collect_info", "parts_first", "diag_first", "quote_before_schedule"}:
+            return candidate
+        return None
+
+    @staticmethod
+    def _triage_stage_for_disposition(disposition: str | None) -> str | None:
+        mapping = {
+            "schedule_normal": None,
+            "collect_info": "model_serial_needed",
+            "parts_first": "likely_parts_previsit",
+            "diag_first": "diagnostic_required",
+            "quote_before_schedule": "previsit_quote_needed",
+        }
+        return mapping.get(disposition or "")
+
+    @staticmethod
+    def _triage_stage_from_status(service_request_status: str | None) -> str | None:
+        normalized = str(service_request_status or "").strip().casefold()
+        if not normalized:
+            return None
+        if "model" in normalized and "serial" in normalized:
+            return "model_serial_needed"
+        if "more info" in normalized or "need info" in normalized:
+            return "model_serial_needed"
+        if "parts/schedule" in normalized or "need parts/schedule" in normalized or "needs parts/schedule" in normalized:
+            return "new_sr_triage"
+        if "diagnostic required" in normalized or "diag required" in normalized:
+            return "diagnostic_required"
+        return None
+
+    def _triage_disposition_for_reference(self, *, reference: str) -> str | None:
+        normalized_reference = reference.strip().casefold()
+        latest_event: WorkflowEventRecord | None = None
+        for event in self.store.load().events:
+            if event.event_type != "triage_disposition_set":
+                continue
+            if (event.reference or "").strip().casefold() != normalized_reference:
+                continue
+            if latest_event is None or (event.occurred_at or "") > (latest_event.occurred_at or ""):
+                latest_event = event
+        if latest_event is None:
+            return None
+        return self._normalize_triage_disposition(latest_event.metadata.get("disposition"))
+
+    def _triage_first_seen_at(self, *, reference: str) -> str | None:
+        normalized_reference = reference.strip().casefold()
+        timestamps = [
+            event.occurred_at
+            for event in self.store.load().events
+            if (event.reference or "").strip().casefold() == normalized_reference and event.event_type == "triage_disposition_set"
+        ]
+        valid = [value for value in timestamps if value]
+        return min(valid) if valid else None
+
+    @staticmethod
+    def _triage_details(stage: str, service_request_status: str | None, user_details: str | None = None) -> str:
+        status_text = str(service_request_status or "").strip() or "No explicit SR status detail"
+        detail_map = {
+            "new_sr_triage": "This SR needs a quick technical review before scheduling. Decide whether it should be parts-first, quote-blocked, or diagnostic-first.",
+            "model_serial_needed": "Triage needs more intake detail before a first-time-fix plan is reliable. Collect model and serial information or clearer symptom detail.",
+            "likely_parts_previsit": "Triage marked this SR as a strong parts-first candidate. Review likely failure path and decide whether to source parts before the first visit.",
+            "diagnostic_required": "Triage marked this SR as diagnostic-first. The symptom path is too uncertain for previsit parts planning.",
+            "previsit_quote_needed": "Quote, landlord approval, or prepayment should be resolved before this SR is scheduled.",
+        }
+        base = f"Current SR status is `{status_text}`. {detail_map.get(stage, '')}".strip()
+        if user_details:
+            return f"{base} {user_details}".strip()
+        return base
+
+    @staticmethod
+    def _triage_next_action(stage: str) -> str:
+        actions = {
+            "new_sr_triage": "Review intake notes, decide diag-first versus parts-first, and record the triage disposition.",
+            "model_serial_needed": "Office should collect model and serial information or better symptom detail before scheduling.",
+            "likely_parts_previsit": "Triage or parts should review likely required parts and decide whether to order before the first visit.",
+            "diagnostic_required": "Dispatch should book a diagnostic visit instead of assuming a parts-first fix path.",
+            "previsit_quote_needed": "Office should resolve quote approval, landlord approval, or prepayment before scheduling.",
+        }
+        return actions.get(stage, "Review the SR and record the next triage decision.")
+
+    @staticmethod
+    def _find_existing_triage_item(items, *, reference: str) -> AttentionItemRecord | None:
+        triage_stages = {
+            "new_sr_triage",
+            "model_serial_needed",
+            "likely_parts_previsit",
+            "diagnostic_required",
+            "previsit_quote_needed",
+        }
+        normalized_reference = reference.strip().casefold()
+        for item in items:
+            if item.stage in triage_stages and item.reference.strip().casefold() == normalized_reference:
+                return item
+        return None
 
     def _age_hours(self, raw_timestamp: str | None) -> int | None:
         parsed = self._parse_datetime(raw_timestamp)

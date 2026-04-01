@@ -31,10 +31,25 @@ It answers:
 
 Current attention stages include:
 
+- `new_sr_triage`
+- `model_serial_needed`
+- `likely_parts_previsit`
+- `diagnostic_required`
+- `previsit_quote_needed`
 - `issue_reported`
 - `part_received`
 - `part_ready`
 - `quote_needed`
+
+The triage stages are the first-time-fix planning layer. They exist before normal parts or scheduling follow-up has fully settled.
+
+They currently mean:
+
+- `new_sr_triage`: intake needs a quick technical review before dispatch should just book it
+- `model_serial_needed`: office needs better equipment or symptom detail before a useful parts-first call can be planned
+- `likely_parts_previsit`: triage believes a parts-first approach is worth reviewing before the first visit
+- `diagnostic_required`: the symptom path is too uncertain, so dispatch should book a diagnostic-first visit
+- `previsit_quote_needed`: quote, landlord approval, or prepayment should be resolved before booking
 
 `quote_needed` is the office-facing handoff for jobs that still need customer or landlord approval, quote delivery, or prepayment before normal scheduling can continue.
 
@@ -79,6 +94,7 @@ Queue inspection:
 
 Queue actions:
 
+- `/triage_disposition`
 - `/attention_ack`
 - `/attention_snooze`
 - `/attention_assign`
@@ -90,11 +106,12 @@ Queue actions:
 
 1. Start with `/dispatch_board` to see queue totals, status mix, ownership coverage, and urgent state.
 2. Use `/dispatch_attention` to inspect the actual items.
-3. Use `/attention_assign` when follow-up needs a named owner.
-4. Use `/attention_ack` when the work is actively in motion and should stop firing the default urgent notice path.
-5. Use `/attention_snooze` only when the next action is intentionally delayed.
-6. Use `/attention_history` when the queue state looks surprising.
-7. Use `/attention_reopen` or `/attention_unsnooze` when the item should return to active policy tracking.
+3. Use `/triage_disposition` on triage-stage work to decide whether the SR should be normal scheduling, info collection, parts-first, diagnostic-first, or quote-blocked.
+4. Use `/attention_assign` when follow-up needs a named owner.
+5. Use `/attention_ack` when the work is actively in motion and should stop firing the default urgent notice path.
+6. Use `/attention_snooze` only when the next action is intentionally delayed.
+7. Use `/attention_history` when the queue state looks surprising.
+8. Use `/attention_reopen` or `/attention_unsnooze` when the item should return to active policy tracking.
 
 ## Policy Behavior
 
@@ -109,6 +126,11 @@ Current policy behavior:
 
 Current stage routing includes:
 
+- `new_sr_triage` -> `dispatch.triage_attention.new_sr_triage`
+- `model_serial_needed` -> `dispatch.triage_attention.model_serial_needed`
+- `likely_parts_previsit` -> `dispatch.triage_attention.likely_parts_previsit`
+- `diagnostic_required` -> `dispatch.triage_attention.diagnostic_required`
+- `previsit_quote_needed` -> `dispatch.triage_attention.previsit_quote_needed`
 - `issue_reported` -> `dispatch.parts_issue_attention`
 - `part_received` -> `parts.received_attention`
 - `part_ready` -> `dispatch.scheduling_attention`

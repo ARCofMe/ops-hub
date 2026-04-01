@@ -252,6 +252,32 @@ def test_dispatch_cog_dispatch_next_uses_workflow_state_result() -> None:
     assert interaction.followup.messages == [{"content": "Next action ready", "ephemeral": True, "embed": None}]
 
 
+def test_dispatch_cog_triage_disposition_uses_deferred_followup() -> None:
+    cog = _build_cog(dispatcher_user_ids=[99])
+    interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
+
+    async def fake_triage(self, *, sr_id, disposition, actor_user_id, details=None):
+        assert sr_id == 100
+        assert disposition == "parts_first"
+        assert actor_user_id == 99
+        assert details == "Likely common failure"
+        return SimpleNamespace(message="Triage disposition saved")
+
+    with patch.object(type(cog.bot.container.dispatch_service), "set_dispatch_triage_disposition", new=fake_triage):
+        asyncio.run(
+            cog.triage_disposition.callback(
+                cog,
+                interaction,
+                sr_id=100,
+                disposition="parts_first",
+                details="Likely common failure",
+            )
+        )
+
+    assert interaction.response.deferred is True
+    assert interaction.followup.messages == [{"content": "Triage disposition saved", "ephemeral": True, "embed": None}]
+
+
 def test_dispatch_cog_attention_ack_uses_deferred_followup() -> None:
     cog = _build_cog(dispatcher_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))
