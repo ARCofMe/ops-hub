@@ -74,6 +74,14 @@ class TechnicianApiService:
                 requested_by_user_id=technician_discord_user_id,
                 bluefolder_user_id=technician_bluefolder_user_id,
             )
+        elif normalized == "start":
+            result = await self.bluefolder_service.log_field_event(
+                sr_id,
+                event_type="start",
+                requested_by_user_id=technician_discord_user_id,
+                bluefolder_user_id=technician_bluefolder_user_id,
+                notify_dispatch=True,
+            )
         elif normalized == "complete":
             result = await self.bluefolder_service.log_field_event(
                 sr_id,
@@ -168,6 +176,63 @@ class TechnicianApiService:
             "message": result.message,
             "callAheadMinutes": eta_minutes,
         }
+
+    async def log_work_start(
+        self,
+        *,
+        sr_id: int,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+        details: str | None = None,
+    ) -> dict[str, object]:
+        """Record a structured work-start event."""
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="start",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=" ".join((details or "").split()).strip() or None,
+            notify_dispatch=True,
+        )
+        return {"success": True, "message": result.message}
+
+    async def report_no_answer(
+        self,
+        *,
+        sr_id: int,
+        details: str,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+    ) -> dict[str, object]:
+        """Record a no-answer field exception for dispatch follow-up."""
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="no_answer",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=" ".join((details or "").split()).strip() or None,
+            notify_dispatch=True,
+        )
+        return {"success": True, "message": result.message}
+
+    async def report_not_home(
+        self,
+        *,
+        sr_id: int,
+        details: str,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+    ) -> dict[str, object]:
+        """Record a not-home field exception for dispatch follow-up."""
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="not_home",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=" ".join((details or "").split()).strip() or None,
+            notify_dispatch=True,
+        )
+        return {"success": True, "message": result.message}
 
     async def report_quote_needed(
         self,

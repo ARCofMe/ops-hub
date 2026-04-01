@@ -158,6 +158,84 @@ def test_dispatch_posts_quote_needed() -> None:
     assert payload["subtype"] == "landlord"
 
 
+def test_dispatch_posts_no_answer() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(
+            health=_health,
+            resolve_technician=lambda **_: (123, 9001),
+            report_no_answer=lambda **kwargs: asyncio.sleep(0, result=kwargs),
+        )
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/tech/jobs/100/no_answer",
+            headers={"Authorization": "Bearer secret", "X-Technician-Subject": "123"},
+            body={"details": "Called twice with no response."},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["sr_id"] == 100
+    assert payload["details"] == "Called twice with no response."
+
+
+def test_dispatch_posts_start() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(
+            health=_health,
+            resolve_technician=lambda **_: (123, 9001),
+            log_work_start=lambda **kwargs: asyncio.sleep(0, result=kwargs),
+        )
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/tech/jobs/100/start",
+            headers={"Authorization": "Bearer secret", "X-Technician-Subject": "123"},
+            body={"details": "Started diagnostic with unit energized."},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["sr_id"] == 100
+    assert payload["details"] == "Started diagnostic with unit energized."
+
+
+def test_dispatch_posts_not_home() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(
+            health=_health,
+            resolve_technician=lambda **_: (123, 9001),
+            report_not_home=lambda **kwargs: asyncio.sleep(0, result=kwargs),
+        )
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/tech/jobs/100/not_home",
+            headers={"Authorization": "Bearer secret", "X-Technician-Subject": "123"},
+            body={"details": "House vacant on arrival."},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["sr_id"] == 100
+    assert payload["details"] == "House vacant on arrival."
+
+
 def test_dispatch_returns_dispatch_board() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

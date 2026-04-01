@@ -453,6 +453,42 @@ async def dispatch_technician_api_request(
         )
         return HTTPStatus.OK, payload
 
+    if method == "POST" and route_path.endswith("/start"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/start")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.log_work_start(
+            sr_id=sr_id,
+            details=str(payload_body.get("details") or "") or None,
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/no_answer"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/no_answer")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.report_no_answer(
+            sr_id=sr_id,
+            details=str(payload_body.get("details") or ""),
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/not_home"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/not_home")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.report_not_home(
+            sr_id=sr_id,
+            details=str(payload_body.get("details") or ""),
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
     if method == "POST" and route_path.endswith("/quote_needed"):
         sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/quote_needed")
         if sr_id is None:

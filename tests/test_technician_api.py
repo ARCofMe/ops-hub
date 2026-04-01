@@ -135,6 +135,122 @@ def test_log_call_ahead_defaults_to_thirty_minutes() -> None:
     assert calls[0]["notify_dispatch"] is True
 
 
+def test_update_status_supports_start() -> None:
+    calls: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Start logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.update_status(
+            sr_id=100,
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+            status="start",
+        )
+    )
+
+    assert result == {"success": True, "message": "Start logged"}
+    assert calls[0]["event_type"] == "start"
+    assert calls[0]["notify_dispatch"] is True
+
+
+def test_log_work_start_includes_optional_details() -> None:
+    calls: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Start logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.log_work_start(
+            sr_id=100,
+            details="Verified unit power and started diagnostic.",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result == {"success": True, "message": "Start logged"}
+    assert calls[0]["event_type"] == "start"
+    assert calls[0]["details"] == "Verified unit power and started diagnostic."
+
+
+def test_report_no_answer_logs_field_event() -> None:
+    calls: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="No-answer logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.report_no_answer(
+            sr_id=100,
+            details="Called twice, voicemail full.",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result == {"success": True, "message": "No-answer logged"}
+    assert calls[0]["event_type"] == "no_answer"
+    assert calls[0]["notify_dispatch"] is True
+
+
+def test_report_not_home_logs_field_event() -> None:
+    calls: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Not-home logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    result = asyncio.run(
+        service.report_not_home(
+            sr_id=100,
+            details="No vehicle in driveway.",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result == {"success": True, "message": "Not-home logged"}
+    assert calls[0]["event_type"] == "not_home"
+    assert calls[0]["notify_dispatch"] is True
+
+
 def test_report_quote_needed_logs_note_and_workflow_event() -> None:
     note_calls: list[dict[str, object]] = []
     workflow_events: list[dict[str, object]] = []
