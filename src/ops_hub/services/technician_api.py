@@ -296,6 +296,36 @@ class TechnicianApiService:
         )
         return {"success": True, "message": result.message}
 
+    async def report_unable_to_complete(
+        self,
+        *,
+        sr_id: int,
+        reason: str,
+        technician_discord_user_id: int,
+        technician_bluefolder_user_id: int | None,
+    ) -> dict[str, object]:
+        """Record a structured unable-to-complete handoff."""
+        cleaned = " ".join((reason or "").split()).strip()
+        if not cleaned:
+            return {"success": False, "message": "A closeout reason is required."}
+        result = await self.bluefolder_service.log_field_event(
+            sr_id,
+            event_type="unable_to_complete",
+            requested_by_user_id=technician_discord_user_id,
+            bluefolder_user_id=technician_bluefolder_user_id,
+            details=cleaned,
+            notify_dispatch=True,
+        )
+        self.workflow_state_service.record_event(
+            event_type="unable_to_complete_reported",
+            source="ops_hub.field",
+            sr_id=sr_id,
+            summary=f"Technician reported unable-to-complete for SR-{sr_id}.",
+            actor_user_id=technician_discord_user_id,
+            details=cleaned,
+        )
+        return {"success": True, "message": result.message}
+
     async def get_job_photo_status(self, *, sr_id: int) -> dict[str, object]:
         """Return structured photo-compliance state for a service request."""
         if not self.photo_ingest_service.feature_flags.is_enabled("photo_mailbox_scan"):

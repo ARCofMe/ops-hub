@@ -514,6 +514,18 @@ async def dispatch_technician_api_request(
         )
         return HTTPStatus.OK, payload
 
+    if method == "POST" and route_path.endswith("/unable_to_complete"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/unable_to_complete")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.report_unable_to_complete(
+            sr_id=sr_id,
+            reason=str(payload_body.get("reason") or ""),
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+        )
+        return HTTPStatus.OK, payload
+
     if method == "POST" and route_path.endswith("/photo_compliance"):
         sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/photo_compliance")
         if sr_id is None:

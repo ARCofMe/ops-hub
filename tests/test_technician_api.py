@@ -305,6 +305,37 @@ def test_report_reschedule_needed_requires_reason() -> None:
     assert result == {"success": False, "message": "A reschedule reason is required."}
 
 
+def test_report_unable_to_complete_logs_event_and_workflow_record() -> None:
+    note_calls: list[dict[str, object]] = []
+    workflow_events: list[dict[str, object]] = []
+
+    async def log_field_event(sr_id: int, **kwargs):
+        note_calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Unable-to-complete logged")
+
+    workflow_state = SimpleNamespace(record_event=lambda **kwargs: workflow_events.append(kwargs))
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(log_field_event=log_field_event),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=workflow_state,
+    )
+
+    result = asyncio.run(
+        service.report_unable_to_complete(
+            sr_id=100,
+            reason="Vendor portal outage blocked warranty closeout.",
+            technician_discord_user_id=1,
+            technician_bluefolder_user_id=2,
+        )
+    )
+
+    assert result == {"success": True, "message": "Unable-to-complete logged"}
+    assert note_calls[0]["event_type"] == "unable_to_complete"
+    assert workflow_events[0]["event_type"] == "unable_to_complete_reported"
+
+
 def test_get_job_photo_status_returns_structured_payload() -> None:
     async def get_photo_compliance_summary(sr_id: int):
         return PhotoComplianceSummary(

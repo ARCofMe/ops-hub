@@ -576,7 +576,7 @@ class BlueFolderAdapter:
                 return {"ok": False, "error": "ETA minutes must be greater than 0."}
             if event_type == "enroute":
                 return {"ok": False, "error": "ETA minutes must be greater than 0 when provided."}
-            if event_type in {"note", "reschedule_needed"}:
+            if event_type in {"note", "reschedule_needed", "unable_to_complete"}:
                 return {"ok": False, "error": "Details are required."}
             return {"ok": False, "error": f"Unsupported field event `{event_type}`."}
 
@@ -651,6 +651,10 @@ class BlueFolderAdapter:
             if not detail_text:
                 return None
             body = f"Reschedule needed noted at {event_time}. Reason: {detail_text}."
+        elif event_type == "unable_to_complete":
+            if not detail_text:
+                return None
+            body = f"Unable to complete noted at {event_time}. Reason: {detail_text}."
         else:
             return None
 

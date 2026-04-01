@@ -236,6 +236,32 @@ def test_dispatch_posts_not_home() -> None:
     assert payload["details"] == "House vacant on arrival."
 
 
+def test_dispatch_posts_unable_to_complete() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(
+            health=_health,
+            resolve_technician=lambda **_: (123, 9001),
+            report_unable_to_complete=lambda **kwargs: asyncio.sleep(0, result=kwargs),
+        )
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/tech/jobs/100/unable_to_complete",
+            headers={"Authorization": "Bearer secret", "X-Technician-Subject": "123"},
+            body={"reason": "Vendor portal outage blocked warranty closeout."},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["sr_id"] == 100
+    assert payload["reason"] == "Vendor portal outage blocked warranty closeout."
+
+
 def test_dispatch_returns_dispatch_board() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
