@@ -20,6 +20,7 @@ from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
 from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
+from ops_hub.services.service_smith import ServiceSmithService
 from ops_hub.services.technician_api import TechnicianApiService
 from ops_hub.services.workflow_state import WorkflowStateService
 from ops_hub.services.workflow_state_store import WorkflowStateStore
@@ -39,6 +40,7 @@ class ServiceContainer:
     dispatch_service: DispatchService
     technician_api_service: TechnicianApiService
     workflow_state_service: WorkflowStateService
+    service_smith_service: ServiceSmithService
 
 
 def build_container(settings: Settings) -> ServiceContainer:
@@ -171,4 +173,5 @@ def build_container(settings: Settings) -> ServiceContainer:
             workflow_state_service=workflow_state_service,
         ),
         workflow_state_service=workflow_state_service,
+        service_smith_service=ServiceSmithService(),
     )

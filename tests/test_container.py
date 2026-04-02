@@ -116,3 +116,4 @@ def test_build_container_shares_expected_collaborators() -> None:
     assert container.photo_ingest_service.technician_directory_service is container.technician_directory_service
     assert container.bluefolder_service.adapter is container.photo_ingest_service.bluefolder_service.adapter
     assert container.bluefolder_service.adapter is container.dispatch_service.bluefolder_service.adapter
+    assert container.service_smith_service is not None

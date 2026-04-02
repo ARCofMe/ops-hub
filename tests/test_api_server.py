@@ -59,6 +59,61 @@ def test_dispatch_returns_today_jobs() -> None:
     assert payload == [{"id": "100", "customerName": "Pat"}]
 
 
+def test_dispatch_returns_intake_formats() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            list_formats_payload=lambda: {"items": [{"name": "default"}]}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/intake/formats",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"items": [{"name": "default"}]}
+
+
+def test_dispatch_analyzes_intake_spreadsheet() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            analyze_spreadsheet_payload=lambda **kwargs: {"spreadsheetPath": kwargs["spreadsheet_path"], "rowCount": 2}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/analyze",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"spreadsheetPath": "/tmp/jobs.csv", "format": "default"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"spreadsheetPath": "/tmp/jobs.csv", "rowCount": 2}
+
+
 def test_dispatch_returns_job_parts_case() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
