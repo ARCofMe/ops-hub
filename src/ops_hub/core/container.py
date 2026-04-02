@@ -173,5 +173,5 @@ def build_container(settings: Settings) -> ServiceContainer:
             workflow_state_service=workflow_state_service,
         ),
         workflow_state_service=workflow_state_service,
-        service_smith_service=ServiceSmithService(),
+        service_smith_service=ServiceSmithService(settings=settings),
     )

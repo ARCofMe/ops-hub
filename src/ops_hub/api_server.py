@@ -200,6 +200,44 @@ async def dispatch_technician_api_request(
             except (RuntimeError, ValueError) as exc:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
+        if method == "POST" and route_path == "/dispatch/intake/preview":
+            payload_body = body or {}
+            spreadsheet_path = str(payload_body.get("spreadsheetPath") or "").strip()
+            if not spreadsheet_path:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "spreadsheetPath is required."}
+            try:
+                return HTTPStatus.OK, container.service_smith_service.preview_import_payload(
+                    spreadsheet_path=spreadsheet_path,
+                    format_name=str(payload_body.get("format") or "default"),
+                    field_map_path=str(payload_body.get("fieldMapPath") or "").strip() or None,
+                    duplicate_mode=str(payload_body.get("duplicateMode") or "skip"),
+                    preview_mode=str(payload_body.get("previewMode") or "plan"),
+                    row_start=int(payload_body["rowStart"]) if payload_body.get("rowStart") is not None else None,
+                    row_end=int(payload_body["rowEnd"]) if payload_body.get("rowEnd") is not None else None,
+                    limit=int(payload_body["limit"]) if payload_body.get("limit") is not None else 25,
+                )
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        if method == "POST" and route_path == "/dispatch/intake/import":
+            payload_body = body or {}
+            spreadsheet_path = str(payload_body.get("spreadsheetPath") or "").strip()
+            if not spreadsheet_path:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "spreadsheetPath is required."}
+            try:
+                return HTTPStatus.OK, container.service_smith_service.import_spreadsheet_payload(
+                    spreadsheet_path=spreadsheet_path,
+                    format_name=str(payload_body.get("format") or "default"),
+                    field_map_path=str(payload_body.get("fieldMapPath") or "").strip() or None,
+                    duplicate_mode=str(payload_body.get("duplicateMode") or "skip"),
+                    row_start=int(payload_body["rowStart"]) if payload_body.get("rowStart") is not None else None,
+                    row_end=int(payload_body["rowEnd"]) if payload_body.get("rowEnd") is not None else None,
+                    limit=int(payload_body["limit"]) if payload_body.get("limit") is not None else None,
+                    fail_fast=bool(payload_body.get("failFast")),
+                )
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
     if route_path.startswith("/parts"):
         parts_user = _resolve_parts_identity(
             container=container,

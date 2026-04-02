@@ -114,6 +114,62 @@ def test_dispatch_analyzes_intake_spreadsheet() -> None:
     assert payload == {"spreadsheetPath": "/tmp/jobs.csv", "rowCount": 2}
 
 
+def test_dispatch_previews_intake_import() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            preview_import_payload=lambda **kwargs: {"previewMode": kwargs["preview_mode"], "rowCount": 1}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/preview",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"spreadsheetPath": "/tmp/jobs.csv", "previewMode": "payload_preview"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"previewMode": "payload_preview", "rowCount": 1}
+
+
+def test_dispatch_imports_intake_spreadsheet() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            import_spreadsheet_payload=lambda **kwargs: {"rowCount": 1, "summary": {"status:imported": 1}}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/import",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"spreadsheetPath": "/tmp/jobs.csv"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"rowCount": 1, "summary": {"status:imported": 1}}
+
+
 def test_dispatch_returns_job_parts_case() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

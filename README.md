@@ -358,6 +358,14 @@ Current dispatch app routes:
 - `POST /dispatch/attention/<item_id>/reopen`
 - `POST /dispatch/attention/<item_id>/assign`
 - `POST /dispatch/attention/<item_id>/clear_owner`
+- `GET /dispatch/sr/<sr_id>/customer`
+- `GET /dispatch/sr/<sr_id>/timeline`
+- `GET /dispatch/routes/preview`
+- `GET /dispatch/routes/heatmap`
+- `GET /dispatch/intake/formats`
+- `POST /dispatch/intake/analyze`
+- `POST /dispatch/intake/preview`
+- `POST /dispatch/intake/import`
 
 Dispatch requests use the same bearer token and resolve the caller from either:
 
