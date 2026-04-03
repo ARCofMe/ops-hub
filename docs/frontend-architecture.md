@@ -106,6 +106,7 @@ Useful query filters:
 Current route-planning support:
 
 - route preview can be loaded per technician with optional `origin_address` and `destination_address`
+- route preview also supports `optimize=true` when dispatch wants the legacy routing backend to return a better stop order
 - assignment heatmaps can be loaded team-wide or for one technician
 - schedule writeback is still a later phase
 

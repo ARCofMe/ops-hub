@@ -194,6 +194,7 @@ async def dispatch_technician_api_request(
                 technician_bluefolder_user_id=bluefolder_user_id,
                 origin_address=(query.get("origin_address") or [None])[0],
                 destination_address=(query.get("destination_address") or [None])[0],
+                optimize=((query.get("optimize") or ["false"])[0].strip().lower() == "true"),
             )
             return HTTPStatus.OK, payload
 

@@ -790,6 +790,7 @@ class DispatchService:
         technician_bluefolder_user_id: int,
         origin_address: str | None = None,
         destination_address: str | None = None,
+        optimize: bool = False,
     ) -> dict[str, object]:
         """Return a structured route preview payload for one technician."""
         request = JobLookupRequest(
@@ -846,10 +847,12 @@ class DispatchService:
                 continue
             stops.append(
                 {
+                    "id": sr_id,
                     "label": f"SR-{sr_id}",
                     "srId": sr_id,
                     "address": address,
                     "subject": summary.subject or assignment.get("subject") or "Service Request",
+                    "routeLabel": assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow"),
                 }
             )
 
@@ -874,15 +877,23 @@ class DispatchService:
 
         route_origin_address = self._clean_route_endpoint(request.route_origin_address)
         route_destination_address = self._clean_route_endpoint(request.route_destination_address)
+        planned_route = await self.adapter.preview_route_plan(
+            stops,
+            origin_address=route_origin_address,
+            destination_address=route_destination_address,
+            optimize=optimize,
+        )
+        planned_stops = planned_route.get("stops") if isinstance(planned_route, dict) else None
+        route_stops = planned_stops if isinstance(planned_stops, list) and planned_stops else stops
 
         try:
             route_url, image_url = await self.adapter.build_route_map_urls(
-                stops,
+                route_stops,
                 origin_address=route_origin_address,
                 destination_address=route_destination_address,
             )
         except TypeError:
-            route_url, image_url = await self.adapter.build_route_map_urls(stops)
+            route_url, image_url = await self.adapter.build_route_map_urls(route_stops)
 
         return {
             "success": True,
@@ -894,9 +905,12 @@ class DispatchService:
             "skippedWithoutAddress": missing_address_count,
             "originAddress": route_origin_address,
             "destinationAddress": route_destination_address,
+            "optimized": optimize,
             "routeUrl": route_url,
             "imageUrl": image_url,
-            "stops": stops,
+            "stops": route_stops,
+            "metrics": planned_route.get("metrics") if isinstance(planned_route, dict) else None,
+            "path": planned_route.get("path") if isinstance(planned_route, dict) else [],
         }
 
     async def get_dispatch_heatmap_payload(

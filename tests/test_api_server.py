@@ -545,16 +545,19 @@ def test_dispatch_posts_triage_disposition() -> None:
 
 def test_dispatch_returns_route_preview_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
+    captured: dict[str, object] = {}
+
+    async def _route_payload(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"technicianBluefolderUserId": 9001, "mappableStops": 3, "routeUrl": "https://example.test/route"}
+
     container = SimpleNamespace(
         technician_api_service=SimpleNamespace(health=_health),
         technician_directory_service=SimpleNamespace(
             resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
         ),
         dispatch_service=SimpleNamespace(
-            get_dispatch_route_payload=lambda **_: asyncio.sleep(
-                0,
-                result={"technicianBluefolderUserId": 9001, "mappableStops": 3, "routeUrl": "https://example.test/route"},
-            )
+            get_dispatch_route_payload=_route_payload
         ),
     )
 
@@ -563,7 +566,7 @@ def test_dispatch_returns_route_preview_payload() -> None:
             settings=settings,
             container=container,
             method="GET",
-            path="/dispatch/routes/preview?bluefolder_user_id=9001",
+            path="/dispatch/routes/preview?bluefolder_user_id=9001&optimize=true",
             headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
         )
     )
@@ -571,6 +574,7 @@ def test_dispatch_returns_route_preview_payload() -> None:
     assert status == HTTPStatus.OK
     assert payload["technicianBluefolderUserId"] == 9001
     assert payload["mappableStops"] == 3
+    assert captured["optimize"] is True
 
 
 def test_dispatch_returns_heatmap_payload() -> None:

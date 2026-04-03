@@ -35,7 +35,7 @@ The next product phase is to make Ops Hub own more of the system-of-action layer
 Current app-facing backend surfaces now cover:
 
 - technician mobile workflow routes
-- dispatch board, queue, SR detail, route preview, heatmap, bulk attention, and intake-profile routes
+- dispatch board, queue, SR detail, route preview, optimized route preview, heatmap, bulk attention, and intake-profile routes
 - parts board, parts case, tracked request, and BlueFolder-native parts update routes
 
 ## Start Here

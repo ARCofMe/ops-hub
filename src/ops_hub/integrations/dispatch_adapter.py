@@ -351,6 +351,53 @@ class DispatchAdapter:
         image_url = "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
         return route_url, image_url
 
+    async def preview_route_plan(
+        self,
+        stops: list[dict[str, object]],
+        *,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
+        optimize: bool = False,
+    ) -> dict[str, object] | None:
+        """Return a richer route plan from the legacy routing backend when available."""
+        if not stops:
+            return None
+
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        if resolved_path is None or not resolved_path.exists():
+            return None
+
+        backend_path = resolved_path / "backend"
+        import_path = backend_path if backend_path.exists() else resolved_path
+
+        try:
+            with _temporary_dispatch_context(
+                dispatch_path=import_path,
+                bluefolder_path=Path(self.bluefolder_api_path).expanduser() if self.bluefolder_api_path else None,
+                api_key=self.bluefolder_api_key,
+                account_name=self.bluefolder_account_name,
+                base_url=self.bluefolder_base_url,
+                host_header=self.bluefolder_host_header,
+                verify_ssl=self.bluefolder_verify_ssl,
+                timeout_seconds=self.bluefolder_timeout_seconds,
+            ):
+                importlib.invalidate_caches()
+                sys.modules.pop("services.routing_service", None)
+                routing_module = importlib.import_module("services.routing_service")
+                routing_class = getattr(routing_module, "RoutingService")
+                router = routing_class()
+                result = router.preview_route(
+                    stops,
+                    origin=origin_address,
+                    destination=destination_address,
+                    optimize=optimize,
+                )
+        except Exception as exc:
+            logger.warning("Dispatch route planner preview unavailable: %s", exc)
+            return None
+
+        return result if isinstance(result, dict) else None
+
     async def build_heat_map_url(
         self,
         hotspots: list[dict[str, object]],
