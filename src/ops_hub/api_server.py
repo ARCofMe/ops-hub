@@ -659,6 +659,20 @@ async def dispatch_technician_api_request(
         )
         return HTTPStatus.OK, payload
 
+    if method == "POST" and route_path.endswith("/photos/upload"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/photos/upload")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.upload_job_photo(
+            sr_id=sr_id,
+            label=str(payload_body.get("label") or ""),
+            filename=str(payload_body.get("filename") or ""),
+            content_type=str(payload_body.get("contentType") or "") or None,
+            data_base64=str(payload_body.get("dataBase64") or ""),
+            technician_discord_user_id=discord_user_id,
+        )
+        return HTTPStatus.OK, payload
+
     return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
 
 

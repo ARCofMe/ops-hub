@@ -359,6 +359,32 @@ def test_dispatch_returns_job_photo_status() -> None:
     assert payload == {"mailboxStatus": "present"}
 
 
+def test_dispatch_uploads_job_photo() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(
+            health=_health,
+            resolve_technician=lambda **_: (123, 9001),
+            upload_job_photo=lambda **kwargs: asyncio.sleep(0, result=kwargs),
+        )
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/tech/jobs/100/photos/upload",
+            headers={"Authorization": "Bearer secret", "X-Technician-Subject": "123"},
+            body={"label": "Model", "filename": "model.jpg", "contentType": "image/jpeg", "dataBase64": "aGVsbG8="},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["sr_id"] == 100
+    assert payload["filename"] == "model.jpg"
+
+
 def test_dispatch_posts_quote_needed() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

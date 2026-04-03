@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ops_hub.models.requests import PartRequestCreate
+from ops_hub.models.requests import PartRequestCreate, PhotoAttachmentPayload
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_cannon import PartsCannonService
@@ -152,6 +154,39 @@ class TechnicianApiService:
                 "Upload transport still depends on the configured archive/upload path."
             ),
         }
+
+    async def upload_job_photo(
+        self,
+        *,
+        sr_id: int,
+        label: str,
+        filename: str,
+        content_type: str | None,
+        data_base64: str,
+        technician_discord_user_id: int,
+    ) -> dict[str, object]:
+        """Attach one app-captured photo directly to the service request."""
+        cleaned_label = " ".join((label or "").split()).strip() or "job photo"
+        cleaned_filename = " ".join((filename or "").split()).strip() or f"sr-{sr_id}-{cleaned_label}.jpg"
+        cleaned_content_type = " ".join((content_type or "").split()).strip() or "image/jpeg"
+        if not data_base64.strip():
+            return {"success": False, "message": "Photo data is required."}
+        try:
+            photo_bytes = base64.b64decode(data_base64.encode("utf-8"), validate=True)
+        except (ValueError, binascii.Error):
+            return {"success": False, "message": "Photo data was not valid base64."}
+        result = await self.photo_ingest_service.attach_job_photo(
+            sr_id,
+            photo=PhotoAttachmentPayload(
+                filename=cleaned_filename,
+                content_type=cleaned_content_type,
+                data=photo_bytes,
+            ),
+            requested_by_user_id=technician_discord_user_id,
+            requested_by_label=f"Tech {technician_discord_user_id}",
+            label=cleaned_label.upper(),
+        )
+        return {"success": True, "message": result.message}
 
     async def log_call_ahead(
         self,

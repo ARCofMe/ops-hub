@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+import base64
 
 from ops_hub.models.requests import ArchivedPhotoRecord, PhotoComplianceSummary
 from ops_hub.services.technician_api import TechnicianApiService
@@ -108,6 +109,40 @@ def test_get_job_includes_parts_case_fields() -> None:
 
     assert payload["partsStage"] == "Ready for Scheduling"
     assert payload["nextAction"] == "Call customer to schedule."
+
+
+def test_upload_job_photo_attaches_photo_payload() -> None:
+    captured: dict[str, object] = {}
+
+    async def attach_job_photo(sr_id: int, **kwargs):
+        captured["sr_id"] = sr_id
+        captured.update(kwargs)
+        return SimpleNamespace(message="Photo attached")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(attach_job_photo=attach_job_photo),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    payload = asyncio.run(
+        service.upload_job_photo(
+            sr_id=100,
+            label="Model / Serial",
+            filename="tag.jpg",
+            content_type="image/jpeg",
+            data_base64=base64.b64encode(b"jpeg-bytes").decode("ascii"),
+            technician_discord_user_id=55,
+        )
+    )
+
+    assert payload == {"success": True, "message": "Photo attached"}
+    assert captured["sr_id"] == 100
+    assert captured["label"] == "MODEL / SERIAL"
+    assert captured["photo"].filename == "tag.jpg"
+    assert captured["photo"].data == b"jpeg-bytes"
 
 
 def test_log_call_ahead_defaults_to_thirty_minutes() -> None:

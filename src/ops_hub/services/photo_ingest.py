@@ -73,6 +73,25 @@ class PhotoIngestService:
         )
         return CommandResult(message=result.message)
 
+    async def attach_job_photo(
+        self,
+        sr_id: int,
+        *,
+        photo: PhotoAttachmentPayload,
+        requested_by_user_id: int,
+        requested_by_label: str | None = None,
+        label: str | None = None,
+    ) -> CommandResult:
+        """Attach one technician-captured job photo to a BlueFolder service request."""
+        result = await self.adapter.attach_photo_to_service_request(
+            sr_id,
+            photo=photo,
+            uploaded_by_user_id=requested_by_user_id,
+            uploaded_by_label=requested_by_label,
+            label=label or "FIELD",
+        )
+        return CommandResult(message=result.message)
+
     async def archive_job_photos(
         self,
         sr_id: int,
