@@ -751,6 +751,39 @@ class DispatchService:
             ],
         }
 
+    async def get_dispatch_sr_work_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return dispatch work context for one SR."""
+        reference = f"SR-{sr_id}"
+        attention = await self.get_dispatch_attention_payload(reference=reference)
+        parts_case = None
+        if self.workflow_state_service is not None:
+            try:
+                case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
+            except ValueError:
+                case = None
+            if case is not None:
+                parts_case = await self._parts_case_payload(case)
+
+        next_actions: list[str] = []
+        for item in attention.get("items", []):
+            action = str(item.get("nextAction") or "").strip()
+            if action and action not in next_actions:
+                next_actions.append(action)
+        if parts_case is not None:
+            action = str(parts_case.get("nextAction") or "").strip()
+            if action and action not in next_actions:
+                next_actions.append(action)
+
+        return {
+            "srId": sr_id,
+            "reference": reference,
+            "attentionItems": attention.get("items", []),
+            "partsCase": parts_case,
+            "nextActions": next_actions,
+            "ownerGapCount": sum(1 for item in attention.get("items", []) if not item.get("assignedOwnerDiscordUserId")),
+            "urgentCount": sum(1 for item in attention.get("items", []) if item.get("ageBucket") == "urgent"),
+        }
+
     async def get_dispatch_route_payload(
         self,
         *,

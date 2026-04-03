@@ -92,6 +92,11 @@ async def dispatch_technician_api_request(
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
                 return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_customer_payload(sr_id=sr_id)
+            if route_path.endswith("/work"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/work")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_work_payload(sr_id=sr_id)
 
         if method == "GET" and route_path.startswith("/dispatch/attention/"):
             item_id = _path_tail(route_path, prefix="/dispatch/attention/")

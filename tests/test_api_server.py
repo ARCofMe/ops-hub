@@ -170,6 +170,33 @@ def test_dispatch_imports_intake_spreadsheet() -> None:
     assert payload == {"rowCount": 1, "summary": {"status:imported": 1}}
 
 
+def test_dispatch_returns_sr_work_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(
+            get_dispatch_sr_work_payload=lambda **kwargs: asyncio.sleep(0, result={"srId": kwargs["sr_id"], "urgentCount": 1})
+        ),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/sr/200/work",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"srId": 200, "urgentCount": 1}
+
+
 def test_dispatch_returns_job_parts_case() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
