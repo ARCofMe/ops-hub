@@ -17,6 +17,7 @@ from ops_hub.services.service_smith_formats import (
     merge_field_maps,
 )
 from ops_hub.services.service_smith_importer import load_rows, preview_rows, read_headers, select_rows, validate_rows
+from ops_hub.services.service_smith_profile_store import IntakeProfileRecord, ServiceSmithProfileStore
 
 
 @dataclass(slots=True)
@@ -24,6 +25,7 @@ class ServiceSmithService:
     """Spreadsheet intake helpers exposed through Ops Hub."""
 
     settings: Settings
+    profile_store: ServiceSmithProfileStore | None = None
 
     def list_formats_payload(self) -> dict[str, object]:
         adapters = list_adapters()
@@ -37,6 +39,69 @@ class ServiceSmithService:
                 for adapter in adapters
             ]
         }
+
+    def list_profiles_payload(self) -> dict[str, object]:
+        """Return saved intake profiles."""
+        profiles = self.profile_store.load() if self.profile_store else []
+        return {
+            "items": [self._profile_payload(profile) for profile in sorted(profiles, key=lambda item: item.name.lower())]
+        }
+
+    def save_profile_payload(
+        self,
+        *,
+        name: str,
+        format_name: str = "default",
+        field_map_path: str | None = None,
+        row_start: int | None = None,
+        row_end: int | None = None,
+        limit: int | None = 25,
+        duplicate_mode: str = "skip",
+        preview_mode: str = "plan",
+        fail_fast: bool = False,
+        actor_user_id: int | None = None,
+    ) -> dict[str, object]:
+        """Create or update one saved intake profile."""
+        if not self.profile_store:
+            raise RuntimeError("ServiceSmith profile storage is not configured.")
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("name is required.")
+
+        records = self.profile_store.load()
+        record = IntakeProfileRecord(
+            name=normalized_name,
+            format_name=format_name or "default",
+            field_map_path=field_map_path or None,
+            row_start=row_start,
+            row_end=row_end,
+            limit=limit,
+            duplicate_mode=duplicate_mode or "skip",
+            preview_mode=preview_mode or "plan",
+            fail_fast=fail_fast,
+            updated_by_user_id=actor_user_id,
+        )
+        remaining = [existing for existing in records if existing.name.lower() != normalized_name.lower()]
+        remaining.append(record)
+        self.profile_store.save(sorted(remaining, key=lambda item: item.name.lower()))
+        return {"success": True, "message": f"Saved intake profile {normalized_name}.", "profile": self._profile_payload(record)}
+
+    def delete_profile_payload(self, *, name: str) -> dict[str, object]:
+        """Delete one saved intake profile."""
+        if not self.profile_store:
+            raise RuntimeError("ServiceSmith profile storage is not configured.")
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("name is required.")
+
+        records = self.profile_store.load()
+        remaining = [existing for existing in records if existing.name.lower() != normalized_name.lower()]
+        if len(remaining) == len(records):
+            raise ValueError(f"No intake profile found for {normalized_name}.")
+        self.profile_store.save(remaining)
+        return {"success": True, "message": f"Deleted intake profile {normalized_name}.", "name": normalized_name}
 
     def analyze_spreadsheet_payload(
         self,
@@ -182,6 +247,21 @@ class ServiceSmithService:
             row_end=row_end,
             limit=limit,
         )
+
+    @staticmethod
+    def _profile_payload(profile: IntakeProfileRecord) -> dict[str, object]:
+        return {
+            "name": profile.name,
+            "formatName": profile.format_name,
+            "fieldMapPath": profile.field_map_path,
+            "rowStart": profile.row_start,
+            "rowEnd": profile.row_end,
+            "limit": profile.limit,
+            "duplicateMode": profile.duplicate_mode,
+            "previewMode": profile.preview_mode,
+            "failFast": profile.fail_fast,
+            "updatedByUserId": profile.updated_by_user_id,
+        }
 
     @staticmethod
     def _summarize_results(results: list[dict[str, object]]) -> dict[str, int]:

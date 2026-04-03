@@ -8,6 +8,7 @@ from ops_hub.services.service_smith_bluefolder import (
     BlueFolderImportPlan,
     BlueFolderPayloadPreview,
 )
+from ops_hub.services.service_smith_profile_store import ServiceSmithProfileStore
 from types import SimpleNamespace
 
 
@@ -104,3 +105,28 @@ def test_import_spreadsheet_payload_returns_summary(monkeypatch, tmp_path: Path)
     assert payload["results"][0]["service_request_id"] == "999"
     assert payload["summary"]["status:imported"] == 1
     assert payload["summary"]["created_customer"] == 1
+
+
+def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:
+    service = ServiceSmithService(
+        settings=SimpleNamespace(),
+        profile_store=ServiceSmithProfileStore(file_path=tmp_path / "profiles.json"),
+    )
+
+    saved = service.save_profile_payload(
+        name="vendor-a",
+        format_name="vendor_a",
+        field_map_path="/tmp/map.json",
+        row_start=2,
+        limit=50,
+        actor_user_id=123,
+    )
+
+    assert saved["profile"]["name"] == "vendor-a"
+    assert saved["profile"]["updatedByUserId"] == 123
+    assert service.list_profiles_payload()["items"][0]["formatName"] == "vendor_a"
+
+    deleted = service.delete_profile_payload(name="vendor-a")
+
+    assert deleted["name"] == "vendor-a"
+    assert service.list_profiles_payload()["items"] == []

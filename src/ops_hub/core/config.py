@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     photo_required_tags: list[str] = ["model", "serial"]
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
+    service_smith_profile_file: str | None = None
     service_smith_default_customer_type: str | None = "Residential"
     service_smith_default_sr_status: str | None = "New"
     service_smith_default_sr_priority: str | None = None
@@ -166,6 +167,7 @@ class Settings(BaseSettings):
             "photo_mailbox_search_days",
             "parts_cannon_project_path",
             "dispatch_project_path",
+            "service_smith_profile_file",
             "service_smith_default_customer_type",
             "service_smith_default_sr_status",
             "service_smith_default_sr_priority",

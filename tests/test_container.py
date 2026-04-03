@@ -24,6 +24,7 @@ def _settings(**overrides: object) -> Settings:
         "technician_mapping_file": None,
         "parts_request_file": None,
         "workflow_state_file": None,
+        "service_smith_profile_file": None,
         "photo_feature_flags_file": None,
         "notification_channel_id": None,
         "notification_channel_map": {},
@@ -74,6 +75,7 @@ def test_build_container_expands_store_paths_and_feature_defaults(monkeypatch, t
         technician_mapping_file="~/tech-map.json",
         parts_request_file="~/parts-requests.json",
         workflow_state_file="~/workflow-state.json",
+        service_smith_profile_file="~/service-smith-profiles.json",
         photo_feature_flags_file="~/photo-flags.json",
         notification_channel_id=321,
         notification_channel_map={"parts": 200},
@@ -90,6 +92,7 @@ def test_build_container_expands_store_paths_and_feature_defaults(monkeypatch, t
     assert container.technician_directory_service.store.file_path == tmp_path / "tech-map.json"
     assert container.parts_cannon_service.request_store.file_path == tmp_path / "parts-requests.json"
     assert container.workflow_state_service.store.file_path == tmp_path / "workflow-state.json"
+    assert container.service_smith_service.profile_store.file_path == tmp_path / "service-smith-profiles.json"
     assert container.photo_feature_flags_service.store.file_path == tmp_path / "photo-flags.json"
     assert container.photo_feature_flags_service.defaults == {
         "mdlsn_upload": False,

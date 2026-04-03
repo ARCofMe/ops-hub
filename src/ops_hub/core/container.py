@@ -21,6 +21,7 @@ from ops_hub.services.photo_feature_store import PhotoFeatureStore
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 from ops_hub.services.service_smith import ServiceSmithService
+from ops_hub.services.service_smith_profile_store import ServiceSmithProfileStore
 from ops_hub.services.technician_api import TechnicianApiService
 from ops_hub.services.workflow_state import WorkflowStateService
 from ops_hub.services.workflow_state_store import WorkflowStateStore
@@ -83,6 +84,11 @@ def build_container(settings: Settings) -> ServiceContainer:
     )
     workflow_state_store = WorkflowStateStore(
         file_path=Path(settings.workflow_state_file).expanduser() if settings.workflow_state_file else None,
+    )
+    service_smith_profile_store = ServiceSmithProfileStore(
+        file_path=Path(settings.service_smith_profile_file).expanduser()
+        if settings.service_smith_profile_file
+        else None,
     )
     photo_adapter = PhotoIngestAdapter(
         base_path=settings.photo_ingest_project_path,
@@ -173,5 +179,8 @@ def build_container(settings: Settings) -> ServiceContainer:
             workflow_state_service=workflow_state_service,
         ),
         workflow_state_service=workflow_state_service,
-        service_smith_service=ServiceSmithService(settings=settings),
+        service_smith_service=ServiceSmithService(
+            settings=settings,
+            profile_store=service_smith_profile_store,
+        ),
     )

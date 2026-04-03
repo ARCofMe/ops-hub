@@ -21,6 +21,7 @@ def _settings(**overrides: object) -> Settings:
         "technician_mapping_file": None,
         "parts_request_file": None,
         "workflow_state_file": None,
+        "service_smith_profile_file": None,
         "notification_channel_id": None,
         "notification_channel_map": {},
         "log_level": "INFO",
@@ -210,6 +211,7 @@ def test_blank_optional_settings_values_are_treated_as_unset() -> None:
         technician_user_ids="",
         technician_bluefolder_user_map="",
         workflow_state_file="",
+        service_smith_profile_file="",
     )
 
     assert settings.guild_id is None
@@ -220,6 +222,7 @@ def test_blank_optional_settings_values_are_treated_as_unset() -> None:
     assert settings.technician_user_ids == []
     assert settings.technician_bluefolder_user_map == {}
     assert settings.workflow_state_file is None
+    assert settings.service_smith_profile_file is None
 
 
 def test_validation_errors_require_bluefolder_account_or_base_url_with_key() -> None:

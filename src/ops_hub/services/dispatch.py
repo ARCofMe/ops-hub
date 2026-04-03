@@ -1069,6 +1069,70 @@ class DispatchService:
         updated = self._get_attention_item_for_action(item_id=item.item_id)
         return {"success": True, "message": result.message, "item": await self._attention_item_payload(updated)}
 
+    async def apply_bulk_dispatch_attention_action(
+        self,
+        *,
+        item_ids: list[str],
+        action: str,
+        actor_user_id: int,
+        action_body: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Apply one action across multiple attention items."""
+        normalized_ids: list[str] = []
+        for item_id in item_ids:
+            normalized = item_id.strip()
+            if normalized and normalized not in normalized_ids:
+                normalized_ids.append(normalized)
+        if not normalized_ids:
+            raise ValueError("itemIds must contain at least one attention item id.")
+
+        payload_body = action_body or {}
+        results: list[dict[str, object]] = []
+        updated_items: list[dict[str, object]] = []
+        success_count = 0
+
+        for item_id in normalized_ids:
+            try:
+                if action == "ack":
+                    payload = await self.acknowledge_dispatch_attention_item(item_id=item_id, actor_user_id=actor_user_id)
+                elif action == "snooze":
+                    payload = await self.snooze_dispatch_attention_item(
+                        item_id=item_id,
+                        hours=int(payload_body.get("hours") or 1),
+                        actor_user_id=actor_user_id,
+                    )
+                elif action == "unsnooze":
+                    payload = await self.unsnooze_dispatch_attention_item(item_id=item_id, actor_user_id=actor_user_id)
+                elif action == "reopen":
+                    payload = await self.reopen_dispatch_attention_item(item_id=item_id, actor_user_id=actor_user_id)
+                elif action == "assign":
+                    payload = await self.assign_dispatch_attention_item(
+                        item_id=item_id,
+                        assigned_owner_discord_user_id=int(payload_body.get("assignedOwnerDiscordUserId") or 0),
+                        actor_user_id=actor_user_id,
+                    )
+                elif action == "clear_owner":
+                    payload = await self.clear_dispatch_attention_item_owner(item_id=item_id, actor_user_id=actor_user_id)
+                else:
+                    raise ValueError(f"Unsupported bulk attention action: {action}")
+                success_count += 1
+                if isinstance(payload.get("item"), dict):
+                    updated_items.append(payload["item"])
+                results.append({"itemId": item_id, "success": True, "message": str(payload.get("message") or "")})
+            except ValueError as exc:
+                results.append({"itemId": item_id, "success": False, "message": str(exc)})
+
+        return {
+            "success": success_count == len(normalized_ids),
+            "message": f"Applied {action} to {success_count} of {len(normalized_ids)} attention item(s).",
+            "action": action,
+            "requestedCount": len(normalized_ids),
+            "successCount": success_count,
+            "failureCount": len(normalized_ids) - success_count,
+            "results": results,
+            "items": updated_items,
+        }
+
     async def lookup_route_map(self, request: JobLookupRequest) -> RouteMapResult:
         """Return an inline route preview for the current technician/day."""
         target_user_id = request.target_bluefolder_user_id or request.technician_bluefolder_user_id

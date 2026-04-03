@@ -63,6 +63,24 @@ async def dispatch_technician_api_request(
             )
             return HTTPStatus.OK, payload
 
+        if method == "POST" and route_path == "/dispatch/attention/bulk":
+            item_ids = body.get("itemIds") if isinstance(body, dict) else None
+            if not isinstance(item_ids, list) or not all(isinstance(item_id, str) for item_id in item_ids):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "itemIds must be a list of attention item ids."}
+            action = str((body or {}).get("action") or "")
+            if not action:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "action is required."}
+            try:
+                payload = await container.dispatch_service.apply_bulk_dispatch_attention_action(
+                    item_ids=item_ids,
+                    action=action,
+                    actor_user_id=dispatcher_user_id,
+                    action_body=body or {},
+                )
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            return HTTPStatus.OK, payload
+
         if method == "POST" and route_path.startswith("/dispatch/triage/") and route_path.endswith("/disposition"):
             sr_id = _path_int(route_path, prefix="/dispatch/triage/", suffix="/disposition")
             if sr_id is None:
@@ -187,6 +205,36 @@ async def dispatch_technician_api_request(
 
         if method == "GET" and route_path == "/dispatch/intake/formats":
             return HTTPStatus.OK, container.service_smith_service.list_formats_payload()
+
+        if method == "GET" and route_path == "/dispatch/intake/profiles":
+            return HTTPStatus.OK, container.service_smith_service.list_profiles_payload()
+
+        if method == "POST" and route_path == "/dispatch/intake/profiles":
+            payload_body = body or {}
+            try:
+                return HTTPStatus.OK, container.service_smith_service.save_profile_payload(
+                    name=str(payload_body.get("name") or ""),
+                    format_name=str(payload_body.get("formatName") or "default"),
+                    field_map_path=str(payload_body.get("fieldMapPath") or "").strip() or None,
+                    row_start=int(payload_body["rowStart"]) if payload_body.get("rowStart") is not None else None,
+                    row_end=int(payload_body["rowEnd"]) if payload_body.get("rowEnd") is not None else None,
+                    limit=int(payload_body["limit"]) if payload_body.get("limit") is not None else 25,
+                    duplicate_mode=str(payload_body.get("duplicateMode") or "skip"),
+                    preview_mode=str(payload_body.get("previewMode") or "plan"),
+                    fail_fast=bool(payload_body.get("failFast")),
+                    actor_user_id=dispatcher_user_id,
+                )
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        if method == "DELETE" and route_path.startswith("/dispatch/intake/profiles/"):
+            profile_name = _path_tail(route_path, prefix="/dispatch/intake/profiles/")
+            if not profile_name:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid intake profile name."}
+            try:
+                return HTTPStatus.OK, container.service_smith_service.delete_profile_payload(name=profile_name)
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
         if method == "POST" and route_path == "/dispatch/intake/analyze":
             payload_body = body or {}

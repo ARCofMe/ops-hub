@@ -76,8 +76,17 @@ Dispatch-facing endpoints that expose workflow state directly:
 - `GET /dispatch/attention/{item_id}`
 - `GET /dispatch/sr/{sr_id}/timeline`
 - `GET /dispatch/sr/{sr_id}/customer`
+- `GET /dispatch/sr/{sr_id}/work`
 - `GET /dispatch/routes/preview`
 - `GET /dispatch/routes/heatmap`
+- `GET /dispatch/intake/formats`
+- `GET /dispatch/intake/profiles`
+- `POST /dispatch/intake/analyze`
+- `POST /dispatch/intake/preview`
+- `POST /dispatch/intake/import`
+- `POST /dispatch/intake/profiles`
+- `DELETE /dispatch/intake/profiles/{name}`
+- `POST /dispatch/attention/bulk`
 - `POST /dispatch/attention/{item_id}/ack`
 - `POST /dispatch/attention/{item_id}/snooze`
 - `POST /dispatch/attention/{item_id}/unsnooze`

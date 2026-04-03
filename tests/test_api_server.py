@@ -86,6 +86,96 @@ def test_dispatch_returns_intake_formats() -> None:
     assert payload == {"items": [{"name": "default"}]}
 
 
+def test_dispatch_returns_intake_profiles() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            list_profiles_payload=lambda: {"items": [{"name": "vendor-a"}]}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/intake/profiles",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"items": [{"name": "vendor-a"}]}
+
+
+def test_dispatch_saves_intake_profile() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            save_profile_payload=lambda **kwargs: {"profile": {"name": kwargs["name"]}, "success": True}
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/profiles",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"name": "vendor-a", "formatName": "default"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"profile": {"name": "vendor-a"}, "success": True}
+
+
+def test_dispatch_runs_bulk_attention_action() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(
+            apply_bulk_dispatch_attention_action=lambda **kwargs: asyncio.sleep(
+                0,
+                result={
+                    "success": True,
+                    "action": kwargs["action"],
+                    "requestedCount": len(kwargs["item_ids"]),
+                },
+            )
+        ),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/attention/bulk",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"action": "ack", "itemIds": ["dispatch:SR-1:quote_needed", "dispatch:SR-2:part_ready"]},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"success": True, "action": "ack", "requestedCount": 2}
+
+
 def test_dispatch_analyzes_intake_spreadsheet() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
