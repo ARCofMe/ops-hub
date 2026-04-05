@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
@@ -590,12 +590,28 @@ class DispatchService:
         total_assignments = 0
         technician_load: list[dict[str, object]] = []
         for record in mappings:
-            assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            try:
+                assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            except Exception as exc:
+                logger.warning(
+                    "Dispatch board assignments unavailable for mapped BlueFolder user %s: %s",
+                    record.bluefolder_user_id,
+                    exc,
+                )
+                assignments = []
             assignment_count = len(assignments)
             total_assignments += assignment_count
             if assignment_count > 0:
                 active_techs += 1
-            origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
+            try:
+                origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
+            except Exception as exc:
+                logger.warning(
+                    "Dispatch board origin unavailable for mapped BlueFolder user %s: %s",
+                    record.bluefolder_user_id,
+                    exc,
+                )
+                origin_address = None
             first_assignment = assignments[0] if assignments else None
             technician_load.append(
                 {
@@ -603,6 +619,7 @@ class DispatchService:
                     "bluefolderUserId": record.bluefolder_user_id,
                     "technicianLabel": await self._technician_label_for_record(record),
                     "assignmentCount": assignment_count,
+                    "hasAssignments": assignment_count > 0,
                     "originAddress": origin_address,
                     "nextJob": (
                         {
@@ -788,6 +805,7 @@ class DispatchService:
         self,
         *,
         technician_bluefolder_user_id: int,
+        route_date: str | None = None,
         origin_address: str | None = None,
         destination_address: str | None = None,
         optimize: bool = False,
@@ -810,14 +828,16 @@ class DispatchService:
                 "stops": [],
             }
 
-        assignments = await self._assignments_for_user(target_user_id)
+        selected_date = self._parse_route_date(route_date)
+        assignments = await self._assignments_for_user(target_user_id, day=selected_date)
         technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
         if not assignments:
             return {
                 "success": True,
-                "message": f"No current assignments were found for {technician_label}.",
+                "message": f"No assignments were found for {technician_label} on {selected_date.isoformat()}.",
                 "technicianBluefolderUserId": target_user_id,
                 "technicianLabel": technician_label,
+                "routeDate": selected_date.isoformat(),
                 "assignmentsConsidered": 0,
                 "mappableStops": 0,
                 "skippedWithoutAddress": 0,
@@ -828,7 +848,7 @@ class DispatchService:
                 "stops": [],
             }
 
-        stops: list[dict[str, str]] = []
+        stops: list[dict[str, object]] = []
         missing_address_count = 0
         for assignment in assignments[:10]:
             sr_id = assignment.get("serviceRequestId")
@@ -845,26 +865,18 @@ class DispatchService:
             if not address:
                 missing_address_count += 1
                 continue
-            stops.append(
-                {
-                    "id": sr_id,
-                    "label": f"SR-{sr_id}",
-                    "srId": sr_id,
-                    "address": address,
-                    "subject": summary.subject or assignment.get("subject") or "Service Request",
-                    "routeLabel": assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow"),
-                }
-            )
+            stops.append(self._build_route_stop_payload(assignment=assignment, address=address, subject=summary.subject))
 
         if not stops:
             return {
                 "success": False,
                 "message": (
-                    f"Current assignments were found for {technician_label}, but no mappable addresses "
+                    f"Assignments were found for {technician_label} on {selected_date.isoformat()}, but no mappable addresses "
                     "were available from BlueFolder."
                 ),
                 "technicianBluefolderUserId": target_user_id,
                 "technicianLabel": technician_label,
+                "routeDate": selected_date.isoformat(),
                 "assignmentsConsidered": len(assignments),
                 "mappableStops": 0,
                 "skippedWithoutAddress": missing_address_count,
@@ -900,9 +912,83 @@ class DispatchService:
             "message": f"Route map ready for {technician_label}.",
             "technicianBluefolderUserId": target_user_id,
             "technicianLabel": technician_label,
+            "routeDate": selected_date.isoformat(),
             "assignmentsConsidered": len(assignments),
             "mappableStops": len(stops),
             "skippedWithoutAddress": missing_address_count,
+            "originAddress": route_origin_address,
+            "destinationAddress": route_destination_address,
+            "optimized": optimize,
+            "routeUrl": route_url,
+            "imageUrl": image_url,
+            "stops": route_stops,
+            "metrics": planned_route.get("metrics") if isinstance(planned_route, dict) else None,
+            "path": planned_route.get("path") if isinstance(planned_route, dict) else [],
+        }
+
+    async def get_dispatch_route_simulation_payload(
+        self,
+        *,
+        technician_bluefolder_user_id: int | None,
+        existing_stops: list[dict[str, object]],
+        added_stops: list[dict[str, object]],
+        removed_ids: list[str],
+        manual_order: list[str],
+        route_date: str | None = None,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
+        optimize: bool = False,
+    ) -> dict[str, object]:
+        """Return a simulated route payload using manual order, removals, and ad-hoc additions."""
+        normalized_existing = [
+            self._normalize_route_stop_input(stop, index=index)
+            for index, stop in enumerate(existing_stops)
+        ]
+        normalized_added = [
+            self._normalize_route_stop_input(stop, index=index, adhoc=True)
+            for index, stop in enumerate(added_stops)
+        ]
+        kept_existing = [stop for stop in normalized_existing if stop["id"] not in {str(item) for item in removed_ids}]
+        technician_label = await self._technician_label(bluefolder_user_id=technician_bluefolder_user_id)
+        selected_date = self._parse_route_date(route_date)
+        route_origin_address = self._clean_route_endpoint(origin_address)
+        route_destination_address = self._clean_route_endpoint(destination_address)
+
+        planned_route = await self.adapter.simulate_route_plan(
+            existing_assignments=kept_existing,
+            added_stops=normalized_added,
+            removed_ids=[str(item) for item in removed_ids],
+            manual_order=[str(item) for item in manual_order],
+            origin_address=route_origin_address,
+            destination_address=route_destination_address,
+            optimize=optimize,
+        )
+
+        route_stops = planned_route.get("stops") if isinstance(planned_route, dict) else None
+        if not isinstance(route_stops, list):
+            route_stops = normalized_added + kept_existing
+            if manual_order:
+                order_lookup = {value: index for index, value in enumerate(str(item) for item in manual_order)}
+                route_stops = sorted(route_stops, key=lambda stop: order_lookup.get(str(stop.get("id")), len(order_lookup)))
+
+        try:
+            route_url, image_url = await self.adapter.build_route_map_urls(
+                route_stops,
+                origin_address=route_origin_address,
+                destination_address=route_destination_address,
+            )
+        except TypeError:
+            route_url, image_url = await self.adapter.build_route_map_urls(route_stops)
+
+        return {
+            "success": True,
+            "message": f"Route draft updated for {technician_label}.",
+            "technicianBluefolderUserId": technician_bluefolder_user_id,
+            "technicianLabel": technician_label,
+            "routeDate": selected_date.isoformat(),
+            "assignmentsConsidered": len(existing_stops),
+            "mappableStops": len(route_stops),
+            "skippedWithoutAddress": 0,
             "originAddress": route_origin_address,
             "destinationAddress": route_destination_address,
             "optimized": optimize,
@@ -1527,22 +1613,56 @@ class DispatchService:
         if discord_user_id is None and bluefolder_user_id is not None and self.technician_directory_service is not None:
             discord_user_id = self.technician_directory_service.reverse_mappings().get(bluefolder_user_id)
         if discord_user_id is not None and self.technician_directory_service is not None:
-            return self.technician_directory_service.discord_mention(discord_user_id)
+            display_label = self.technician_directory_service.display_label(discord_user_id)
+            if display_label:
+                return display_label
+            return str(discord_user_id)
         if discord_user_id is not None:
-            return f"<@{discord_user_id}>"
+            return str(discord_user_id)
         if bluefolder_user_id is not None:
             user_name = await self.bluefolder_service.get_user_name(bluefolder_user_id)
             if user_name:
                 return user_name
-            return f"BlueFolder user `{bluefolder_user_id}`"
+            if self.technician_directory_service is not None:
+                display_label = self.technician_directory_service.technician_display_label(
+                    bluefolder_user_id=bluefolder_user_id,
+                )
+                if display_label:
+                    return display_label
+            return f"Tech {bluefolder_user_id}"
         return "Unknown technician"
 
-    async def _assignments_for_user(self, bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
-        """Load current assignments, preferring direct BlueFolder reads with a wrapper fallback."""
-        assignments = await self.bluefolder_service.get_assignments_for_user_today(bluefolder_user_id)
+    async def _assignments_for_user(
+        self,
+        bluefolder_user_id: int,
+        *,
+        day: date | None = None,
+    ) -> list[dict[str, str | bool | None]]:
+        """Load assignments for one day, preferring direct BlueFolder reads with a wrapper fallback."""
+        target_day = day or date.today()
+        try:
+            assignments = await self.bluefolder_service.get_assignments_for_user_on_date(bluefolder_user_id, target_day)
+        except Exception as exc:
+            logger.warning(
+                "BlueFolder assignments unavailable for mapped user %s on %s: %s",
+                bluefolder_user_id,
+                target_day.isoformat(),
+                exc,
+            )
+            assignments = []
         if assignments:
             return assignments
         return await self.adapter.get_assignments_for_user(bluefolder_user_id)
+
+    @staticmethod
+    def _parse_route_date(raw_value: str | None) -> date:
+        text = str(raw_value or "").strip()
+        if not text:
+            return date.today()
+        try:
+            return date.fromisoformat(text)
+        except ValueError:
+            return date.today()
 
     def _format_assignment_time(self, value: str | bool | None) -> str | None:
         """Render BlueFolder assignment timestamps in a compact human-readable form."""
@@ -1556,6 +1676,83 @@ class DispatchService:
             except ValueError:
                 continue
         return text
+
+    def _build_route_stop_payload(
+        self,
+        *,
+        assignment: dict[str, str | bool | None],
+        address: str,
+        subject: str | None,
+    ) -> dict[str, object]:
+        sr_id = str(assignment.get("serviceRequestId") or "").strip()
+        status = (
+            assignment.get("status")
+            or assignment.get("serviceRequestStatus")
+            or assignment.get("service_request_status")
+            or ("complete" if str(assignment.get("isComplete")).lower() in {"1", "true", "yes"} else "scheduled")
+        )
+        return {
+            "id": str(assignment.get("assignmentId") or sr_id or ""),
+            "label": f"SR-{sr_id}" if sr_id else "Service Request",
+            "srId": sr_id or None,
+            "service_request_id": sr_id or None,
+            "address": address,
+            "subject": subject or assignment.get("subject") or "Service Request",
+            "customer_name": subject or assignment.get("subject") or "Service Request",
+            "routeLabel": assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow"),
+            "window_start": self._format_assignment_clock(assignment.get("start")),
+            "window_end": self._format_assignment_clock(assignment.get("end")),
+            "duration_minutes": 30,
+            "status": str(status or "scheduled"),
+            "lat": self._safe_float(assignment.get("lat")),
+            "lon": self._safe_float(assignment.get("lon")),
+        }
+
+    def _normalize_route_stop_input(
+        self,
+        stop: dict[str, object],
+        *,
+        index: int,
+        adhoc: bool = False,
+    ) -> dict[str, object]:
+        stop_id = str(stop.get("id") or stop.get("srId") or stop.get("service_request_id") or f"{'adhoc' if adhoc else 'stop'}-{index + 1}")
+        label = str(stop.get("label") or stop.get("customer_name") or stop.get("subject") or f"Stop {index + 1}")
+        return {
+            "id": stop_id,
+            "label": label,
+            "srId": str(stop.get("srId") or stop.get("service_request_id") or "") or None,
+            "service_request_id": str(stop.get("service_request_id") or stop.get("srId") or "") or None,
+            "address": str(stop.get("address") or "").strip(),
+            "subject": str(stop.get("subject") or stop.get("customer_name") or label),
+            "customer_name": str(stop.get("customer_name") or stop.get("subject") or label),
+            "routeLabel": str(stop.get("routeLabel") or stop.get("window") or "").strip() or None,
+            "window_start": str(stop.get("window_start") or stop.get("windowStart") or "").strip() or None,
+            "window_end": str(stop.get("window_end") or stop.get("windowEnd") or "").strip() or None,
+            "duration_minutes": int(stop.get("duration_minutes") or stop.get("durationMinutes") or 30),
+            "status": str(stop.get("status") or ("draft" if adhoc else "scheduled")),
+            "lat": self._safe_float(stop.get("lat") or stop.get("latitude")),
+            "lon": self._safe_float(stop.get("lon") or stop.get("lng") or stop.get("longitude")),
+            "eta": str(stop.get("eta") or "").strip() or None,
+        }
+
+    def _format_assignment_clock(self, value: str | bool | None) -> str | None:
+        rendered = self._format_assignment_time(value)
+        if not rendered:
+            return None
+        for fmt in ("%I:%M %p", "%H:%M"):
+            try:
+                return datetime.strptime(rendered, fmt).strftime("%H:%M")
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _safe_float(value: object) -> float | None:
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except Exception:
+            return None
+        return parsed if parsed == parsed else None
 
     def _parts_context_lines(self, parts_brief: CommandResult | None) -> list[str]:
         """Extract a compact parts snapshot from the BlueFolder parts brief."""

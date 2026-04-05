@@ -202,6 +202,35 @@ async def dispatch_technician_api_request(
             )
             return HTTPStatus.OK, payload
 
+        if method == "POST" and route_path == "/dispatch/routes/simulate":
+            payload_body = body or {}
+            existing_stops = payload_body.get("existingStops")
+            added_stops = payload_body.get("addedStops")
+            removed_ids = payload_body.get("removedIds")
+            manual_order = payload_body.get("manualOrder")
+            if not isinstance(existing_stops, list):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "existingStops must be a list."}
+            if added_stops is not None and not isinstance(added_stops, list):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "addedStops must be a list."}
+            if removed_ids is not None and not isinstance(removed_ids, list):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "removedIds must be a list."}
+            if manual_order is not None and not isinstance(manual_order, list):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "manualOrder must be a list."}
+            payload = await container.dispatch_service.get_dispatch_route_simulation_payload(
+                technician_bluefolder_user_id=payload_body.get("technicianBluefolderUserId")
+                if isinstance(payload_body.get("technicianBluefolderUserId"), int)
+                else None,
+                existing_stops=[item for item in existing_stops if isinstance(item, dict)],
+                added_stops=[item for item in (added_stops or []) if isinstance(item, dict)],
+                removed_ids=[str(item) for item in (removed_ids or [])],
+                manual_order=[str(item) for item in (manual_order or [])],
+                route_date=str(payload_body.get("routeDate") or "").strip() or None,
+                origin_address=str(payload_body.get("originAddress") or "").strip() or None,
+                destination_address=str(payload_body.get("destinationAddress") or "").strip() or None,
+                optimize=bool(payload_body.get("optimize")),
+            )
+            return HTTPStatus.OK, payload
+
         if method == "GET" and route_path == "/dispatch/routes/heatmap":
             payload = await container.dispatch_service.get_dispatch_heatmap_payload(
                 technician_bluefolder_user_id=_query_int(query, "bluefolder_user_id")
