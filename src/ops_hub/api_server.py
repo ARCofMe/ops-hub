@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import tempfile
 import threading
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ops_hub.core.config import Settings
@@ -192,6 +195,7 @@ async def dispatch_technician_api_request(
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": "bluefolder_user_id is required."}
             payload = await container.dispatch_service.get_dispatch_route_payload(
                 technician_bluefolder_user_id=bluefolder_user_id,
+                route_date=(query.get("date") or [None])[0],
                 origin_address=(query.get("origin_address") or [None])[0],
                 destination_address=(query.get("destination_address") or [None])[0],
                 optimize=((query.get("optimize") or ["false"])[0].strip().lower() == "true"),
@@ -253,6 +257,25 @@ async def dispatch_technician_api_request(
                 )
             except (RuntimeError, ValueError) as exc:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        if method == "POST" and route_path == "/dispatch/intake/upload":
+            payload_body = body or {}
+            file_name = str(payload_body.get("fileName") or "").strip()
+            content_base64 = str(payload_body.get("contentBase64") or "").strip()
+            if not file_name:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "fileName is required."}
+            if not content_base64:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "contentBase64 is required."}
+            try:
+                spreadsheet_path = _store_uploaded_intake_file(file_name=file_name, content_base64=content_base64)
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            return HTTPStatus.OK, {
+                "success": True,
+                "message": f"Uploaded {file_name}.",
+                "fileName": file_name,
+                "spreadsheetPath": spreadsheet_path,
+            }
 
         if method == "POST" and route_path == "/dispatch/intake/preview":
             payload_body = body or {}
@@ -744,6 +767,26 @@ def _path_action(path: str, *, prefix: str) -> tuple[str, str] | None:
     return item_id, action
 
 
+def _store_uploaded_intake_file(*, file_name: str, content_base64: str) -> str:
+    suffix = Path(file_name).suffix.lower()
+    if suffix not in {".csv", ".xls", ".xlsx"}:
+        raise ValueError("Only .csv, .xls, and .xlsx uploads are supported.")
+    try:
+        payload = base64.b64decode(content_base64, validate=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid upload payload: {exc}") from exc
+    temp_dir = Path(tempfile.gettempdir()) / "ops_hub_intake_uploads"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix="dispatch-intake-",
+        suffix=suffix,
+        dir=temp_dir,
+        delete=False,
+    ) as handle:
+        handle.write(payload)
+        return handle.name
+
+
 @dataclass(slots=True)
 class TechnicianApiServer:
     """Background HTTP server wrapper for app-facing routes."""
@@ -791,6 +834,15 @@ class TechnicianApiServer:
             def do_POST(self) -> None:  # noqa: N802
                 self._dispatch("POST")
 
+            def do_DELETE(self) -> None:  # noqa: N802
+                self._dispatch("DELETE")
+
+            def do_OPTIONS(self) -> None:  # noqa: N802
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self._send_cors_headers()
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
             def log_message(self, format: str, *args: object) -> None:
                 logger.info("Technician API " + format, *args)
 
@@ -821,10 +873,22 @@ class TechnicianApiServer:
             def _json(self, status: HTTPStatus, payload: object) -> None:
                 body = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
+                self._send_cors_headers()
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _send_cors_headers(self) -> None:
+                origin = self.headers.get("Origin") or "*"
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+                self.send_header(
+                    "Access-Control-Allow-Headers",
+                    "Accept, Authorization, Content-Type, X-Dispatch-Subject, X-Technician-Subject, X-Parts-Subject",
+                )
+                self.send_header("Access-Control-Max-Age", "600")
+                self.send_header("Vary", "Origin")
 
         return Handler
 
