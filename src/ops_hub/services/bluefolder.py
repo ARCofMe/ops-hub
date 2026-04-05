@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import TYPE_CHECKING
 
 from ops_hub.integrations.bluefolder_adapter import BlueFolderAdapter
@@ -48,6 +49,10 @@ class BlueFolderService:
     async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str | bool | None]]:
         """Return today's scheduled assignments directly from BlueFolder."""
         return await self.adapter.get_assignments_for_user_today(user_id)
+
+    async def get_assignments_for_user_on_date(self, user_id: int, day: date) -> list[dict[str, str | bool | None]]:
+        """Return scheduled assignments for a specific day directly from BlueFolder."""
+        return await self.adapter.get_assignments_for_user_on_date(user_id, day)
 
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""

@@ -963,8 +963,8 @@ class WorkflowStateService:
         if user_id is None:
             return None
         if self.technician_directory_service is not None:
-            return self.technician_directory_service.discord_mention(user_id)
-        return f"<@{user_id}>"
+            return self.technician_directory_service.display_label(user_id)
+        return str(user_id)
 
     def _carry_attention_state(
         self,

@@ -133,6 +133,21 @@ class TechnicianMappingRecord:
 
     discord_user_id: int
     bluefolder_user_id: int
+    username: str | None = None
+    display_name: str | None = None
+    global_name: str | None = None
+    role_names: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class DiscordMemberRecord:
+    """Exported Discord member directory record."""
+
+    discord_user_id: int
+    username: str | None = None
+    display_name: str | None = None
+    global_name: str | None = None
+    role_names: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

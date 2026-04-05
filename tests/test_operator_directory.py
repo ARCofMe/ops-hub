@@ -1,101 +1,44 @@
-"""Technician mapping store and directory tests for Ops Hub."""
-
 from __future__ import annotations
 
-from pathlib import Path
+import json
 
 from ops_hub.core.config import Settings
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
 
 
-def _settings(**overrides: object) -> Settings:
-    defaults: dict[str, object] = {
-        "discord_token": "token",
-        "guild_id": None,
-        "admin_user_ids": [],
-        "admin_role_ids": [],
-        "technician_user_ids": [],
-        "technician_role_ids": [],
-        "parts_user_ids": [],
-        "parts_role_ids": [],
-        "dispatcher_user_ids": [],
-        "dispatcher_role_ids": [],
-        "technician_bluefolder_user_map": {},
-        "technician_mapping_file": None,
-        "log_level": "INFO",
-        "environment": "dev",
-        "photo_ingest_channel_id": None,
-        "bluefolder_api_path": None,
-        "bluefolder_api_key": None,
-        "bluefolder_account_name": None,
-        "bluefolder_base_url": None,
-        "bluebot_discord_extension_path": None,
-        "photo_ingest_project_path": None,
-        "parts_cannon_project_path": None,
-        "dispatch_project_path": None,
-    }
-    defaults.update(overrides)
-    return Settings(**defaults)
-
-
-def test_technician_directory_merges_env_and_file_mappings(tmp_path: Path) -> None:
-    file_path = tmp_path / "technician-mappings.json"
-    file_path.write_text('{"42": 13051}', encoding="utf-8")
-    service = TechnicianDirectoryService(
-        settings=_settings(technician_bluefolder_user_map={99: 22222}),
-        store=OperatorMappingStore(file_path=file_path),
+def test_mapping_records_include_member_export_identity(tmp_path) -> None:
+    exports_dir = tmp_path / "exports"
+    exports_dir.mkdir()
+    (exports_dir / "discord_members_member_map_20260405T180000Z.json").write_text(
+        json.dumps(
+            {
+                "members": [
+                    {
+                        "discord_user_id": "42",
+                        "username": "dispatch.user",
+                        "display_name": "Dispatch Dave",
+                        "global_name": "dave",
+                        "role_names": ["Dispatch"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
 
-    mappings = service.mappings()
-
-    assert mappings == {99: 22222, 42: 13051}
-
-
-def test_technician_directory_exports_mappings(tmp_path: Path) -> None:
-    file_path = tmp_path / "technician-mappings.json"
-    service = TechnicianDirectoryService(
-        settings=_settings(technician_bluefolder_user_map={42: 13051}),
-        store=OperatorMappingStore(file_path=file_path),
+    settings = Settings(
+        discord_token="token",
+        member_export_path=str(exports_dir / "discord_members.json"),
+        technician_bluefolder_user_map={42: 9001},
     )
+    service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
 
-    exported = service.export_mappings()
+    records = service.mapping_records()
 
-    assert exported == file_path
-    assert file_path.read_text(encoding="utf-8").strip() == '{\n  "42": 13051\n}'
-
-
-def test_technician_directory_export_creates_backup_on_overwrite(tmp_path: Path) -> None:
-    file_path = tmp_path / "technician-mappings.json"
-    file_path.write_text('{"41": 12000}', encoding="utf-8")
-    service = TechnicianDirectoryService(
-        settings=_settings(technician_bluefolder_user_map={42: 13051}),
-        store=OperatorMappingStore(file_path=file_path),
-    )
-
-    service.export_mappings()
-
-    assert file_path.read_text(encoding="utf-8").strip() == '{\n  "41": 12000,\n  "42": 13051\n}'
-    assert file_path.with_name("technician-mappings.json.bak").read_text(encoding="utf-8") == '{"41": 12000}'
-
-
-def test_technician_directory_set_mapping_updates_runtime_without_file() -> None:
-    service = TechnicianDirectoryService(
-        settings=_settings(),
-        store=OperatorMappingStore(file_path=None),
-    )
-
-    service.set_mapping(discord_user_id=42, bluefolder_user_id=13051)
-
-    assert service.mappings() == {42: 13051}
-
-
-def test_technician_directory_formats_technician_label_from_mapping() -> None:
-    service = TechnicianDirectoryService(
-        settings=_settings(technician_bluefolder_user_map={42: 13051}),
-        store=OperatorMappingStore(file_path=None),
-    )
-
-    label = service.technician_label(bluefolder_user_id=13051)
-
-    assert label == "<@42> (BlueFolder `13051`)"
+    assert len(records) == 1
+    assert records[0].display_name == "Dispatch Dave"
+    assert records[0].username == "dispatch.user"
+    assert records[0].role_names == ("Dispatch",)
+    assert service.display_label(42) == "Dispatch Dave"
+    assert service.technician_display_label(bluefolder_user_id=9001) == "Dispatch Dave"

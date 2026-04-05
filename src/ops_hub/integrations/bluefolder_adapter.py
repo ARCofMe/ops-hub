@@ -384,11 +384,18 @@ class BlueFolderAdapter:
 
     async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str | bool | None]]:
         """Return today's scheduled assignments directly from BlueFolder."""
+        return await self.get_assignments_for_user_on_date(user_id, date.today())
+
+    async def get_assignments_for_user_on_date(
+        self,
+        user_id: int,
+        day: date,
+    ) -> list[dict[str, str | bool | None]]:
+        """Return scheduled assignments for a specific day directly from BlueFolder."""
         client, _resolved_path = self._build_client()
         if client is None:
             return []
 
-        day = date.today()
         start_date = f"{day.strftime('%Y.%m.%d')} 12:00 AM"
         end_date = f"{day.strftime('%Y.%m.%d')} 11:59 PM"
         try:
@@ -904,8 +911,6 @@ class BlueFolderAdapter:
         """Load the shared BlueFolder client from a local repo path."""
         with TemporarySysPath(resolved_path):
             importlib.invalidate_caches()
-            sys.modules.pop("bluefolder_api", None)
-            sys.modules.pop("bluefolder_api.client", None)
             module = importlib.import_module("bluefolder_api.client")
         return getattr(module, "BlueFolderClient")
 

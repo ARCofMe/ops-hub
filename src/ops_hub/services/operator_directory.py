@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from ops_hub.core.config import Settings
-from ops_hub.models.requests import TechnicianIdentity, TechnicianMappingRecord
+from ops_hub.models.requests import DiscordMemberRecord, TechnicianIdentity, TechnicianMappingRecord
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
 
 
@@ -65,7 +66,18 @@ class TechnicianDirectoryService:
     def mapping_records(self) -> list[TechnicianMappingRecord]:
         """Return typed technician mapping records."""
         self.store.records = self.mappings()
-        return self.store.current_records()
+        member_directory = self.member_directory()
+        return [
+            TechnicianMappingRecord(
+                discord_user_id=record.discord_user_id,
+                bluefolder_user_id=record.bluefolder_user_id,
+                username=member_directory.get(record.discord_user_id).username if record.discord_user_id in member_directory else None,
+                display_name=member_directory.get(record.discord_user_id).display_name if record.discord_user_id in member_directory else None,
+                global_name=member_directory.get(record.discord_user_id).global_name if record.discord_user_id in member_directory else None,
+                role_names=member_directory.get(record.discord_user_id).role_names if record.discord_user_id in member_directory else (),
+            )
+            for record in self.store.current_records()
+        ]
 
     def reverse_mappings(self) -> dict[int, int]:
         """Return BlueFolder-to-Discord technician mappings."""
@@ -74,6 +86,49 @@ class TechnicianDirectoryService:
     def discord_mention(self, discord_user_id: int) -> str:
         """Return a Discord mention string for a user id."""
         return f"<@{discord_user_id}>"
+
+    def member_directory(self) -> dict[int, DiscordMemberRecord]:
+        """Load the latest exported Discord member directory when available."""
+        path = self._latest_member_export_path()
+        if path is None or not path.exists():
+            return {}
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        members = payload.get("members") if isinstance(payload, dict) else None
+        if not isinstance(members, list):
+            return {}
+
+        directory: dict[int, DiscordMemberRecord] = {}
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            raw_user_id = str(member.get("discord_user_id") or "").strip()
+            if not raw_user_id.isdigit():
+                continue
+            user_id = int(raw_user_id)
+            role_names = member.get("role_names")
+            directory[user_id] = DiscordMemberRecord(
+                discord_user_id=user_id,
+                username=str(member.get("username") or "").strip() or None,
+                display_name=str(member.get("display_name") or "").strip() or None,
+                global_name=str(member.get("global_name") or "").strip() or None,
+                role_names=tuple(str(role).strip() for role in role_names if str(role).strip()) if isinstance(role_names, list) else (),
+            )
+        return directory
+
+    def display_label(self, discord_user_id: int | None) -> str | None:
+        """Return the best available human-readable Discord identity label."""
+        if discord_user_id is None:
+            return None
+        member = self.member_directory().get(discord_user_id)
+        if member is not None:
+            for value in (member.display_name, member.global_name, member.username):
+                if value:
+                    return value
+        return str(discord_user_id)
 
     def technician_label(
         self,
@@ -93,6 +148,41 @@ class TechnicianDirectoryService:
         if bluefolder_user_id is not None:
             return f"BlueFolder user `{bluefolder_user_id}`"
         return "Unknown technician"
+
+    def technician_display_label(
+        self,
+        *,
+        discord_user_id: int | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> str | None:
+        """Return the best available non-mention label for API and web surfaces."""
+        resolved_discord_user_id = discord_user_id
+        if resolved_discord_user_id is None and bluefolder_user_id is not None:
+            resolved_discord_user_id = self.reverse_mappings().get(bluefolder_user_id)
+
+        display_label = self.display_label(resolved_discord_user_id)
+        if display_label:
+            return display_label
+        if bluefolder_user_id is not None:
+            return f"Tech {bluefolder_user_id}"
+        if resolved_discord_user_id is not None:
+            return str(resolved_discord_user_id)
+        return None
+
+    def _latest_member_export_path(self) -> Path | None:
+        """Return the newest member-map export path when available."""
+        configured = self.settings.member_export_path
+        base_path = Path(configured).expanduser() if configured else Path.cwd() / "exports" / "discord_members.json"
+        candidates = sorted(
+            base_path.parent.glob(f"{base_path.stem}_member_map*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return candidates[0]
+        if base_path.exists():
+            return base_path
+        return None
 
     def export_mappings(self) -> Path | None:
         """Persist the current merged mappings to disk."""
