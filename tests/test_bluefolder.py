@@ -1706,8 +1706,8 @@ def test_bluefolder_service_logs_contact_issue_and_notifies() -> None:
 
 
 def test_dispatch_service_returns_structured_board_payload() -> None:
-    async def get_assignments_for_user_today(user_id: int):
-        _ = user_id
+    async def get_assignments_for_user_on_date(user_id: int, day):
+        _ = (user_id, day)
         return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
 
     attention_item = AttentionItemRecord(
@@ -1759,10 +1759,11 @@ def test_dispatch_service_returns_structured_board_payload() -> None:
     directory = SimpleNamespace(
         mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
         reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: None,
         discord_mention=lambda user_id: f"<@{user_id}>",
     )
     bluefolder_service = SimpleNamespace(
-        get_assignments_for_user_today=get_assignments_for_user_today,
+        get_assignments_for_user_on_date=get_assignments_for_user_on_date,
         get_user_name=lambda user_id: asyncio.sleep(0, result=None),
     )
     service = DispatchService(
@@ -1778,6 +1779,33 @@ def test_dispatch_service_returns_structured_board_payload() -> None:
     assert payload["attentionJobs"] == 1
     assert payload["topAttention"][0]["itemId"] == "dispatch:SR-100:quote_needed:landlord"
     assert payload["openPartsCaseItems"][0]["reference"] == "SR-100"
+
+
+def test_dispatch_service_board_prefers_bluefolder_user_name_for_technician_label() -> None:
+    async def get_assignments_for_user_on_date(user_id: int, day):
+        _ = (user_id, day)
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: "Dispatch Dave" if user_id == 42 else None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech" if user_id == 13051 else None),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=None,
+    )
+
+    payload = asyncio.run(service.get_dispatch_board_payload())
+
+    assert payload["technicianLoad"][0]["technicianLabel"] == "Pat Tech"
 
 
 def test_dispatch_service_returns_attention_item_detail_payload() -> None:

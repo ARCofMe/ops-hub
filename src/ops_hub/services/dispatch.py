@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import logging
 from typing import TYPE_CHECKING
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
@@ -21,6 +22,9 @@ from ops_hub.services.text_blocks import section, status_section
 
 if TYPE_CHECKING:
     from ops_hub.services.workflow_state import WorkflowStateService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -617,7 +621,7 @@ class DispatchService:
                 {
                     "discordUserId": record.discord_user_id,
                     "bluefolderUserId": record.bluefolder_user_id,
-                    "technicianLabel": await self._technician_label_for_record(record),
+                    "technicianLabel": await self._board_technician_label_for_record(record),
                     "assignmentCount": assignment_count,
                     "hasAssignments": assignment_count > 0,
                     "originAddress": origin_address,
@@ -1520,6 +1524,17 @@ class DispatchService:
             discord_user_id=record.discord_user_id,
             bluefolder_user_id=record.bluefolder_user_id,
         )
+
+    async def _board_technician_label_for_record(
+        self,
+        record: TechnicianMappingRecord,
+    ) -> str:
+        """Render a BlueFolder-first technician label for the dispatch board."""
+        if record.bluefolder_user_id is not None:
+            user_name = await self.bluefolder_service.get_user_name(record.bluefolder_user_id)
+            if user_name:
+                return user_name
+        return await self._technician_label_for_record(record)
 
     async def _format_attention_action_result(self, action: str, item) -> str:
         """Render a concise response for one attention mutation."""
