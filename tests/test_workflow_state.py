@@ -209,6 +209,32 @@ def test_workflow_state_refresh_runs_assignment_enrichment_concurrently() -> Non
     assert elapsed < 0.22
 
 
+def test_workflow_state_reuses_recent_unfiltered_refresh() -> None:
+    class CountingBlueFolderService(FakeBlueFolderService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.assignment_calls = 0
+
+        async def get_assignments_for_user_today(self, user_id: int, *, include_subjects: bool = True):
+            self.assignment_calls += 1
+            return await super().get_assignments_for_user_today(user_id, include_subjects=include_subjects)
+
+    bluefolder_service = CountingBlueFolderService()
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder_service,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+    mappings = [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]
+
+    first_scanned_jobs, first_items = asyncio.run(service.refresh_dispatch_attention(mappings))
+    second_scanned_jobs, second_items = asyncio.run(service.refresh_dispatch_attention(mappings))
+
+    assert first_scanned_jobs == second_scanned_jobs == 1
+    assert len(first_items) == len(second_items) == 1
+    assert bluefolder_service.assignment_calls == 1
+
+
 def test_workflow_state_service_derives_quote_needed_attention() -> None:
     bluefolder = FakeBlueFolderService()
 

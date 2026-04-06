@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,11 @@ class WorkflowStateService:
             "no_recent_parts_context": (24, 72, 120),
         }
     )
+    refresh_cache_ttl_seconds: float = 10.0
+    _refresh_mutex: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _last_unfiltered_refresh_at: float = field(default=0.0, init=False, repr=False)
+    _last_unfiltered_refresh_mapping_ids: tuple[int, ...] = field(default_factory=tuple, init=False, repr=False)
+    _last_unfiltered_scanned_jobs: int = field(default=0, init=False, repr=False)
 
     def current_snapshot(self) -> WorkflowStateSnapshot:
         """Return the current workflow snapshot."""
@@ -635,63 +641,134 @@ class WorkflowStateService:
         if technician_bluefolder_user_id is not None:
             mappings = [record for record in mappings if record.bluefolder_user_id == technician_bluefolder_user_id]
 
-        scanned_jobs = 0
-        attention_items: list[AttentionItemRecord] = []
-        parts_cases: dict[str, PartsCaseRecord] = {}
-        current_snapshot = self.store.load()
-        previous_items = {item.item_id: item for item in current_snapshot.attention_items}
-        parts_records = self.parts_cannon_service.request_store.load()
-
-        per_record_started_at = time.perf_counter()
-        per_record_results = await asyncio.gather(
-            *(
-                self._refresh_attention_for_record(
-                    record=record,
-                    allowed_stages=allowed_stages,
-                    normalized_stage_filter=normalized_stage_filter,
-                    age_bucket=age_bucket,
-                    owner_discord_user_id=owner_discord_user_id,
-                    previous_items=previous_items,
-                    parts_records=parts_records,
-                )
-                for record in mappings
+        if self._can_use_unfiltered_refresh_cache(
+            mappings=mappings,
+            normalized_stage_filter=normalized_stage_filter,
+            age_bucket=age_bucket,
+            owner_discord_user_id=owner_discord_user_id,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
+        ):
+            snapshot = self.store.load()
+            items = list(snapshot.attention_items)
+            logger.info(
+                "Workflow attention reused cached refresh",
+                extra={
+                    "mapped_techs": len(mappings),
+                    "scanned_jobs": self._last_unfiltered_scanned_jobs,
+                    "attention_items": len(items),
+                    "parts_cases": len(snapshot.parts_cases),
+                    "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                },
             )
-        )
-        per_record_duration_ms = int((time.perf_counter() - per_record_started_at) * 1000)
-        for record_scanned_jobs, record_attention_items, record_parts_cases in per_record_results:
-            scanned_jobs += record_scanned_jobs
-            attention_items.extend(record_attention_items)
-            for parts_case in record_parts_cases:
+            return self._last_unfiltered_scanned_jobs, items
+
+        with self._refresh_mutex:
+            if self._can_use_unfiltered_refresh_cache(
+                mappings=mappings,
+                normalized_stage_filter=normalized_stage_filter,
+                age_bucket=age_bucket,
+                owner_discord_user_id=owner_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ):
+                snapshot = self.store.load()
+                items = list(snapshot.attention_items)
+                logger.info(
+                    "Workflow attention reused cached refresh",
+                    extra={
+                        "mapped_techs": len(mappings),
+                        "scanned_jobs": self._last_unfiltered_scanned_jobs,
+                        "attention_items": len(items),
+                        "parts_cases": len(snapshot.parts_cases),
+                        "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                    },
+                )
+                return self._last_unfiltered_scanned_jobs, items
+
+            scanned_jobs = 0
+            attention_items: list[AttentionItemRecord] = []
+            parts_cases: dict[str, PartsCaseRecord] = {}
+            current_snapshot = self.store.load()
+            previous_items = {item.item_id: item for item in current_snapshot.attention_items}
+            parts_records = self.parts_cannon_service.request_store.load()
+
+            per_record_started_at = time.perf_counter()
+            per_record_results = await asyncio.gather(
+                *(
+                    self._refresh_attention_for_record(
+                        record=record,
+                        allowed_stages=allowed_stages,
+                        normalized_stage_filter=normalized_stage_filter,
+                        age_bucket=age_bucket,
+                        owner_discord_user_id=owner_discord_user_id,
+                        previous_items=previous_items,
+                        parts_records=parts_records,
+                    )
+                    for record in mappings
+                )
+            )
+            per_record_duration_ms = int((time.perf_counter() - per_record_started_at) * 1000)
+            for record_scanned_jobs, record_attention_items, record_parts_cases in per_record_results:
+                scanned_jobs += record_scanned_jobs
+                attention_items.extend(record_attention_items)
+                for parts_case in record_parts_cases:
+                    parts_cases[parts_case.case_id] = parts_case
+
+            extra_parts_started_at = time.perf_counter()
+            extra_parts_cases = await asyncio.gather(
+                *(self._parts_case_from_reference(reference=reference, parts_records=parts_records) for reference in {record.reference for record in parts_records})
+            )
+            extra_parts_duration_ms = int((time.perf_counter() - extra_parts_started_at) * 1000)
+            for parts_case in extra_parts_cases:
                 parts_cases[parts_case.case_id] = parts_case
 
-        extra_parts_started_at = time.perf_counter()
-        extra_parts_cases = await asyncio.gather(
-            *(self._parts_case_from_reference(reference=reference, parts_records=parts_records) for reference in {record.reference for record in parts_records})
-        )
-        extra_parts_duration_ms = int((time.perf_counter() - extra_parts_started_at) * 1000)
-        for parts_case in extra_parts_cases:
-            parts_cases[parts_case.case_id] = parts_case
+            updated_snapshot = WorkflowStateSnapshot(
+                updated_at=self._now(),
+                attention_items=attention_items,
+                parts_cases=sorted(parts_cases.values(), key=lambda item: (item.reference, item.stage)),
+                events=current_snapshot.events,
+            )
+            self.store.save(updated_snapshot)
+            if (
+                normalized_stage_filter is None
+                and age_bucket is None
+                and owner_discord_user_id is None
+                and technician_bluefolder_user_id is None
+            ):
+                self._last_unfiltered_refresh_at = time.monotonic()
+                self._last_unfiltered_refresh_mapping_ids = tuple(sorted(record.bluefolder_user_id for record in mappings))
+                self._last_unfiltered_scanned_jobs = scanned_jobs
+            logger.info(
+                "Workflow attention refreshed",
+                extra={
+                    "mapped_techs": len(mappings),
+                    "scanned_jobs": scanned_jobs,
+                    "attention_items": len(attention_items),
+                    "parts_cases": len(updated_snapshot.parts_cases),
+                    "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                    "per_record_ms": per_record_duration_ms,
+                    "extra_parts_ms": extra_parts_duration_ms,
+                },
+            )
+            return scanned_jobs, attention_items
 
-        updated_snapshot = WorkflowStateSnapshot(
-            updated_at=self._now(),
-            attention_items=attention_items,
-            parts_cases=sorted(parts_cases.values(), key=lambda item: (item.reference, item.stage)),
-            events=current_snapshot.events,
-        )
-        self.store.save(updated_snapshot)
-        logger.info(
-            "Workflow attention refreshed",
-            extra={
-                "mapped_techs": len(mappings),
-                "scanned_jobs": scanned_jobs,
-                "attention_items": len(attention_items),
-                "parts_cases": len(updated_snapshot.parts_cases),
-                "duration_ms": int((time.perf_counter() - started_at) * 1000),
-                "per_record_ms": per_record_duration_ms,
-                "extra_parts_ms": extra_parts_duration_ms,
-            },
-        )
-        return scanned_jobs, attention_items
+    def _can_use_unfiltered_refresh_cache(
+        self,
+        *,
+        mappings: list[TechnicianMappingRecord],
+        normalized_stage_filter: str | None,
+        age_bucket: str | None,
+        owner_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None,
+    ) -> bool:
+        """Return whether a recent unfiltered refresh can be safely reused."""
+        if normalized_stage_filter is not None or age_bucket is not None or owner_discord_user_id is not None:
+            return False
+        if technician_bluefolder_user_id is not None:
+            return False
+        if (time.monotonic() - self._last_unfiltered_refresh_at) > self.refresh_cache_ttl_seconds:
+            return False
+        mapping_ids = tuple(sorted(record.bluefolder_user_id for record in mappings))
+        return mapping_ids == self._last_unfiltered_refresh_mapping_ids
 
     async def _refresh_attention_for_record(
         self,
