@@ -127,7 +127,7 @@ class DispatchAdapter:
         try:
             with self._dispatch_runtime_context(resolved_path):
                 stops = preview_builder([assignment])
-        except Exception as exc:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
             logger.exception("Failed to build dispatch stop preview for %s", reference)
             return DispatchJobSummary(
                 reference=reference,
@@ -175,7 +175,7 @@ class DispatchAdapter:
                         else "not_assigned_today"
                     )
                     technician_origin_address = integration.get_user_origin_address(technician_bluefolder_user_id)
-            except Exception as exc:
+            except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
                 logger.warning(
                     "Dispatch technician context unavailable for user %s: %s",
                     technician_bluefolder_user_id,
@@ -216,7 +216,7 @@ class DispatchAdapter:
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 assignments = integration.get_user_assignments_today(technician_bluefolder_user_id) or []
-        except Exception as exc:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
             logger.warning(
                 "Dispatch wrapper assignments unavailable for mapped BlueFolder user %s: %s",
                 technician_bluefolder_user_id,
@@ -244,7 +244,7 @@ class DispatchAdapter:
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
-        except Exception as exc:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self._origin_lookup_unavailable = True
             if _is_known_origin_lookup_miss(exc):
                 logger.info(
@@ -397,7 +397,7 @@ class DispatchAdapter:
                     destination=destination_address,
                     optimize=optimize,
                 )
-        except Exception as exc:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
             logger.warning("Dispatch route planner preview unavailable: %s", exc)
             return None
 
@@ -449,7 +449,7 @@ class DispatchAdapter:
                     destination_address,
                     optimize=optimize,
                 )
-        except Exception as exc:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
             logger.warning("Dispatch route planner simulation unavailable: %s", exc)
             return None
 
@@ -585,7 +585,7 @@ class DispatchAdapter:
                 return value
             self._geocode_cache[cache_key] = None
             return None
-        except Exception as exc:
+        except (requests.RequestException, TypeError, ValueError) as exc:
             logger.warning("Geoapify geocode unavailable for '%s': %s", address, exc)
             return None
 
