@@ -8,9 +8,8 @@ import logging
 import os
 from pathlib import Path
 import time
-from urllib.parse import urlencode
-import sys
 from types import TracebackType
+from urllib.parse import urlencode
 
 import requests
 from ops_hub.integrations.import_context import TemporarySysPath
@@ -73,8 +72,6 @@ class DispatchAdapter:
         try:
             with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
-                sys.modules.pop("optimized_routing", None)
-                sys.modules.pop(module_name, None)
                 module = importlib.import_module(module_name)
                 preview_builder = getattr(module, "bluefolder_to_routestops")
         except (ImportError, AttributeError, ModuleNotFoundError) as exc:
@@ -162,7 +159,6 @@ class DispatchAdapter:
             try:
                 with self._dispatch_runtime_context(resolved_path):
                     importlib.invalidate_caches()
-                    sys.modules.pop("optimized_routing.bluefolder_integration", None)
                     integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
                     integration_class = getattr(integration_module, "BlueFolderIntegration")
                     integration = integration_class()
@@ -208,8 +204,6 @@ class DispatchAdapter:
         try:
             with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
-                sys.modules.pop("optimized_routing", None)
-                sys.modules.pop("optimized_routing.bluefolder_integration", None)
                 integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
@@ -235,8 +229,6 @@ class DispatchAdapter:
         try:
             with self._dispatch_runtime_context(resolved_path):
                 importlib.invalidate_caches()
-                sys.modules.pop("optimized_routing", None)
-                sys.modules.pop("optimized_routing.bluefolder_integration", None)
                 integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
@@ -382,7 +374,6 @@ class DispatchAdapter:
                 timeout_seconds=self.bluefolder_timeout_seconds,
             ):
                 importlib.invalidate_caches()
-                sys.modules.pop("services.routing_service", None)
                 routing_module = importlib.import_module("services.routing_service")
                 routing_class = getattr(routing_module, "RoutingService")
                 router = routing_class()
@@ -429,7 +420,6 @@ class DispatchAdapter:
                 timeout_seconds=self.bluefolder_timeout_seconds,
             ):
                 importlib.invalidate_caches()
-                sys.modules.pop("services.routing_service", None)
                 routing_module = importlib.import_module("services.routing_service")
                 routing_class = getattr(routing_module, "RoutingService")
                 router = routing_class()
