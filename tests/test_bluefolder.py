@@ -859,7 +859,7 @@ def test_dispatch_service_builds_dispatch_attention_summary(tmp_path: Path) -> N
     assert "Actionable stages: `New SR Triage`, `Model/Serial Needed`, `Likely Parts Previsit`" in result.message
     assert "1. `SR-100` Dryer repair" in result.message
     assert "Stage: `Ready for Scheduling`" in result.message
-    assert "Technician: <@42>" in result.message
+    assert "Technician: BlueFolder user `13051`" in result.message
     assert "Location: Portland ME" in result.message
     assert "Window: `AM`" in result.message
     assert "`SR-101`" not in result.message

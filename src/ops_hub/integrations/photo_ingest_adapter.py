@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from email import message_from_bytes
 from email.header import decode_header, make_header
-import importlib
 import io
 import imaplib
 import logging
@@ -15,13 +14,12 @@ import os
 from pathlib import Path
 import re
 import smtplib
-import sys
 from types import TracebackType
 from datetime import datetime, timedelta
 
 from PIL import Image, ImageOps
 
-from ops_hub.integrations.import_context import TemporarySysPath
+from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
 from ops_hub.models.requests import (
     ArchivedPhotoRecord,
     PhotoArchiveResult,
@@ -444,8 +442,11 @@ class PhotoIngestAdapter:
                 verify_ssl=self.bluefolder_verify_ssl,
                 timeout_seconds=self.bluefolder_timeout_seconds,
             ):
-                importlib.invalidate_caches()
-                module = importlib.import_module("bluefolder_api.client")
+                module = import_module_from_path(
+                    "bluefolder_api.client",
+                    resolved_path,
+                    reset_packages=("bluefolder_api",),
+                )
                 client_class = getattr(module, "BlueFolderClient")
                 return client_class(base_url=(self.bluefolder_base_url or None))
         except Exception:

@@ -26,7 +26,7 @@ def atomic_write_text(path: Path, text: str, *, encoding: str = "utf-8") -> None
 
         try:
             os.replace(temp_path, path)
-        except Exception:
+        except OSError:
             if backup_path.exists() and not path.exists():
                 os.replace(backup_path, path)
             raise

@@ -1531,9 +1531,7 @@ class DispatchService:
     ) -> str:
         """Render a BlueFolder-first technician label for the dispatch board."""
         if record.bluefolder_user_id is not None:
-            user_name = await self.bluefolder_service.get_user_name(record.bluefolder_user_id)
-            if user_name:
-                return user_name
+            return await self._bluefolder_label(record.bluefolder_user_id, markdown=False)
         return await self._technician_label_for_record(record)
 
     async def _format_attention_action_result(self, action: str, item) -> str:
@@ -1625,8 +1623,8 @@ class DispatchService:
         bluefolder_user_id: int | None = None,
     ) -> str:
         """Render the best available technician label for dispatch messages."""
-        if discord_user_id is None and bluefolder_user_id is not None and self.technician_directory_service is not None:
-            discord_user_id = self.technician_directory_service.reverse_mappings().get(bluefolder_user_id)
+        if bluefolder_user_id is not None:
+            return await self._bluefolder_label(bluefolder_user_id, markdown=True)
         if discord_user_id is not None and self.technician_directory_service is not None:
             display_label = self.technician_directory_service.display_label(discord_user_id)
             if display_label:
@@ -1634,18 +1632,16 @@ class DispatchService:
             return str(discord_user_id)
         if discord_user_id is not None:
             return str(discord_user_id)
-        if bluefolder_user_id is not None:
-            user_name = await self.bluefolder_service.get_user_name(bluefolder_user_id)
-            if user_name:
-                return user_name
-            if self.technician_directory_service is not None:
-                display_label = self.technician_directory_service.technician_display_label(
-                    bluefolder_user_id=bluefolder_user_id,
-                )
-                if display_label:
-                    return display_label
-            return f"Tech {bluefolder_user_id}"
         return "Unknown technician"
+
+    async def _bluefolder_label(self, bluefolder_user_id: int, *, markdown: bool) -> str:
+        """Render a BlueFolder-first label, falling back to a BlueFolder-specific identifier."""
+        user_name = await self.bluefolder_service.get_user_name(bluefolder_user_id)
+        if user_name:
+            return user_name
+        if markdown:
+            return f"BlueFolder user `{bluefolder_user_id}`"
+        return f"BlueFolder {bluefolder_user_id}"
 
     async def _assignments_for_user(
         self,

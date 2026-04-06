@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import importlib
 import logging
 import os
 from pathlib import Path
@@ -12,7 +11,7 @@ from types import TracebackType
 from urllib.parse import urlencode
 
 import requests
-from ops_hub.integrations.import_context import TemporarySysPath
+from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
 from ops_hub.models.requests import BlueFolderJobSummary, DispatchJobSummary
 
 
@@ -71,8 +70,11 @@ class DispatchAdapter:
         geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
         try:
             with self._dispatch_runtime_context(resolved_path):
-                importlib.invalidate_caches()
-                module = importlib.import_module(module_name)
+                module = import_module_from_path(
+                    module_name,
+                    resolved_path,
+                    reset_packages=("optimized_routing",),
+                )
                 preview_builder = getattr(module, "bluefolder_to_routestops")
         except (ImportError, AttributeError, ModuleNotFoundError) as exc:
             logger.exception("Failed to load dispatch wrapper from %s", resolved_path)
@@ -158,8 +160,11 @@ class DispatchAdapter:
         if technician_bluefolder_user_id is not None:
             try:
                 with self._dispatch_runtime_context(resolved_path):
-                    importlib.invalidate_caches()
-                    integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                    integration_module = import_module_from_path(
+                        "optimized_routing.bluefolder_integration",
+                        resolved_path,
+                        reset_packages=("optimized_routing",),
+                    )
                     integration_class = getattr(integration_module, "BlueFolderIntegration")
                     integration = integration_class()
                     assignments = integration.get_user_assignments_today(technician_bluefolder_user_id) or []
@@ -203,8 +208,11 @@ class DispatchAdapter:
 
         try:
             with self._dispatch_runtime_context(resolved_path):
-                importlib.invalidate_caches()
-                integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                integration_module = import_module_from_path(
+                    "optimized_routing.bluefolder_integration",
+                    resolved_path,
+                    reset_packages=("optimized_routing",),
+                )
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 assignments = integration.get_user_assignments_today(technician_bluefolder_user_id) or []
@@ -228,8 +236,11 @@ class DispatchAdapter:
 
         try:
             with self._dispatch_runtime_context(resolved_path):
-                importlib.invalidate_caches()
-                integration_module = importlib.import_module("optimized_routing.bluefolder_integration")
+                integration_module = import_module_from_path(
+                    "optimized_routing.bluefolder_integration",
+                    resolved_path,
+                    reset_packages=("optimized_routing",),
+                )
                 integration_class = getattr(integration_module, "BlueFolderIntegration")
                 integration = integration_class()
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
@@ -373,8 +384,11 @@ class DispatchAdapter:
                 verify_ssl=self.bluefolder_verify_ssl,
                 timeout_seconds=self.bluefolder_timeout_seconds,
             ):
-                importlib.invalidate_caches()
-                routing_module = importlib.import_module("services.routing_service")
+                routing_module = import_module_from_path(
+                    "services.routing_service",
+                    import_path,
+                    reset_packages=("services",),
+                )
                 routing_class = getattr(routing_module, "RoutingService")
                 router = routing_class()
                 result = router.preview_route(
@@ -419,8 +433,11 @@ class DispatchAdapter:
                 verify_ssl=self.bluefolder_verify_ssl,
                 timeout_seconds=self.bluefolder_timeout_seconds,
             ):
-                importlib.invalidate_caches()
-                routing_module = importlib.import_module("services.routing_service")
+                routing_module = import_module_from_path(
+                    "services.routing_service",
+                    import_path,
+                    reset_packages=("services",),
+                )
                 routing_class = getattr(routing_module, "RoutingService")
                 router = routing_class()
                 result = router.simulate_route(

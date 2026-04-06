@@ -95,7 +95,7 @@ class TechnicianDirectoryService:
 
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             return {}
         members = payload.get("members") if isinstance(payload, dict) else None
         if not isinstance(members, list):

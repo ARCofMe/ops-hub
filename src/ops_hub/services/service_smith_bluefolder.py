@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
-import importlib
 import os
 from pathlib import Path
-import sys
 from typing import Any
 import xml.etree.ElementTree as ET
 
 from ops_hub.core.config import Settings
-from ops_hub.integrations.import_context import TemporarySysPath
+from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
 
 
 @dataclass(slots=True)
@@ -449,8 +447,11 @@ class ServiceSmithBlueFolderClient:
             verify_ssl=self.settings.bluefolder_verify_ssl,
             timeout_seconds=self.settings.bluefolder_timeout_seconds,
         ):
-            importlib.invalidate_caches()
-            module = importlib.import_module("bluefolder_api.client")
+            module = import_module_from_path(
+                "bluefolder_api.client",
+                resolved_path,
+                reset_packages=("bluefolder_api",),
+            )
             client_class = getattr(module, "BlueFolderClient")
             return client_class(base_url=(self.settings.bluefolder_base_url or None))
 

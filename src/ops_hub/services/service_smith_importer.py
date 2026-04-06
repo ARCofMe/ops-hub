@@ -20,7 +20,7 @@ def read_headers(spreadsheet_path: str | Path) -> list[str]:
     if path.suffix.lower() in {".xlsx", ".xlsm"}:
         try:
             from openpyxl import load_workbook
-        except Exception as exc:
+        except ImportError as exc:
             raise RuntimeError("openpyxl is required to import Excel workbooks.") from exc
         workbook = load_workbook(path, read_only=True, data_only=True)
         sheet = workbook.active
@@ -156,5 +156,5 @@ def _looks_like_email(value: str) -> bool:
 def _safe_int(value: str | None) -> int:
     try:
         return int(value or "0")
-    except Exception:
+    except (TypeError, ValueError):
         return 0

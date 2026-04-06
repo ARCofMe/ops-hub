@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import importlib
 import html
 import logging
 import os
 from pathlib import Path
 import re
-import sys
 from types import TracebackType
 
 from datetime import date, datetime
 
-from ops_hub.integrations.import_context import TemporarySysPath
+from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
 from ops_hub.models.requests import BlueFolderJobSummary, CustomerContactSummary, PartsCommentRecord
 
 
@@ -909,9 +907,11 @@ class BlueFolderAdapter:
 
     def _load_client_class(self, resolved_path: Path) -> type[object]:
         """Load the shared BlueFolder client from a local repo path."""
-        with TemporarySysPath(resolved_path):
-            importlib.invalidate_caches()
-            module = importlib.import_module("bluefolder_api.client")
+        module = import_module_from_path(
+            "bluefolder_api.client",
+            resolved_path,
+            reset_packages=("bluefolder_api",),
+        )
         return getattr(module, "BlueFolderClient")
 
 
