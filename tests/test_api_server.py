@@ -603,6 +603,32 @@ def test_dispatch_returns_route_preview_payload() -> None:
     assert captured["optimize"] is True
 
 
+def test_dispatch_returns_bad_request_when_route_preview_validation_fails() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            get_dispatch_route_payload=lambda **_: asyncio.sleep(0, result=(_ for _ in ()).throw(ValueError("Route date is invalid")))
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/routes/preview?bluefolder_user_id=9001",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload == {"success": False, "message": "Route date is invalid"}
+
+
 def test_dispatch_returns_heatmap_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
@@ -789,6 +815,32 @@ def test_parts_returns_request_payload() -> None:
 
     assert status == HTTPStatus.OK
     assert payload["request"]["requestId"] == 5
+
+
+def test_parts_returns_bad_request_when_case_detail_lookup_fails() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        parts_cannon_service=SimpleNamespace(
+            get_parts_case_payload=lambda **_: asyncio.sleep(0, result=(_ for _ in ()).throw(ValueError("Unknown parts case reference")))
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/parts/cases/SR-999",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload == {"success": False, "message": "Unknown parts case reference"}
 
 
 def test_parts_posts_request_claim() -> None:

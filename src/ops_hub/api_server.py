@@ -112,12 +112,18 @@ async def dispatch_technician_api_request(
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/customer")
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
-                return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_customer_payload(sr_id=sr_id)
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_customer_payload(sr_id=sr_id)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             if route_path.endswith("/work"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/work")
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
-                return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_work_payload(sr_id=sr_id)
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_work_payload(sr_id=sr_id)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
         if method == "GET" and route_path.startswith("/dispatch/attention/"):
             item_id = _path_tail(route_path, prefix="/dispatch/attention/")
@@ -193,13 +199,16 @@ async def dispatch_technician_api_request(
             bluefolder_user_id = _query_int(query, "bluefolder_user_id")
             if bluefolder_user_id is None:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": "bluefolder_user_id is required."}
-            payload = await container.dispatch_service.get_dispatch_route_payload(
-                technician_bluefolder_user_id=bluefolder_user_id,
-                route_date=(query.get("date") or [None])[0],
-                origin_address=(query.get("origin_address") or [None])[0],
-                destination_address=(query.get("destination_address") or [None])[0],
-                optimize=((query.get("optimize") or ["false"])[0].strip().lower() == "true"),
-            )
+            try:
+                payload = await container.dispatch_service.get_dispatch_route_payload(
+                    technician_bluefolder_user_id=bluefolder_user_id,
+                    route_date=(query.get("date") or [None])[0],
+                    origin_address=(query.get("origin_address") or [None])[0],
+                    destination_address=(query.get("destination_address") or [None])[0],
+                    optimize=((query.get("optimize") or ["false"])[0].strip().lower() == "true"),
+                )
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             return HTTPStatus.OK, payload
 
         if method == "POST" and route_path == "/dispatch/routes/simulate":
@@ -232,9 +241,12 @@ async def dispatch_technician_api_request(
             return HTTPStatus.OK, payload
 
         if method == "GET" and route_path == "/dispatch/routes/heatmap":
-            payload = await container.dispatch_service.get_dispatch_heatmap_payload(
-                technician_bluefolder_user_id=_query_int(query, "bluefolder_user_id")
-            )
+            try:
+                payload = await container.dispatch_service.get_dispatch_heatmap_payload(
+                    technician_bluefolder_user_id=_query_int(query, "bluefolder_user_id")
+                )
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             return HTTPStatus.OK, payload
 
         if method == "GET" and route_path == "/dispatch/intake/formats":
@@ -371,11 +383,17 @@ async def dispatch_technician_api_request(
                 reference = _path_tail(route_path[: -len("/timeline")], prefix="/parts/cases/")
                 if not reference:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts case reference."}
-                return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_timeline_payload(reference=reference)
+                try:
+                    return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_timeline_payload(reference=reference)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             reference = _path_tail(route_path, prefix="/parts/cases/")
             if not reference:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts case reference."}
-            return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_payload(reference=reference)
+            try:
+                return HTTPStatus.OK, await container.parts_cannon_service.get_parts_case_payload(reference=reference)
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
         if method == "GET" and route_path == "/parts/requests":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_requests_payload(
