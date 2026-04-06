@@ -275,6 +275,21 @@ def test_photo_ingest_service_attaches_compressed_photo_to_service_request(tmp_p
     assert LAST_UPLOAD["size"] > 0
 
 
+def test_photo_ingest_adapter_returns_none_when_bluefolder_client_import_is_invalid(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text("BROKEN = True\n", encoding="utf-8")
+
+    adapter = PhotoIngestAdapter(
+        bluefolder_api_path=str(tmp_path),
+        bluefolder_api_key="key",
+        bluefolder_account_name="acme",
+    )
+
+    assert adapter._build_bluefolder_client() is None
+
+
 def test_photo_ingest_service_archives_photo_batch_via_email() -> None:
     sent_messages: list[object] = []
 

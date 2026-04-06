@@ -300,7 +300,7 @@ class ServiceSmithBlueFolderClient:
         zip_code = (row.get("zip") or "").strip()
         try:
             locations = self.client.customer_locations.get_by_customer_id(int(customer_id))
-        except Exception:
+        except (AttributeError, TypeError, ValueError, RuntimeError):
             return None
         for location in locations:
             if address and location.get("address", "").casefold() != address:
@@ -320,7 +320,7 @@ class ServiceSmithBlueFolderClient:
         full_name = " ".join(part for part in [row.get("contact_first_name"), row.get("contact_last_name")] if part).casefold()
         try:
             contacts = self.client.customer_contacts.list_for_customer(int(customer_id))
-        except Exception:
+        except (AttributeError, TypeError, ValueError, RuntimeError):
             return None
         for contact in contacts:
             contact_name = " ".join(part for part in [contact.get("firstName"), contact.get("lastName")] if part).casefold()
@@ -396,7 +396,7 @@ class ServiceSmithBlueFolderClient:
             return self._customer_cache
         try:
             xml = self.client.customers.list({})
-        except Exception:
+        except (AttributeError, TypeError, ValueError, RuntimeError):
             self._customer_cache = []
             return self._customer_cache
         customers: list[dict[str, str]] = []
@@ -424,7 +424,7 @@ class ServiceSmithBlueFolderClient:
                 f"{start:%Y.%m.%d} 12:00 AM",
                 f"{end:%Y.%m.%d} 11:59 PM",
             )
-        except Exception:
+        except (AttributeError, TypeError, ValueError, RuntimeError):
             self._service_request_cache = {}
             return self._service_request_cache
         cache: dict[str, str] = {}

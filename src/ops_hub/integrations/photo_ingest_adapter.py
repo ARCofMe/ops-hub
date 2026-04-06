@@ -449,7 +449,7 @@ class PhotoIngestAdapter:
                 )
                 client_class = getattr(module, "BlueFolderClient")
                 return client_class(base_url=(self.bluefolder_base_url or None))
-        except Exception:
+        except (AttributeError, ImportError, ModuleNotFoundError, OSError, TypeError, ValueError):
             logger.exception("Failed to build BlueFolder client for photo ingest")
             return None
 

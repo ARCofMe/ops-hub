@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 
 from ops_hub.services.service_smith import ServiceSmithService
@@ -130,3 +131,25 @@ def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:
 
     assert deleted["name"] == "vendor-a"
     assert service.list_profiles_payload()["items"] == []
+
+
+def test_analyze_spreadsheet_payload_reports_missing_openpyxl_for_excel(monkeypatch, tmp_path: Path) -> None:
+    spreadsheet = tmp_path / "intake.xlsx"
+    spreadsheet.write_bytes(b"not-a-real-workbook")
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "openpyxl":
+            raise ImportError("missing optional dependency")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    try:
+        service.analyze_spreadsheet_payload(spreadsheet_path=str(spreadsheet))
+    except RuntimeError as exc:
+        assert "openpyxl is required to import Excel workbooks." in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError for missing openpyxl.")
