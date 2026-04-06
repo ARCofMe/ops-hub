@@ -1,6 +1,7 @@
 """BlueFolder adapter and service tests for Ops Hub."""
 
 import asyncio
+from datetime import datetime
 from time import perf_counter
 from pathlib import Path
 import textwrap
@@ -1877,7 +1878,7 @@ def test_dispatch_service_returns_structured_board_payload() -> None:
 
 
 def test_dispatch_service_board_prefers_bluefolder_user_name_for_technician_label() -> None:
-    async def get_assignments_for_user_on_date(user_id: int, day):
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
         _ = (user_id, day)
         return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
 
@@ -1910,7 +1911,7 @@ def test_dispatch_service_board_loads_technicians_concurrently() -> None:
         TechnicianMappingRecord(discord_user_id=43, bluefolder_user_id=13053),
     ]
 
-    async def get_assignments_for_user_on_date(user_id: int, day):
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
         _ = (user_id, day)
         await asyncio.sleep(0.05)
         return [{"serviceRequestId": str(user_id), "subject": f"Job {user_id}"}]
@@ -1944,6 +1945,66 @@ def test_dispatch_service_board_loads_technicians_concurrently() -> None:
     assert payload["mappedTechs"] == 3
     assert len(payload["technicianLoad"]) == 3
     assert elapsed < 0.18
+
+
+def test_dispatch_service_board_uses_recent_snapshot_without_blocking_refresh() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[
+                AttentionItemRecord(
+                    item_id="dispatch:SR-100:part_ready",
+                    sr_id=100,
+                    reference="SR-100",
+                    category="dispatch",
+                    status="open",
+                    stage="part_ready",
+                    stage_label="Ready for Scheduling",
+                    summary="Dryer repair",
+                )
+            ],
+            parts_cases=[
+                PartsCaseRecord(
+                    case_id="SR-100",
+                    reference="SR-100",
+                    sr_id=100,
+                    stage="part_ready",
+                    stage_label="Ready for Scheduling",
+                    status="open",
+                    updated_at=datetime.now().isoformat(),
+                )
+            ],
+            events=[],
+            updated_at=datetime.now().isoformat(),
+        ),
+        attention_metrics=lambda snapshot: {"queueCounts": {"part_ready": 1}},
+        refresh_dispatch_attention=lambda mappings: asyncio.sleep(0.2, result=(1, [])),
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=lambda user_id, day, include_subjects=True: asyncio.sleep(
+            0, result=[{"serviceRequestId": "100", "subject": "Dryer repair"}]
+        ),
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    started_at = perf_counter()
+    payload = asyncio.run(service.get_dispatch_board_payload())
+    elapsed = perf_counter() - started_at
+
+    assert payload["attentionJobs"] == 1
+    assert payload["openPartsCases"] == 1
+    assert elapsed < 0.15
 
 
 def test_dispatch_service_returns_attention_item_detail_payload() -> None:

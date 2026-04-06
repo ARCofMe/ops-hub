@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,9 @@ class DispatchService:
     bluefolder_service: BlueFolderService
     technician_directory_service: TechnicianDirectoryService | None = None
     workflow_state_service: "WorkflowStateService | None" = None
+    board_snapshot_ttl_seconds: float = 30.0
+    _board_refresh_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _board_refresh_running: bool = field(default=False, init=False, repr=False)
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
@@ -608,10 +612,16 @@ class DispatchService:
         workflow_refresh_duration_ms = 0
         payload_shape_duration_ms = 0
         if self.workflow_state_service is not None:
-            workflow_refresh_started_at = time.perf_counter()
-            scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
-            workflow_refresh_duration_ms = int((time.perf_counter() - workflow_refresh_started_at) * 1000)
             snapshot = self.workflow_state_service.current_snapshot()
+            if self._board_snapshot_is_usable(snapshot):
+                current_attention_items = list(snapshot.attention_items)
+                scanned_jobs = self._estimate_scanned_jobs(snapshot)
+                self._ensure_board_refresh(mappings)
+            else:
+                workflow_refresh_started_at = time.perf_counter()
+                scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
+                workflow_refresh_duration_ms = int((time.perf_counter() - workflow_refresh_started_at) * 1000)
+                snapshot = self.workflow_state_service.current_snapshot()
             payload_shape_started_at = time.perf_counter()
             attention_items = list(await asyncio.gather(*(self._attention_item_payload(item) for item in current_attention_items)))
             open_parts_cases = list(
@@ -649,6 +659,42 @@ class DispatchService:
             "openPartsCaseItems": open_parts_cases[:8],
             "technicianLoad": technician_load,
         }
+
+    def _board_snapshot_is_usable(self, snapshot) -> bool:
+        """Return whether the board can render from the persisted workflow snapshot."""
+        updated_at = getattr(snapshot, "updated_at", None)
+        if not updated_at:
+            return False
+        try:
+            updated = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        now = datetime.now(updated.tzinfo) if updated.tzinfo is not None else datetime.now()
+        return (now - updated).total_seconds() <= self.board_snapshot_ttl_seconds
+
+    def _estimate_scanned_jobs(self, snapshot) -> int:
+        """Best-effort scanned job estimate from the current workflow snapshot."""
+        references = {item.reference for item in snapshot.attention_items if item.reference}
+        references.update(case.reference for case in snapshot.parts_cases if case.reference)
+        return len(references)
+
+    def _ensure_board_refresh(self, mappings: list[TechnicianMappingRecord]) -> None:
+        """Run one background workflow refresh so the next board request is warm."""
+        with self._board_refresh_lock:
+            if self._board_refresh_running or self.workflow_state_service is None:
+                return
+            self._board_refresh_running = True
+
+        def _runner() -> None:
+            try:
+                asyncio.run(self.workflow_state_service.refresh_dispatch_attention(mappings))
+            except Exception:
+                logger.exception("Background board refresh failed")
+            finally:
+                with self._board_refresh_lock:
+                    self._board_refresh_running = False
+
+        threading.Thread(target=_runner, name="ops-hub-board-refresh", daemon=True).start()
 
     async def _dispatch_board_technician_entry(self, record: TechnicianMappingRecord) -> dict[str, object]:
         """Build one dispatch-board technician row without blocking the rest of the board."""
