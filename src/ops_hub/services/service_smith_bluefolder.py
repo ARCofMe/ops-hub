@@ -450,8 +450,6 @@ class ServiceSmithBlueFolderClient:
             timeout_seconds=self.settings.bluefolder_timeout_seconds,
         ):
             importlib.invalidate_caches()
-            sys.modules.pop("bluefolder_api", None)
-            sys.modules.pop("bluefolder_api.client", None)
             module = importlib.import_module("bluefolder_api.client")
             client_class = getattr(module, "BlueFolderClient")
             return client_class(base_url=(self.settings.bluefolder_base_url or None))
