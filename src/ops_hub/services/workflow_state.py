@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -636,60 +637,30 @@ class WorkflowStateService:
         previous_items = {item.item_id: item for item in current_snapshot.attention_items}
         parts_records = self.parts_cannon_service.request_store.load()
 
-        for record in mappings:
-            assignments = await self.bluefolder_service.get_assignments_for_user_today(record.bluefolder_user_id)
-            for assignment in assignments[:10]:
-                sr_id = self._parse_sr_id(assignment.get("serviceRequestId"))
-                if sr_id is None:
-                    continue
-                scanned_jobs += 1
-                reference = f"SR-{sr_id}"
-                snapshot = await self.bluefolder_service.get_parts_snapshot(sr_id)
-                job_summary = await self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False)
-                matching_requests = self._matching_requests(parts_records, reference)
-                parts_case = self._build_parts_case(
-                    reference=reference,
-                    sr_id=sr_id,
-                    snapshot=snapshot,
-                    matching_requests=matching_requests,
+        per_record_results = await asyncio.gather(
+            *(
+                self._refresh_attention_for_record(
+                    record=record,
+                    allowed_stages=allowed_stages,
+                    normalized_stage_filter=normalized_stage_filter,
+                    age_bucket=age_bucket,
+                    owner_discord_user_id=owner_discord_user_id,
+                    previous_items=previous_items,
+                    parts_records=parts_records,
                 )
+                for record in mappings
+            )
+        )
+        for record_scanned_jobs, record_attention_items, record_parts_cases in per_record_results:
+            scanned_jobs += record_scanned_jobs
+            attention_items.extend(record_attention_items)
+            for parts_case in record_parts_cases:
                 parts_cases[parts_case.case_id] = parts_case
 
-                location = " ".join(part for part in [assignment.get("city"), assignment.get("state")] if part).strip()
-                route_label = str(assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow") or "").strip() or None
-                summary = str(assignment.get("subject") or "Unlabeled Service Request")
-                derived_items = self._build_assignment_attention_items(
-                    record=record,
-                    reference=reference,
-                    sr_id=sr_id,
-                    assignment_summary=summary,
-                    location=location or None,
-                    route_label=route_label,
-                    parts_snapshot=snapshot,
-                    job_summary=job_summary,
-                    previous_items=previous_items,
-                )
-                for derived_item in derived_items:
-                    if derived_item.stage not in allowed_stages:
-                        continue
-                    if normalized_stage_filter is not None and derived_item.stage != normalized_stage_filter:
-                        continue
-                    if age_bucket is not None and derived_item.age_bucket != age_bucket:
-                        continue
-                    if owner_discord_user_id is not None and derived_item.owner_discord_user_id != owner_discord_user_id:
-                        continue
-                    attention_items.append(derived_item)
-
-        for reference in {record.reference for record in parts_records}:
-            sr_id = self._reference_sr_id(reference)
-            matching_requests = self._matching_requests(parts_records, reference)
-            snapshot = await self.bluefolder_service.get_parts_snapshot(sr_id) if sr_id is not None else None
-            parts_case = self._build_parts_case(
-                reference=reference,
-                sr_id=sr_id,
-                snapshot=snapshot,
-                matching_requests=matching_requests,
-            )
+        extra_parts_cases = await asyncio.gather(
+            *(self._parts_case_from_reference(reference=reference, parts_records=parts_records) for reference in {record.reference for record in parts_records})
+        )
+        for parts_case in extra_parts_cases:
             parts_cases[parts_case.case_id] = parts_case
 
         updated_snapshot = WorkflowStateSnapshot(
@@ -700,6 +671,117 @@ class WorkflowStateService:
         )
         self.store.save(updated_snapshot)
         return scanned_jobs, attention_items
+
+    async def _refresh_attention_for_record(
+        self,
+        *,
+        record: TechnicianMappingRecord,
+        allowed_stages: dict[str, str],
+        normalized_stage_filter: str | None,
+        age_bucket: str | None,
+        owner_discord_user_id: int | None,
+        previous_items: dict[str, AttentionItemRecord],
+        parts_records: list[PartRequestRecord],
+    ) -> tuple[int, list[AttentionItemRecord], list[PartsCaseRecord]]:
+        """Derive current attention and parts-case state for one mapped technician."""
+        assignments = await self.bluefolder_service.get_assignments_for_user_today(record.bluefolder_user_id)
+        assignment_results = await asyncio.gather(
+            *(
+                self._refresh_attention_for_assignment(
+                    record=record,
+                    assignment=assignment,
+                    allowed_stages=allowed_stages,
+                    normalized_stage_filter=normalized_stage_filter,
+                    age_bucket=age_bucket,
+                    owner_discord_user_id=owner_discord_user_id,
+                    previous_items=previous_items,
+                    parts_records=parts_records,
+                )
+                for assignment in assignments[:10]
+            )
+        )
+
+        scanned_jobs = 0
+        attention_items: list[AttentionItemRecord] = []
+        parts_cases: list[PartsCaseRecord] = []
+        for result in assignment_results:
+            if result is None:
+                continue
+            scanned_jobs += 1
+            record_attention_items, parts_case = result
+            attention_items.extend(record_attention_items)
+            parts_cases.append(parts_case)
+        return scanned_jobs, attention_items, parts_cases
+
+    async def _refresh_attention_for_assignment(
+        self,
+        *,
+        record: TechnicianMappingRecord,
+        assignment: dict[str, object],
+        allowed_stages: dict[str, str],
+        normalized_stage_filter: str | None,
+        age_bucket: str | None,
+        owner_discord_user_id: int | None,
+        previous_items: dict[str, AttentionItemRecord],
+        parts_records: list[PartRequestRecord],
+    ) -> tuple[list[AttentionItemRecord], PartsCaseRecord] | None:
+        """Derive attention and parts-case state for one assigned SR."""
+        sr_id = self._parse_sr_id(assignment.get("serviceRequestId"))
+        if sr_id is None:
+            return None
+        reference = f"SR-{sr_id}"
+        snapshot, job_summary = await asyncio.gather(
+            self.bluefolder_service.get_parts_snapshot(sr_id),
+            self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False),
+        )
+        matching_requests = self._matching_requests(parts_records, reference)
+        parts_case = self._build_parts_case(
+            reference=reference,
+            sr_id=sr_id,
+            snapshot=snapshot,
+            matching_requests=matching_requests,
+        )
+
+        location = " ".join(part for part in [assignment.get("city"), assignment.get("state")] if part).strip()
+        route_label = str(assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow") or "").strip() or None
+        summary = str(assignment.get("subject") or "Unlabeled Service Request")
+        derived_items = self._build_assignment_attention_items(
+            record=record,
+            reference=reference,
+            sr_id=sr_id,
+            assignment_summary=summary,
+            location=location or None,
+            route_label=route_label,
+            parts_snapshot=snapshot,
+            job_summary=job_summary,
+            previous_items=previous_items,
+        )
+        filtered_items = [
+            derived_item
+            for derived_item in derived_items
+            if derived_item.stage in allowed_stages
+            and (normalized_stage_filter is None or derived_item.stage == normalized_stage_filter)
+            and (age_bucket is None or derived_item.age_bucket == age_bucket)
+            and (owner_discord_user_id is None or derived_item.owner_discord_user_id == owner_discord_user_id)
+        ]
+        return filtered_items, parts_case
+
+    async def _parts_case_from_reference(
+        self,
+        *,
+        reference: str,
+        parts_records: list[PartRequestRecord],
+    ) -> PartsCaseRecord:
+        """Build a parts case from tracked-request state even when no active assignment is visible."""
+        sr_id = self._reference_sr_id(reference)
+        matching_requests = self._matching_requests(parts_records, reference)
+        snapshot = await self.bluefolder_service.get_parts_snapshot(sr_id) if sr_id is not None else None
+        return self._build_parts_case(
+            reference=reference,
+            sr_id=sr_id,
+            snapshot=snapshot,
+            matching_requests=matching_requests,
+        )
 
     def _build_assignment_attention_items(
         self,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from time import perf_counter
 
 from ops_hub.models.requests import (
     AttentionItemRecord,
@@ -155,6 +156,57 @@ def test_workflow_state_service_filters_attention_by_age_and_owner() -> None:
     assert len(attention_items) == 1
     assert attention_items[0].age_bucket == "urgent"
     assert attention_items[0].owner_discord_user_id == 42
+
+
+def test_workflow_state_refresh_runs_assignment_enrichment_concurrently() -> None:
+    class SlowBlueFolderService(FakeBlueFolderService):
+        async def get_assignments_for_user_today(self, user_id: int):
+            await asyncio.sleep(0.05)
+            return self.assignments_by_user.get(user_id, [])
+
+        async def get_parts_snapshot(self, sr_id: int):
+            await asyncio.sleep(0.05)
+            return self.snapshots.get(sr_id)
+
+        async def get_job_summary(self, reference: str, *, include_customer_contacts: bool = True):
+            await asyncio.sleep(0.05)
+            return await super().get_job_summary(reference, include_customer_contacts=include_customer_contacts)
+
+    bluefolder_service = SlowBlueFolderService()
+    bluefolder_service.assignments_by_user = {
+        13051: [{"serviceRequestId": "100", "subject": "Dryer repair", "city": "Portland", "state": "ME", "routeLabel": "AM"}],
+        13052: [{"serviceRequestId": "101", "subject": "Washer repair", "city": "South Portland", "state": "ME", "routeLabel": "PM"}],
+    }
+    bluefolder_service.snapshots[101] = PartsLifecycleSnapshot(
+        stage="ordered",
+        stage_label="Ordered",
+        latest_status_text="Ordered from vendor.",
+        latest_status_author="Parts",
+        latest_status_at="2026-03-22 11:00",
+    )
+
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder_service,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    started_at = perf_counter()
+    scanned_jobs, attention_items = asyncio.run(
+        service.refresh_dispatch_attention(
+            [
+                TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051),
+                TechnicianMappingRecord(discord_user_id=43, bluefolder_user_id=13052),
+            ]
+        )
+    )
+    elapsed = perf_counter() - started_at
+    snapshot = service.current_snapshot()
+
+    assert scanned_jobs == 2
+    assert len(snapshot.parts_cases) == 2
+    assert len(attention_items) >= 1
+    assert elapsed < 0.22
 
 
 def test_workflow_state_service_derives_quote_needed_attention() -> None:
