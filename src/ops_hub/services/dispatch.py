@@ -682,7 +682,7 @@ class DispatchService:
     async def _dispatch_board_assignments(self, bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
         """Load board assignments for one mapped technician with graceful degradation."""
         try:
-            return await self._assignments_for_user(bluefolder_user_id)
+            return await self._assignments_for_user(bluefolder_user_id, include_subjects=False)
         except Exception as exc:
             logger.warning(
                 "Dispatch board assignments unavailable for mapped BlueFolder user %s: %s",
@@ -1691,11 +1691,16 @@ class DispatchService:
         bluefolder_user_id: int,
         *,
         day: date | None = None,
+        include_subjects: bool = True,
     ) -> list[dict[str, str | bool | None]]:
         """Load assignments for one day, preferring direct BlueFolder reads with a wrapper fallback."""
         target_day = day or date.today()
         try:
-            assignments = await self.bluefolder_service.get_assignments_for_user_on_date(bluefolder_user_id, target_day)
+            assignments = await self.bluefolder_service.get_assignments_for_user_on_date(
+                bluefolder_user_id,
+                target_day,
+                include_subjects=include_subjects,
+            )
         except Exception as exc:
             logger.warning(
                 "BlueFolder assignments unavailable for mapped user %s on %s: %s",

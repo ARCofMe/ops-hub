@@ -705,7 +705,10 @@ class WorkflowStateService:
         parts_records: list[PartRequestRecord],
     ) -> tuple[int, list[AttentionItemRecord], list[PartsCaseRecord]]:
         """Derive current attention and parts-case state for one mapped technician."""
-        assignments = await self.bluefolder_service.get_assignments_for_user_today(record.bluefolder_user_id)
+        assignments = await self.bluefolder_service.get_assignments_for_user_today(
+            record.bluefolder_user_id,
+            include_subjects=False,
+        )
         assignment_results = await asyncio.gather(
             *(
                 self._refresh_attention_for_assignment(

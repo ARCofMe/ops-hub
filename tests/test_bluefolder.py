@@ -102,6 +102,45 @@ def test_bluefolder_adapter_skips_customer_enrichment_when_contacts_are_disabled
     assert result.customer_contacts == ()
 
 
+def test_bluefolder_adapter_skips_assignment_subject_lookups_when_disabled(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            class _Assignments:
+                def list_for_user_range(self, user_id, start_date, end_date, date_range_type=None):
+                    return [{"serviceRequestId": "100", "start": "2026-03-24T08:00:00"}]
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    raise AssertionError("service request subject lookup should be skipped")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.assignments = _Assignments()
+                    self.service_requests = _ServiceRequests()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    assignments = asyncio.run(
+        adapter.get_assignments_for_user_on_date(13051, day=__import__("datetime").date(2026, 3, 24), include_subjects=False)
+    )
+
+    assert len(assignments) == 1
+    assert assignments[0]["serviceRequestId"] == "100"
+    assert assignments[0]["subject"] == "Service Request"
+
+
 def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) -> None:
     bluefolder_service = BlueFolderService(adapter=BlueFolderAdapter(base_path=str(tmp_path)))
     service = DispatchService(

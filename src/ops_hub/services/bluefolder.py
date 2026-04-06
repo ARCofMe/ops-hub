@@ -46,13 +46,24 @@ class BlueFolderService:
         """Return a readable BlueFolder user name when available."""
         return await self.adapter.get_user_name(user_id)
 
-    async def get_assignments_for_user_today(self, user_id: int) -> list[dict[str, str | bool | None]]:
+    async def get_assignments_for_user_today(
+        self,
+        user_id: int,
+        *,
+        include_subjects: bool = True,
+    ) -> list[dict[str, str | bool | None]]:
         """Return today's scheduled assignments directly from BlueFolder."""
-        return await self.adapter.get_assignments_for_user_today(user_id)
+        return await self.adapter.get_assignments_for_user_on_date(user_id, date.today(), include_subjects=include_subjects)
 
-    async def get_assignments_for_user_on_date(self, user_id: int, day: date) -> list[dict[str, str | bool | None]]:
+    async def get_assignments_for_user_on_date(
+        self,
+        user_id: int,
+        day: date,
+        *,
+        include_subjects: bool = True,
+    ) -> list[dict[str, str | bool | None]]:
         """Return scheduled assignments for a specific day directly from BlueFolder."""
-        return await self.adapter.get_assignments_for_user_on_date(user_id, day)
+        return await self.adapter.get_assignments_for_user_on_date(user_id, day, include_subjects=include_subjects)
 
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""

@@ -45,7 +45,7 @@ class FakeBlueFolderService:
             )
         }
 
-    async def get_assignments_for_user_today(self, user_id: int):
+    async def get_assignments_for_user_today(self, user_id: int, *, include_subjects: bool = True):
         return self.assignments_by_user.get(user_id, [])
 
     async def get_parts_snapshot(self, sr_id: int):
@@ -160,7 +160,7 @@ def test_workflow_state_service_filters_attention_by_age_and_owner() -> None:
 
 def test_workflow_state_refresh_runs_assignment_enrichment_concurrently() -> None:
     class SlowBlueFolderService(FakeBlueFolderService):
-        async def get_assignments_for_user_today(self, user_id: int):
+        async def get_assignments_for_user_today(self, user_id: int, *, include_subjects: bool = True):
             await asyncio.sleep(0.05)
             return self.assignments_by_user.get(user_id, [])
 

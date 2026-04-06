@@ -387,6 +387,8 @@ class BlueFolderAdapter:
         self,
         user_id: int,
         day: date,
+        *,
+        include_subjects: bool = True,
     ) -> list[dict[str, str | bool | None]]:
         """Return scheduled assignments for a specific day directly from BlueFolder."""
         client, _resolved_path = self._build_client()
@@ -406,7 +408,7 @@ class BlueFolderAdapter:
             logger.warning("BlueFolder assignment lookup unavailable for user %s: %s", user_id, exc)
             return []
 
-        return self._enrich_assignments(client, assignments or [])
+        return self._enrich_assignments(client, assignments or [], include_subjects=include_subjects)
 
     async def add_parts_comment(
         self,
@@ -783,6 +785,8 @@ class BlueFolderAdapter:
         self,
         client: object,
         assignments: list[dict[str, object]],
+        *,
+        include_subjects: bool,
     ) -> list[dict[str, str | bool | None]]:
         """Normalize raw BlueFolder assignment rows for Discord-facing command output."""
         results: list[dict[str, str | bool | None]] = []
@@ -792,7 +796,7 @@ class BlueFolderAdapter:
             service_request_id = row.get("serviceRequestId")
             subject = None
             sr_lookup_id = self._safe_int(service_request_id)
-            if sr_lookup_id is not None:
+            if include_subjects and sr_lookup_id is not None:
                 try:
                     sr_xml = client.service_requests.get_by_id(sr_lookup_id)
                     sr = sr_xml.find(".//serviceRequest")
