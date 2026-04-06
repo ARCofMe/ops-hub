@@ -74,6 +74,41 @@ def test_preview_import_payload_returns_plans(monkeypatch, tmp_path: Path) -> No
     assert payload["items"][0]["service_request_action"] == "create_service_request"
 
 
+def test_preview_import_payload_supports_payload_preview_mode(monkeypatch, tmp_path: Path) -> None:
+    spreadsheet = tmp_path / "intake.csv"
+    spreadsheet.write_text(
+        "Customer Name,Subject,Address,City,State,Zip\nPat Smith,No heat,123 Main St,Lewiston,ME,04240\n",
+        encoding="utf-8",
+    )
+
+    class DummyClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def preview_payloads(self, row, duplicate_mode="skip"):
+            return BlueFolderPayloadPreview(
+                row_number=row.get("source_row_number"),
+                customer_payload={"name": row.get("customer_name")},
+                location_payload={"address": row.get("address")},
+                contact_payload=None,
+                service_request_payload={"subject": row.get("subject")},
+                notes=[f"duplicate_mode={duplicate_mode}"],
+            )
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    payload = service.preview_import_payload(
+        spreadsheet_path=str(spreadsheet),
+        duplicate_mode="error",
+        preview_mode="payload_preview",
+    )
+
+    assert payload["previewMode"] == "payload_preview"
+    assert payload["items"][0]["customer_payload"]["name"] == "Pat Smith"
+    assert payload["items"][0]["service_request_payload"]["subject"] == "No heat"
+
+
 def test_import_spreadsheet_payload_returns_summary(monkeypatch, tmp_path: Path) -> None:
     spreadsheet = tmp_path / "intake.csv"
     spreadsheet.write_text(
@@ -106,6 +141,58 @@ def test_import_spreadsheet_payload_returns_summary(monkeypatch, tmp_path: Path)
     assert payload["results"][0]["service_request_id"] == "999"
     assert payload["summary"]["status:imported"] == 1
     assert payload["summary"]["created_customer"] == 1
+
+
+def test_import_spreadsheet_payload_stops_on_fail_fast(monkeypatch, tmp_path: Path) -> None:
+    spreadsheet = tmp_path / "intake.csv"
+    spreadsheet.write_text(
+        "\n".join(
+            [
+                "Customer Name,Subject,Address,City,State,Zip",
+                "Pat Smith,No heat,123 Main St,Lewiston,ME,04240",
+                "Chris Jones,No cool,22 Oak St,Auburn,ME,04210",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class DummyClient:
+        calls = 0
+
+        def __init__(self, settings):
+            self.settings = settings
+
+        def ensure_customer_and_import(self, row, duplicate_mode="skip"):
+            DummyClient.calls += 1
+            if DummyClient.calls == 1:
+                return BlueFolderImportResult(
+                    row_number=row.get("source_row_number"),
+                    customer_id=None,
+                    customer_location_id=None,
+                    customer_contact_id=None,
+                    service_request_id=None,
+                    status="duplicate_conflict",
+                )
+            return BlueFolderImportResult(
+                row_number=row.get("source_row_number"),
+                customer_id="123",
+                customer_location_id="456",
+                customer_contact_id="789",
+                service_request_id="999",
+                status="imported",
+            )
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    payload = service.import_spreadsheet_payload(
+        spreadsheet_path=str(spreadsheet),
+        fail_fast=True,
+    )
+
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["status"] == "duplicate_conflict"
+    assert payload["summary"]["status:duplicate_conflict"] == 1
 
 
 def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:

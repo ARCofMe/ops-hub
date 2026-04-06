@@ -401,6 +401,60 @@ def test_photo_ingest_service_respects_disabled_archive_feature() -> None:
     assert result.message == "Photo archive handoff is currently disabled."
 
 
+def test_photo_ingest_service_reports_archive_send_failure() -> None:
+    class _FailingSMTP:
+        def __init__(self, host, port, timeout=30):
+            assert host == "smtp.example.com"
+            assert port == 587
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def starttls(self):
+            return None
+
+        def login(self, username, password):
+            assert username == "user"
+            assert password == "pass"
+
+        def send_message(self, message):
+            raise OSError("smtp offline")
+
+    import smtplib
+
+    original_smtp = smtplib.SMTP
+    smtplib.SMTP = _FailingSMTP  # type: ignore[assignment]
+    try:
+        service = PhotoIngestService(
+            settings=_settings(),
+            adapter=PhotoIngestAdapter(
+                archive_smtp_host="smtp.example.com",
+                archive_smtp_port=587,
+                archive_smtp_username="user",
+                archive_smtp_password="pass",
+                archive_from_email="from@example.com",
+                archive_to_email="to@example.com",
+            ),
+            feature_flags=_feature_flags(),
+        )
+
+        result = asyncio.run(
+            service.archive_job_photos(
+                12345,
+                photos=[PhotoAttachmentPayload(filename="one.png", content_type="image/png", data=_image_bytes("PNG"))],
+                requested_by_user_id=77,
+                requested_by_label="Mike Smith",
+            )
+        )
+    finally:
+        smtplib.SMTP = original_smtp  # type: ignore[assignment]
+
+    assert "Could not send archive email for SR-12345: smtp offline" == result.message
+
+
 def test_photo_ingest_service_reports_matching_archived_photos() -> None:
     import imaplib
 
@@ -451,6 +505,43 @@ def test_photo_ingest_service_reports_matching_archived_photos() -> None:
     assert "Re: 12345 Washer repair" in result.message
     assert "Found required tags: `model`, `serial`" in result.message
     assert "Missing required tags: none" in result.message
+
+
+def test_photo_ingest_service_reports_mailbox_lookup_failure() -> None:
+    import imaplib
+
+    class _FailingMailbox:
+        def login(self, username, password):
+            assert username == "mail-user"
+            assert password == "mail-pass"
+
+        def select(self, folder):
+            assert folder == "INBOX"
+            raise imaplib.IMAP4.error("mailbox unavailable")
+
+        def logout(self):
+            return "BYE", [b""]
+
+    original_imap = imaplib.IMAP4_SSL
+    imaplib.IMAP4_SSL = lambda host, port: _FailingMailbox()  # type: ignore[assignment]
+    try:
+        service = PhotoIngestService(
+            settings=_settings(),
+            adapter=PhotoIngestAdapter(
+                mailbox_imap_host="mail.example.com",
+                mailbox_imap_port=993,
+                mailbox_imap_username="mail-user",
+                mailbox_imap_password="mail-pass",
+            ),
+            feature_flags=_feature_flags(photo_mailbox_scan=True),
+        )
+
+        result = asyncio.run(service.get_photo_status(12345))
+    finally:
+        imaplib.IMAP4_SSL = original_imap  # type: ignore[assignment]
+
+    assert "Mailbox status: `lookup_failed`" in result.message
+    assert "Mailbox lookup failed: mailbox unavailable" in result.message
 
 
 def test_photo_ingest_service_reports_disabled_mailbox_scan() -> None:
