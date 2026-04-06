@@ -16,6 +16,7 @@ from ops_hub.models.requests import (
     PartRequestRecord,
     PartsCaseRecord,
     PartsLifecycleSnapshot,
+    PhotoComplianceRecord,
     ServiceRequestTimeline,
     ServiceRequestTimelineEntry,
     TechnicianMappingRecord,
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from ops_hub.services.notifications import NotificationService
     from ops_hub.services.operator_directory import TechnicianDirectoryService
     from ops_hub.services.parts_cannon import PartsCannonService
+    from ops_hub.services.photo_ingest import PhotoIngestService
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ class WorkflowStateService:
     parts_cannon_service: "PartsCannonService"
     technician_directory_service: "TechnicianDirectoryService | None" = None
     notification_service: "NotificationService | None" = None
+    photo_ingest_service: "PhotoIngestService | None" = None
     attention_sla_hours: dict[str, tuple[int, int, int]] = field(
         default_factory=lambda: {
             "new_sr_triage": (2, 8, 24),
@@ -53,6 +56,7 @@ class WorkflowStateService:
             "part_received": (8, 24, 72),
             "part_ready": (4, 24, 48),
             "quote_needed": (2, 8, 24),
+            "photo_gap": (8, 24, 48),
             "requested": (8, 24, 48),
             "ordered": (12, 48, 96),
             "received": (8, 24, 72),
@@ -68,6 +72,81 @@ class WorkflowStateService:
     def current_snapshot(self) -> WorkflowStateSnapshot:
         """Return the current workflow snapshot."""
         return self.store.load()
+
+    def get_cached_photo_compliance(self, *, sr_id: int) -> PhotoComplianceRecord | None:
+        """Return cached photo-compliance state for one SR when available."""
+        return self._photo_compliance_map(self.store.load()).get(sr_id)
+
+    async def refresh_photo_compliance(
+        self,
+        *,
+        sr_id: int,
+        service_request_status: str | None = None,
+    ) -> PhotoComplianceRecord:
+        """Refresh cached photo-compliance state for one SR and persist it."""
+        checked_at = self._now()
+        reference = f"SR-{sr_id}"
+        service = self.photo_ingest_service
+        if service is None:
+            record = PhotoComplianceRecord(
+                sr_id=sr_id,
+                reference=reference,
+                enabled=False,
+                mailbox_status="unavailable",
+                service_request_status=service_request_status,
+                reason="Photo ingest service is unavailable.",
+                message="Photo ingest service is unavailable.",
+                checked_at=checked_at,
+                total_photos=0,
+            )
+            self._persist_photo_compliance_record(record)
+            return record
+
+        if not service.feature_flags.is_enabled("photo_mailbox_scan"):
+            record = PhotoComplianceRecord(
+                sr_id=sr_id,
+                reference=reference,
+                enabled=False,
+                mailbox_status="disabled",
+                service_request_status=service_request_status,
+                reason="Photo mailbox scan is disabled.",
+                message="Photo mailbox scan is disabled.",
+                checked_at=checked_at,
+                total_photos=0,
+            )
+            self._persist_photo_compliance_record(record)
+            return record
+
+        summary = await service.adapter.get_photo_compliance_summary(sr_id)
+        reminder = await service.evaluate_photo_reminder(
+            sr_id,
+            status_override=service_request_status,
+            send_notice=False,
+        )
+        record = PhotoComplianceRecord(
+            sr_id=sr_id,
+            reference=reference,
+            enabled=True,
+            mailbox_status=summary.mailbox_status,
+            total_photos=summary.total_photos,
+            found_tags=list(summary.found_tags),
+            missing_tags=list(summary.missing_tags),
+            matched_required_status=self._extract_yes_no_line(
+                reminder.message,
+                prefix="Photo-required status match:",
+            ),
+            should_notify=self._extract_yes_no_line(reminder.message, prefix="Should notify:"),
+            service_request_status=self._extract_backticked_line(
+                reminder.message,
+                prefix="Service request status:",
+            )
+            or service_request_status,
+            reason=self._extract_reason_line(reminder.message),
+            message=summary.message,
+            checked_at=checked_at,
+        )
+        self._persist_photo_compliance_record(record)
+        return record
 
     def attention_metrics(self, snapshot: WorkflowStateSnapshot | None = None) -> dict[str, object]:
         """Summarize current attention state for reporting surfaces."""
@@ -635,6 +714,7 @@ class WorkflowStateService:
             "part_received": "Received",
             "part_ready": "Ready for Scheduling",
             "quote_needed": "Quote Needed",
+            "photo_gap": "Photo Gap",
         }
         normalized_stage_filter = None if stage_filter is None else stage_filter.strip().lower().replace(" ", "_")
 
@@ -689,6 +769,7 @@ class WorkflowStateService:
             parts_cases: dict[str, PartsCaseRecord] = {}
             current_snapshot = self.store.load()
             previous_items = {item.item_id: item for item in current_snapshot.attention_items}
+            photo_compliance_records = self._photo_compliance_map(current_snapshot)
             parts_records = self.parts_cannon_service.request_store.load()
 
             per_record_started_at = time.perf_counter()
@@ -701,6 +782,7 @@ class WorkflowStateService:
                         age_bucket=age_bucket,
                         owner_discord_user_id=owner_discord_user_id,
                         previous_items=previous_items,
+                        photo_compliance_records=photo_compliance_records,
                         parts_records=parts_records,
                     )
                     for record in mappings
@@ -724,9 +806,12 @@ class WorkflowStateService:
             updated_snapshot = WorkflowStateSnapshot(
                 updated_at=self._now(),
                 attention_items=attention_items,
+                photo_compliance_records=list(photo_compliance_records.values()),
                 parts_cases=sorted(parts_cases.values(), key=lambda item: (item.reference, item.stage)),
                 events=current_snapshot.events,
             )
+            for record in updated_snapshot.photo_compliance_records:
+                self._apply_photo_compliance_to_snapshot(updated_snapshot, record)
             self.store.save(updated_snapshot)
             if (
                 normalized_stage_filter is None
@@ -779,6 +864,7 @@ class WorkflowStateService:
         age_bucket: str | None,
         owner_discord_user_id: int | None,
         previous_items: dict[str, AttentionItemRecord],
+        photo_compliance_records: dict[int, PhotoComplianceRecord],
         parts_records: list[PartRequestRecord],
     ) -> tuple[int, list[AttentionItemRecord], list[PartsCaseRecord]]:
         """Derive current attention and parts-case state for one mapped technician."""
@@ -796,6 +882,7 @@ class WorkflowStateService:
                     age_bucket=age_bucket,
                     owner_discord_user_id=owner_discord_user_id,
                     previous_items=previous_items,
+                    photo_compliance_records=photo_compliance_records,
                     parts_records=parts_records,
                 )
                 for assignment in assignments[:10]
@@ -824,6 +911,7 @@ class WorkflowStateService:
         age_bucket: str | None,
         owner_discord_user_id: int | None,
         previous_items: dict[str, AttentionItemRecord],
+        photo_compliance_records: dict[int, PhotoComplianceRecord],
         parts_records: list[PartRequestRecord],
     ) -> tuple[list[AttentionItemRecord], PartsCaseRecord] | None:
         """Derive attention and parts-case state for one assigned SR."""
@@ -846,6 +934,7 @@ class WorkflowStateService:
         location = " ".join(part for part in [assignment.get("city"), assignment.get("state")] if part).strip()
         route_label = str(assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow") or "").strip() or None
         summary = str(assignment.get("subject") or "Unlabeled Service Request")
+        photo_compliance = photo_compliance_records.get(sr_id)
         derived_items = self._build_assignment_attention_items(
             record=record,
             reference=reference,
@@ -855,8 +944,11 @@ class WorkflowStateService:
             route_label=route_label,
             parts_snapshot=snapshot,
             job_summary=job_summary,
+            photo_compliance=photo_compliance,
             previous_items=previous_items,
         )
+        if photo_compliance is not None:
+            parts_case = self._apply_photo_compliance_to_parts_case(parts_case, photo_compliance)
         filtered_items = [
             derived_item
             for derived_item in derived_items
@@ -895,6 +987,7 @@ class WorkflowStateService:
         route_label: str | None,
         parts_snapshot: PartsLifecycleSnapshot | None,
         job_summary,
+        photo_compliance: PhotoComplianceRecord | None,
         previous_items: dict[str, AttentionItemRecord],
     ) -> list[AttentionItemRecord]:
         """Build any current attention items for one assigned SR."""
@@ -934,6 +1027,7 @@ class WorkflowStateService:
                 age_bucket=self._age_bucket_for_stage(triage_stage, self._age_hours(first_seen_at)),
             )
             self._carry_attention_state(triage_item, previous)
+            self._apply_photo_compliance_to_attention_item(triage_item, photo_compliance)
             items.append(triage_item)
 
         if parts_snapshot is not None:
@@ -967,6 +1061,7 @@ class WorkflowStateService:
                 age_bucket=self._age_bucket_for_stage(parts_snapshot.stage, self._age_hours(first_seen_at)),
             )
             self._carry_attention_state(derived_item, previous)
+            self._apply_photo_compliance_to_attention_item(derived_item, photo_compliance)
             items.append(derived_item)
 
         if self._is_quote_needed_status(status_text):
@@ -995,6 +1090,38 @@ class WorkflowStateService:
                 age_bucket=self._age_bucket_for_stage("quote_needed", self._age_hours(first_seen_at)),
             )
             self._carry_attention_state(derived_item, previous)
+            self._apply_photo_compliance_to_attention_item(derived_item, photo_compliance)
+            items.append(derived_item)
+        if photo_compliance is not None and photo_compliance.enabled and photo_compliance.matched_required_status and (
+            photo_compliance.total_photos <= 0 or bool(photo_compliance.missing_tags)
+        ):
+            item_id = f"dispatch:{reference}:photo_gap"
+            previous = previous_items.get(item_id)
+            first_seen_at = previous.first_seen_at if previous is not None and previous.first_seen_at else (
+                photo_compliance.checked_at or self._now()
+            )
+            derived_item = AttentionItemRecord(
+                item_id=item_id,
+                sr_id=sr_id,
+                reference=reference,
+                category="dispatch",
+                status="open",
+                stage="photo_gap",
+                stage_label="Photo Gap",
+                summary=assignment_summary,
+                details=photo_compliance.reason or photo_compliance.message or "Required job photos are still missing.",
+                location=location,
+                route_label=route_label,
+                owner_discord_user_id=record.discord_user_id,
+                owner_bluefolder_user_id=record.bluefolder_user_id,
+                next_action="Follow up with the technician and confirm required photo archive coverage before closing the loop.",
+                first_seen_at=first_seen_at,
+                last_seen_at=self._now(),
+                age_hours=self._age_hours(first_seen_at),
+                age_bucket=self._age_bucket_for_stage("photo_gap", self._age_hours(first_seen_at)),
+            )
+            self._carry_attention_state(derived_item, previous)
+            self._apply_photo_compliance_to_attention_item(derived_item, photo_compliance)
             items.append(derived_item)
         return items
 
@@ -1116,9 +1243,101 @@ class WorkflowStateService:
         )
 
     @staticmethod
+    def _apply_photo_compliance_to_attention_item(
+        item: AttentionItemRecord,
+        photo_compliance: PhotoComplianceRecord | None,
+    ) -> None:
+        """Attach cached photo-compliance context to an attention item."""
+        if photo_compliance is None:
+            return
+        item.photo_enabled = photo_compliance.enabled
+        item.photo_mailbox_status = photo_compliance.mailbox_status
+        item.photo_total = photo_compliance.total_photos
+        item.photo_found_tags = list(photo_compliance.found_tags)
+        item.photo_missing_tags = list(photo_compliance.missing_tags)
+        item.photo_checked_at = photo_compliance.checked_at
+        item.photo_should_notify = photo_compliance.should_notify
+        item.photo_reason = photo_compliance.reason
+
+    @staticmethod
+    def _apply_photo_compliance_to_parts_case(
+        case: PartsCaseRecord,
+        photo_compliance: PhotoComplianceRecord | None,
+    ) -> PartsCaseRecord:
+        """Return a parts case annotated with cached photo-compliance context."""
+        if photo_compliance is None:
+            return case
+        case.photo_enabled = photo_compliance.enabled
+        case.photo_mailbox_status = photo_compliance.mailbox_status
+        case.photo_total = photo_compliance.total_photos
+        case.photo_found_tags = list(photo_compliance.found_tags)
+        case.photo_missing_tags = list(photo_compliance.missing_tags)
+        case.photo_checked_at = photo_compliance.checked_at
+        case.photo_should_notify = photo_compliance.should_notify
+        case.photo_reason = photo_compliance.reason
+        return case
+
+    @staticmethod
     def _matching_requests(records: list[PartRequestRecord], reference: str) -> list[PartRequestRecord]:
         normalized_reference = reference.strip().casefold()
         return [record for record in records if record.reference.strip().casefold() == normalized_reference]
+
+    @staticmethod
+    def _photo_compliance_map(snapshot: WorkflowStateSnapshot) -> dict[int, PhotoComplianceRecord]:
+        """Index cached photo-compliance records by SR id."""
+        return {record.sr_id: record for record in snapshot.photo_compliance_records}
+
+    def _persist_photo_compliance_record(self, record: PhotoComplianceRecord) -> None:
+        """Save one cached photo-compliance record back into workflow state."""
+        snapshot = self.store.load()
+        records = self._photo_compliance_map(snapshot)
+        records[record.sr_id] = record
+        snapshot.photo_compliance_records = sorted(records.values(), key=lambda item: item.sr_id)
+        snapshot.updated_at = self._now()
+        self._apply_photo_compliance_to_snapshot(snapshot, record)
+        self.store.save(snapshot)
+
+    def _apply_photo_compliance_to_snapshot(
+        self,
+        snapshot: WorkflowStateSnapshot,
+        record: PhotoComplianceRecord,
+    ) -> None:
+        """Propagate cached photo-compliance state onto matching workflow records."""
+        for item in snapshot.attention_items:
+            if item.sr_id == record.sr_id:
+                self._apply_photo_compliance_to_attention_item(item, record)
+        for case in snapshot.parts_cases:
+            if case.sr_id == record.sr_id:
+                self._apply_photo_compliance_to_parts_case(case, record)
+
+    @staticmethod
+    def _extract_yes_no_line(message: str, *, prefix: str) -> bool:
+        """Parse a yes/no decision line from a command-style response."""
+        for line in message.splitlines():
+            if line.startswith(prefix):
+                return "`yes`" in line
+        return False
+
+    @staticmethod
+    def _extract_backticked_line(message: str, *, prefix: str) -> str | None:
+        """Parse a backticked value line from a command-style response."""
+        for line in message.splitlines():
+            if not line.startswith(prefix):
+                continue
+            start = line.find("`")
+            end = line.rfind("`")
+            if start >= 0 and end > start:
+                return line[start + 1 : end].strip() or None
+        return None
+
+    @staticmethod
+    def _extract_reason_line(message: str) -> str | None:
+        """Parse the reason line from a command-style response."""
+        for line in message.splitlines():
+            if line.startswith("Reason:"):
+                value = line.removeprefix("Reason:").strip()
+                return value or None
+        return None
 
     @staticmethod
     def _parse_sr_id(raw: object) -> int | None:
@@ -1146,7 +1365,14 @@ class WorkflowStateService:
         if user_id is None:
             return None
         if self.technician_directory_service is not None:
-            return self.technician_directory_service.display_label(user_id)
+            display_label = getattr(self.technician_directory_service, "display_label", None)
+            if callable(display_label):
+                resolved = display_label(user_id)
+                if resolved:
+                    return resolved
+            discord_mention = getattr(self.technician_directory_service, "discord_mention", None)
+            if callable(discord_mention):
+                return discord_mention(user_id)
         return str(user_id)
 
     def _carry_attention_state(

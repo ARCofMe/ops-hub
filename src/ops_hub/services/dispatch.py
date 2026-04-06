@@ -866,6 +866,7 @@ class DispatchService:
         reference = f"SR-{sr_id}"
         attention = await self.get_dispatch_attention_payload(reference=reference)
         parts_case = None
+        photo_compliance = None
         if self.workflow_state_service is not None:
             try:
                 case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
@@ -873,6 +874,9 @@ class DispatchService:
                 case = None
             if case is not None:
                 parts_case = await self._parts_case_payload(case)
+            photo_compliance = self._photo_compliance_payload(
+                self.workflow_state_service.get_cached_photo_compliance(sr_id=sr_id)
+            )
 
         next_actions: list[str] = []
         for item in attention.get("items", []):
@@ -889,10 +893,25 @@ class DispatchService:
             "reference": reference,
             "attentionItems": attention.get("items", []),
             "partsCase": parts_case,
+            "photoCompliance": photo_compliance,
             "nextActions": next_actions,
             "ownerGapCount": sum(1 for item in attention.get("items", []) if not item.get("assignedOwnerDiscordUserId")),
             "urgentCount": sum(1 for item in attention.get("items", []) if item.get("ageBucket") == "urgent"),
         }
+
+    async def get_dispatch_sr_photo_compliance_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return live photo-compliance detail and persist the cached snapshot."""
+        if self.workflow_state_service is None:
+            raise ValueError("Dispatch photo compliance requires the workflow state service.")
+        summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
+        record = await self.workflow_state_service.refresh_photo_compliance(
+            sr_id=sr_id,
+            service_request_status=summary.service_request_status,
+        )
+        payload = self._photo_compliance_payload(record)
+        assert payload is not None
+        payload["srId"] = sr_id
+        return payload
 
     async def get_dispatch_route_payload(
         self,
@@ -1678,6 +1697,16 @@ class DispatchService:
             "lastSeenAt": item.last_seen_at,
             "ageHours": item.age_hours,
             "ageBucket": item.age_bucket,
+            "photoCompliance": self._inline_photo_compliance_payload(
+                enabled=item.photo_enabled,
+                mailbox_status=item.photo_mailbox_status,
+                total_photos=item.photo_total,
+                found_tags=item.photo_found_tags,
+                missing_tags=item.photo_missing_tags,
+                checked_at=item.photo_checked_at,
+                should_notify=item.photo_should_notify,
+                reason=item.photo_reason,
+            ),
         }
 
     async def _parts_case_payload(self, case) -> dict[str, object]:
@@ -1703,6 +1732,61 @@ class DispatchService:
             "updatedAt": case.updated_at,
             "ageHours": case.age_hours,
             "ageBucket": case.age_bucket,
+            "photoCompliance": self._inline_photo_compliance_payload(
+                enabled=case.photo_enabled,
+                mailbox_status=case.photo_mailbox_status,
+                total_photos=case.photo_total,
+                found_tags=case.photo_found_tags,
+                missing_tags=case.photo_missing_tags,
+                checked_at=case.photo_checked_at,
+                should_notify=case.photo_should_notify,
+                reason=case.photo_reason,
+            ),
+        }
+
+    @staticmethod
+    def _photo_compliance_payload(record) -> dict[str, object] | None:
+        """Serialize one cached photo-compliance record."""
+        if record is None:
+            return None
+        return {
+            "enabled": record.enabled,
+            "mailboxStatus": record.mailbox_status,
+            "totalPhotos": record.total_photos,
+            "foundTags": list(record.found_tags),
+            "missingTags": list(record.missing_tags),
+            "matchedRequiredStatus": record.matched_required_status,
+            "shouldNotify": record.should_notify,
+            "serviceRequestStatus": record.service_request_status,
+            "reason": record.reason,
+            "message": record.message,
+            "checkedAt": record.checked_at,
+        }
+
+    @staticmethod
+    def _inline_photo_compliance_payload(
+        *,
+        enabled: bool,
+        mailbox_status: str | None,
+        total_photos: int,
+        found_tags: list[str],
+        missing_tags: list[str],
+        checked_at: str | None,
+        should_notify: bool,
+        reason: str | None,
+    ) -> dict[str, object] | None:
+        """Serialize lightweight cached photo-compliance fields on workflow payloads."""
+        if not enabled and not mailbox_status and not checked_at and not missing_tags and total_photos <= 0:
+            return None
+        return {
+            "enabled": enabled,
+            "mailboxStatus": mailbox_status,
+            "totalPhotos": total_photos,
+            "foundTags": list(found_tags),
+            "missingTags": list(missing_tags),
+            "checkedAt": checked_at,
+            "shouldNotify": should_notify,
+            "reason": reason,
         }
 
     async def _technician_label(
@@ -1715,12 +1799,17 @@ class DispatchService:
         if bluefolder_user_id is not None:
             return await self._bluefolder_label(bluefolder_user_id, markdown=True)
         if discord_user_id is not None and self.technician_directory_service is not None:
-            display_label = self.technician_directory_service.display_label(discord_user_id)
-            if display_label:
-                return display_label
-            return str(discord_user_id)
+            display_label_fn = getattr(self.technician_directory_service, "display_label", None)
+            if callable(display_label_fn):
+                display_label = display_label_fn(discord_user_id)
+                if display_label:
+                    return display_label
+            discord_mention = getattr(self.technician_directory_service, "discord_mention", None)
+            if callable(discord_mention):
+                return discord_mention(discord_user_id)
+            return f"<@{discord_user_id}>"
         if discord_user_id is not None:
-            return str(discord_user_id)
+            return f"<@{discord_user_id}>"
         return "Unknown technician"
 
     async def _bluefolder_label(self, bluefolder_user_id: int, *, markdown: bool) -> str:

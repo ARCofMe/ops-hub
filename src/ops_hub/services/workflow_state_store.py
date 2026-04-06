@@ -9,6 +9,7 @@ from pathlib import Path
 from ops_hub.models.requests import (
     AttentionItemRecord,
     PartsCaseRecord,
+    PhotoComplianceRecord,
     WorkflowEventRecord,
     WorkflowStateSnapshot,
 )
@@ -36,6 +37,9 @@ class WorkflowStateStore:
         self.snapshot = WorkflowStateSnapshot(
             updated_at=raw.get("updated_at"),
             attention_items=[AttentionItemRecord(**item) for item in raw.get("attention_items", [])],
+            photo_compliance_records=[
+                PhotoComplianceRecord(**item) for item in raw.get("photo_compliance_records", [])
+            ],
             parts_cases=[PartsCaseRecord(**item) for item in raw.get("parts_cases", [])],
             events=[WorkflowEventRecord(**item) for item in raw.get("events", [])],
         )

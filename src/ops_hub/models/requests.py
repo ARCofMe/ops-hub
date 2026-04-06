@@ -307,6 +307,25 @@ class PhotoReminderEvaluation:
 
 
 @dataclass(slots=True)
+class PhotoComplianceRecord:
+    """Cached photo-compliance state persisted into workflow snapshots."""
+
+    sr_id: int
+    reference: str
+    enabled: bool
+    mailbox_status: str
+    total_photos: int
+    found_tags: list[str] = field(default_factory=list)
+    missing_tags: list[str] = field(default_factory=list)
+    matched_required_status: bool = False
+    should_notify: bool = False
+    service_request_status: str | None = None
+    reason: str | None = None
+    message: str | None = None
+    checked_at: str | None = None
+
+
+@dataclass(slots=True)
 class PartsWorkflowSummary:
     """Summary of the current parts handoff integration state."""
 
@@ -411,6 +430,14 @@ class AttentionItemRecord:
     last_seen_at: str | None = None
     age_hours: int | None = None
     age_bucket: str | None = None
+    photo_enabled: bool = False
+    photo_mailbox_status: str | None = None
+    photo_total: int = 0
+    photo_found_tags: list[str] = field(default_factory=list)
+    photo_missing_tags: list[str] = field(default_factory=list)
+    photo_checked_at: str | None = None
+    photo_should_notify: bool = False
+    photo_reason: str | None = None
     assigned_owner_discord_user_id: int | None = None
     acknowledged_at: str | None = None
     acknowledged_by_user_id: int | None = None
@@ -439,6 +466,14 @@ class PartsCaseRecord:
     updated_at: str | None = None
     age_hours: int | None = None
     age_bucket: str | None = None
+    photo_enabled: bool = False
+    photo_mailbox_status: str | None = None
+    photo_total: int = 0
+    photo_found_tags: list[str] = field(default_factory=list)
+    photo_missing_tags: list[str] = field(default_factory=list)
+    photo_checked_at: str | None = None
+    photo_should_notify: bool = False
+    photo_reason: str | None = None
 
 
 @dataclass(slots=True)
@@ -468,5 +503,6 @@ class WorkflowStateSnapshot:
 
     updated_at: str | None = None
     attention_items: list[AttentionItemRecord] = field(default_factory=list)
+    photo_compliance_records: list[PhotoComplianceRecord] = field(default_factory=list)
     parts_cases: list[PartsCaseRecord] = field(default_factory=list)
     events: list[WorkflowEventRecord] = field(default_factory=list)

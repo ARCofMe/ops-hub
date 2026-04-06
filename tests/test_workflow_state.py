@@ -87,6 +87,54 @@ class FakePartsCannonService:
         )
 
 
+class FakePhotoIngestService:
+    def __init__(self) -> None:
+        self.feature_flags = type("Flags", (), {"is_enabled": staticmethod(lambda flag: flag == "photo_mailbox_scan")})()
+        self.adapter = type(
+            "Adapter",
+            (),
+            {
+                "get_photo_compliance_summary": staticmethod(
+                    lambda sr_id: asyncio.sleep(
+                        0,
+                        result=type(
+                            "Summary",
+                            (),
+                            {
+                                "sr_id": sr_id,
+                                "mailbox_status": "found",
+                                "message": f"Missing required archived photos for SR-{sr_id}.",
+                                "matched_records": [],
+                                "total_photos": 1,
+                                "found_tags": ["Model"],
+                                "missing_tags": ["Serial"],
+                            },
+                        )(),
+                    )
+                )
+            },
+        )()
+
+    async def evaluate_photo_reminder(self, sr_id: int, *, status_override: str | None = None, send_notice: bool = False):
+        _ = (sr_id, send_notice)
+        status_text = status_override or "Completed"
+        return type(
+            "Reminder",
+            (),
+            {
+                "message": (
+                    f"**Photo Reminder Check SR-{sr_id}**\n\n"
+                    f"Service request status: `{status_text}`\n"
+                    "Photo-required status match: `yes`\n"
+                    "Photos present: `no`\n"
+                    "Assigned technician: <@42>\n"
+                    "Should notify: `yes`\n"
+                    "Reason: Missing required archived photos."
+                )
+            },
+        )()
+
+
 def test_workflow_state_store_round_trip(tmp_path: Path) -> None:
     store = WorkflowStateStore(file_path=tmp_path / "workflow-state.json")
     snapshot = WorkflowStateSnapshot(
@@ -156,6 +204,30 @@ def test_workflow_state_service_filters_attention_by_age_and_owner() -> None:
     assert len(attention_items) == 1
     assert attention_items[0].age_bucket == "urgent"
     assert attention_items[0].owner_discord_user_id == 42
+
+
+def test_workflow_state_service_persists_photo_compliance_and_derives_photo_gap() -> None:
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        photo_ingest_service=FakePhotoIngestService(),
+    )
+
+    record = asyncio.run(service.refresh_photo_compliance(sr_id=100, service_request_status="Completed"))
+    scanned_jobs, attention_items = asyncio.run(
+        service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)])
+    )
+
+    snapshot = service.current_snapshot()
+    photo_gap = next(item for item in attention_items if item.stage == "photo_gap")
+
+    assert scanned_jobs == 1
+    assert record.missing_tags == ["Serial"]
+    assert snapshot.photo_compliance_records[0].sr_id == 100
+    assert photo_gap.photo_should_notify is True
+    assert photo_gap.photo_missing_tags == ["Serial"]
+    assert snapshot.parts_cases[0].photo_missing_tags == ["Serial"]
 
 
 def test_workflow_state_refresh_runs_assignment_enrichment_concurrently() -> None:

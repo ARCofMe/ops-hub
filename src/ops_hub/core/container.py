@@ -153,6 +153,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         parts_cannon_service=parts_cannon_service,
         technician_directory_service=technician_directory_service,
         notification_service=notification_service,
+        photo_ingest_service=photo_ingest_service,
     )
     bluefolder_service.workflow_state_service = workflow_state_service
     parts_cannon_service.workflow_state_service = workflow_state_service
