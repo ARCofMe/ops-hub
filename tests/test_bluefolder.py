@@ -47,6 +47,61 @@ def test_bluefolder_adapter_reports_import_error_for_non_library_path(tmp_path: 
     assert result.source_path == tmp_path
 
 
+def test_bluefolder_adapter_skips_customer_enrichment_when_contacts_are_disabled(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = "Dryer repair"
+                    ET.SubElement(sr, "serviceRequestStatus").text = "Scheduled"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: str, location_id: str):
+                    raise AssertionError("customer location lookup should be skipped")
+
+                def get_by_id(self, customer_id: int):
+                    raise AssertionError("customer fallback lookup should be skipped")
+
+            class _CustomerContacts:
+                def list_for_customer(self, customer_id: int):
+                    raise AssertionError("customer contact lookup should be skipped")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+                    self.customer_contacts = _CustomerContacts()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_job_summary("SR-100", include_customer_contacts=False))
+
+    assert result.available is True
+    assert result.subject == "Dryer repair"
+    assert result.service_request_status == "Scheduled"
+    assert result.address is None
+    assert result.customer_contacts == ()
+
+
 def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) -> None:
     bluefolder_service = BlueFolderService(adapter=BlueFolderAdapter(base_path=str(tmp_path)))
     service = DispatchService(
