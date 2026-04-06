@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+import logging
+import time
 from typing import TYPE_CHECKING
 
 from ops_hub.models.requests import (
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
     from ops_hub.services.notifications import NotificationService
     from ops_hub.services.operator_directory import TechnicianDirectoryService
     from ops_hub.services.parts_cannon import PartsCannonService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -614,6 +618,7 @@ class WorkflowStateService:
         owner_discord_user_id: int | None = None,
     ) -> tuple[int, list[AttentionItemRecord]]:
         """Derive and persist current dispatch attention items."""
+        started_at = time.perf_counter()
         allowed_stages = {
             "new_sr_triage": "New SR Triage",
             "model_serial_needed": "Model/Serial Needed",
@@ -637,6 +642,7 @@ class WorkflowStateService:
         previous_items = {item.item_id: item for item in current_snapshot.attention_items}
         parts_records = self.parts_cannon_service.request_store.load()
 
+        per_record_started_at = time.perf_counter()
         per_record_results = await asyncio.gather(
             *(
                 self._refresh_attention_for_record(
@@ -651,15 +657,18 @@ class WorkflowStateService:
                 for record in mappings
             )
         )
+        per_record_duration_ms = int((time.perf_counter() - per_record_started_at) * 1000)
         for record_scanned_jobs, record_attention_items, record_parts_cases in per_record_results:
             scanned_jobs += record_scanned_jobs
             attention_items.extend(record_attention_items)
             for parts_case in record_parts_cases:
                 parts_cases[parts_case.case_id] = parts_case
 
+        extra_parts_started_at = time.perf_counter()
         extra_parts_cases = await asyncio.gather(
             *(self._parts_case_from_reference(reference=reference, parts_records=parts_records) for reference in {record.reference for record in parts_records})
         )
+        extra_parts_duration_ms = int((time.perf_counter() - extra_parts_started_at) * 1000)
         for parts_case in extra_parts_cases:
             parts_cases[parts_case.case_id] = parts_case
 
@@ -670,6 +679,18 @@ class WorkflowStateService:
             events=current_snapshot.events,
         )
         self.store.save(updated_snapshot)
+        logger.info(
+            "Workflow attention refreshed",
+            extra={
+                "mapped_techs": len(mappings),
+                "scanned_jobs": scanned_jobs,
+                "attention_items": len(attention_items),
+                "parts_cases": len(updated_snapshot.parts_cases),
+                "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                "per_record_ms": per_record_duration_ms,
+                "extra_parts_ms": extra_parts_duration_ms,
+            },
+        )
         return scanned_jobs, attention_items
 
     async def _refresh_attention_for_record(

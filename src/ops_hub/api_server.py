@@ -8,6 +8,7 @@ import json
 import logging
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -894,6 +895,8 @@ class TechnicianApiServer:
                 logger.info("Technician API " + format, *args)
 
             def _dispatch(self, method: str) -> None:
+                started_at = time.perf_counter()
+                status: HTTPStatus | None = None
                 try:
                     status, payload = asyncio.run(
                         dispatch_technician_api_request(
@@ -909,6 +912,15 @@ class TechnicianApiServer:
                 except Exception as exc:
                     logger.exception("Technician API request failed")
                     self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"success": False, "message": str(exc)})
+                finally:
+                    logger.info(
+                        "Technician API request completed",
+                        extra={
+                            "status": int(status or HTTPStatus.INTERNAL_SERVER_ERROR),
+                            "duration_ms": int((time.perf_counter() - started_at) * 1000),
+                            "cmd": f"{method} {self.path}",
+                        },
+                    )
 
             def _read_json(self) -> dict[str, object]:
                 length = int(self.headers.get("Content-Length") or "0")

@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from ops_hub.integrations.dispatch_adapter import DispatchAdapter
@@ -576,6 +577,7 @@ class DispatchService:
 
     async def get_dispatch_board_payload(self) -> dict[str, object]:
         """Return a structured dispatch board payload for frontend clients."""
+        started_at = time.perf_counter()
         mappings = self._dispatch_mappings()
         if not mappings:
             return {
@@ -591,9 +593,11 @@ class DispatchService:
                 "technicianLoad": [],
             }
 
+        technician_load_started_at = time.perf_counter()
         technician_load = await asyncio.gather(
             *(self._dispatch_board_technician_entry(record) for record in mappings)
         )
+        technician_load_duration_ms = int((time.perf_counter() - technician_load_started_at) * 1000)
         active_techs = sum(1 for entry in technician_load if entry["hasAssignments"])
         total_assignments = sum(int(entry["assignmentCount"]) for entry in technician_load)
 
@@ -601,9 +605,14 @@ class DispatchService:
         attention_items = []
         open_parts_cases: list[dict[str, object]] = []
         metrics: dict[str, object] = {}
+        workflow_refresh_duration_ms = 0
+        payload_shape_duration_ms = 0
         if self.workflow_state_service is not None:
+            workflow_refresh_started_at = time.perf_counter()
             scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
+            workflow_refresh_duration_ms = int((time.perf_counter() - workflow_refresh_started_at) * 1000)
             snapshot = self.workflow_state_service.current_snapshot()
+            payload_shape_started_at = time.perf_counter()
             attention_items = list(await asyncio.gather(*(self._attention_item_payload(item) for item in current_attention_items)))
             open_parts_cases = list(
                 await asyncio.gather(
@@ -611,6 +620,22 @@ class DispatchService:
                 )
             )
             metrics = self.workflow_state_service.attention_metrics(snapshot)
+            payload_shape_duration_ms = int((time.perf_counter() - payload_shape_started_at) * 1000)
+
+        total_duration_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            "Dispatch board payload built",
+            extra={
+                "mapped_techs": len(mappings),
+                "visible_assignments": total_assignments,
+                "scanned_jobs": scanned_jobs,
+                "attention_jobs": len(attention_items),
+                "duration_ms": total_duration_ms,
+                "technician_load_ms": technician_load_duration_ms,
+                "workflow_refresh_ms": workflow_refresh_duration_ms,
+                "payload_shape_ms": payload_shape_duration_ms,
+            },
+        )
 
         return {
             "mappedTechs": len(mappings),
