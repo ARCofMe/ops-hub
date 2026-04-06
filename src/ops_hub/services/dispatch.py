@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 import logging
@@ -590,51 +591,11 @@ class DispatchService:
                 "technicianLoad": [],
             }
 
-        active_techs = 0
-        total_assignments = 0
-        technician_load: list[dict[str, object]] = []
-        for record in mappings:
-            try:
-                assignments = await self._assignments_for_user(record.bluefolder_user_id)
-            except Exception as exc:
-                logger.warning(
-                    "Dispatch board assignments unavailable for mapped BlueFolder user %s: %s",
-                    record.bluefolder_user_id,
-                    exc,
-                )
-                assignments = []
-            assignment_count = len(assignments)
-            total_assignments += assignment_count
-            if assignment_count > 0:
-                active_techs += 1
-            try:
-                origin_address = await self.adapter.get_origin_for_user(record.bluefolder_user_id)
-            except Exception as exc:
-                logger.warning(
-                    "Dispatch board origin unavailable for mapped BlueFolder user %s: %s",
-                    record.bluefolder_user_id,
-                    exc,
-                )
-                origin_address = None
-            first_assignment = assignments[0] if assignments else None
-            technician_load.append(
-                {
-                    "discordUserId": record.discord_user_id,
-                    "bluefolderUserId": record.bluefolder_user_id,
-                    "technicianLabel": await self._board_technician_label_for_record(record),
-                    "assignmentCount": assignment_count,
-                    "hasAssignments": assignment_count > 0,
-                    "originAddress": origin_address,
-                    "nextJob": (
-                        {
-                            "srId": str(first_assignment.get("serviceRequestId") or ""),
-                            "summary": str(first_assignment.get("subject") or "Unlabeled Service Request"),
-                        }
-                        if first_assignment is not None
-                        else None
-                    ),
-                }
-            )
+        technician_load = await asyncio.gather(
+            *(self._dispatch_board_technician_entry(record) for record in mappings)
+        )
+        active_techs = sum(1 for entry in technician_load if entry["hasAssignments"])
+        total_assignments = sum(int(entry["assignmentCount"]) for entry in technician_load)
 
         scanned_jobs = 0
         attention_items = []
@@ -643,8 +604,12 @@ class DispatchService:
         if self.workflow_state_service is not None:
             scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
             snapshot = self.workflow_state_service.current_snapshot()
-            attention_items = [await self._attention_item_payload(item) for item in current_attention_items]
-            open_parts_cases = [await self._parts_case_payload(case) for case in snapshot.parts_cases if case.status == "open"]
+            attention_items = list(await asyncio.gather(*(self._attention_item_payload(item) for item in current_attention_items)))
+            open_parts_cases = list(
+                await asyncio.gather(
+                    *(self._parts_case_payload(case) for case in snapshot.parts_cases if case.status == "open")
+                )
+            )
             metrics = self.workflow_state_service.attention_metrics(snapshot)
 
         return {
@@ -659,6 +624,59 @@ class DispatchService:
             "openPartsCaseItems": open_parts_cases[:8],
             "technicianLoad": technician_load,
         }
+
+    async def _dispatch_board_technician_entry(self, record: TechnicianMappingRecord) -> dict[str, object]:
+        """Build one dispatch-board technician row without blocking the rest of the board."""
+        assignments_task = asyncio.create_task(self._dispatch_board_assignments(record.bluefolder_user_id))
+        origin_task = asyncio.create_task(self._dispatch_board_origin(record.bluefolder_user_id))
+        label_task = asyncio.create_task(self._board_technician_label_for_record(record))
+        assignments, origin_address, technician_label = await asyncio.gather(
+            assignments_task,
+            origin_task,
+            label_task,
+        )
+        assignment_count = len(assignments)
+        first_assignment = assignments[0] if assignments else None
+        return {
+            "discordUserId": record.discord_user_id,
+            "bluefolderUserId": record.bluefolder_user_id,
+            "technicianLabel": technician_label,
+            "assignmentCount": assignment_count,
+            "hasAssignments": assignment_count > 0,
+            "originAddress": origin_address,
+            "nextJob": (
+                {
+                    "srId": str(first_assignment.get("serviceRequestId") or ""),
+                    "summary": str(first_assignment.get("subject") or "Unlabeled Service Request"),
+                }
+                if first_assignment is not None
+                else None
+            ),
+        }
+
+    async def _dispatch_board_assignments(self, bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
+        """Load board assignments for one mapped technician with graceful degradation."""
+        try:
+            return await self._assignments_for_user(bluefolder_user_id)
+        except Exception as exc:
+            logger.warning(
+                "Dispatch board assignments unavailable for mapped BlueFolder user %s: %s",
+                bluefolder_user_id,
+                exc,
+            )
+            return []
+
+    async def _dispatch_board_origin(self, bluefolder_user_id: int) -> str | None:
+        """Load board origin context for one mapped technician with graceful degradation."""
+        try:
+            return await self.adapter.get_origin_for_user(bluefolder_user_id)
+        except Exception as exc:
+            logger.warning(
+                "Dispatch board origin unavailable for mapped BlueFolder user %s: %s",
+                bluefolder_user_id,
+                exc,
+            )
+            return None
 
     async def get_dispatch_attention_payload(
         self,

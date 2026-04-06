@@ -1,6 +1,7 @@
 """BlueFolder adapter and service tests for Ops Hub."""
 
 import asyncio
+from time import perf_counter
 from pathlib import Path
 import textwrap
 from types import SimpleNamespace
@@ -1806,6 +1807,49 @@ def test_dispatch_service_board_prefers_bluefolder_user_name_for_technician_labe
     payload = asyncio.run(service.get_dispatch_board_payload())
 
     assert payload["technicianLoad"][0]["technicianLabel"] == "Pat Tech"
+
+
+def test_dispatch_service_board_loads_technicians_concurrently() -> None:
+    mappings = [
+        TechnicianMappingRecord(discord_user_id=41, bluefolder_user_id=13051),
+        TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13052),
+        TechnicianMappingRecord(discord_user_id=43, bluefolder_user_id=13053),
+    ]
+
+    async def get_assignments_for_user_on_date(user_id: int, day):
+        _ = (user_id, day)
+        await asyncio.sleep(0.05)
+        return [{"serviceRequestId": str(user_id), "subject": f"Job {user_id}"}]
+
+    class SlowDispatchAdapter(DummyDispatchAdapter):
+        async def get_origin_for_user(self, technician_bluefolder_user_id: int) -> str | None:
+            await asyncio.sleep(0.05)
+            return f"Origin {technician_bluefolder_user_id}"
+
+    directory = SimpleNamespace(
+        mapping_records=lambda: mappings,
+        reverse_mappings=lambda: {record.bluefolder_user_id: record.discord_user_id for record in mappings},
+        display_label=lambda user_id: None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+        get_user_name=lambda user_id: asyncio.sleep(0.05, result=f"Tech {user_id}"),
+    )
+    service = DispatchService(
+        adapter=SlowDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=None,
+    )
+
+    started_at = perf_counter()
+    payload = asyncio.run(service.get_dispatch_board_payload())
+    elapsed = perf_counter() - started_at
+
+    assert payload["mappedTechs"] == 3
+    assert len(payload["technicianLoad"]) == 3
+    assert elapsed < 0.18
 
 
 def test_dispatch_service_returns_attention_item_detail_payload() -> None:
