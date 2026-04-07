@@ -19,7 +19,7 @@ Use this checklist when replacing the current beta Discord bot with Ops Hub in t
 - Confirm the local wrapper paths exist:
   - `OPS_HUB_BLUEFOLDER_API_PATH`
   - `OPS_HUB_DISPATCH_PROJECT_PATH`
-  - `OPS_HUB_PARTS_CANNON_PROJECT_PATH` if you want the supplemental queue handoff
+  - `OPS_HUB_PARTS_HANDOFF_PROJECT_PATH` if you want the supplemental queue handoff
 - Run:
 
 ```bash
@@ -102,10 +102,10 @@ PYTHONPATH=src python -m ops_hub
 
 ## Supplemental Queue Check
 
-- If `OPS_HUB_PARTS_CANNON_PROJECT_PATH` is unset:
+- If `OPS_HUB_PARTS_HANDOFF_PROJECT_PATH` is unset:
   - treat the supplemental parts queue handoff as intentionally disabled
   - do not block cutover on `/part_sync` or `/part_reconcile`
-- If `OPS_HUB_PARTS_CANNON_PROJECT_PATH` is set:
+- If `OPS_HUB_PARTS_HANDOFF_PROJECT_PATH` is set:
   - confirm `ops_hub_exports/parts_requests.json` is written on `/part_sync`
   - confirm downstream receipts appear in `ops_hub_exports/parts_request_receipts.json`
   - confirm `/part_reconcile` imports them cleanly

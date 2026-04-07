@@ -1,4 +1,4 @@
-"""Parts Cannon subsystem service."""
+"""Parts handoff and tracked-request service."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
+from ops_hub.integrations.parts_cannon_adapter import PartsHandoffAdapter
 from ops_hub.models.requests import (
     CommandResult,
     PartLookupRequest,
@@ -35,13 +35,10 @@ PARTS_REQUEST_STATUSES: tuple[str, ...] = (
 
 
 @dataclass(slots=True)
-class PartsCannonService:
-    """Parts workflow service facade.
+class PartsHandoffService:
+    """Parts workflow service facade with optional downstream handoff support."""
 
-    Parts Cannon is an internal codename/subsystem inside Ops Hub, not the entire app.
-    """
-
-    adapter: PartsCannonAdapter
+    adapter: PartsHandoffAdapter
     notifications: NotificationService
     request_store: PartsRequestStore
     technician_directory_service: TechnicianDirectoryService | None = None
@@ -990,3 +987,6 @@ class PartsCannonService:
     def _technician_mapping_label_from_bluefolder(self, bluefolder_user_id: int) -> str:
         """Render a technician label from a BlueFolder user id."""
         return self._technician_label(bluefolder_user_id=bluefolder_user_id)
+
+
+PartsCannonService = PartsHandoffService

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from ops_hub.models.requests import PartRequestCreate, PhotoAttachmentPayload
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
-from ops_hub.services.parts_cannon import PartsCannonService
+from ops_hub.services.parts_cannon import PartsHandoffService
 from ops_hub.services.photo_ingest import PhotoIngestService
 
 if TYPE_CHECKING:
@@ -23,9 +23,14 @@ class TechnicianApiService:
 
     bluefolder_service: BlueFolderService
     technician_directory_service: TechnicianDirectoryService
-    parts_cannon_service: PartsCannonService
+    parts_cannon_service: PartsHandoffService
     photo_ingest_service: PhotoIngestService
     workflow_state_service: "WorkflowStateService"
+
+    @property
+    def parts_handoff_service(self) -> PartsHandoffService:
+        """Preferred name for the parts handoff service dependency."""
+        return self.parts_cannon_service
 
     async def health(self) -> dict[str, object]:
         """Return a minimal health payload for app clients."""
@@ -128,7 +133,7 @@ class TechnicianApiService:
         cleaned = " ".join((details or "").split()).strip()
         if not cleaned:
             cleaned = "Requested from technician mobile workflow."
-        result = await self.parts_cannon_service.create_request(
+        result = await self.parts_handoff_service.create_request(
             PartRequestCreate(
                 reference=f"SR-{sr_id}",
                 description=cleaned,

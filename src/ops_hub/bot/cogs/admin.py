@@ -463,7 +463,7 @@ class AdminCog(commands.Cog):
             ),
             f"BlueFolder credentials: {self._bluefolder_config_status()}",
             self._path_line("BlueFolder library path", settings.bluefolder_api_path),
-            self._path_line("Parts Cannon path", settings.parts_cannon_project_path),
+            self._path_line("Parts handoff path", settings.parts_handoff_project_path),
             self._path_line("Dispatch path", settings.dispatch_project_path),
             self._path_line("Photo ingest path", settings.photo_ingest_project_path),
             self._path_line("Photo feature flags file", settings.photo_feature_flags_file),
@@ -474,8 +474,8 @@ class AdminCog(commands.Cog):
         """Render current service-level adapter results."""
         bluefolder = await self.bot.container.bluefolder_service.get_job_summary("SR-100")
         dispatch = await self.bot.container.dispatch_service.adapter.get_job("SR-100")
-        parts = await self.bot.container.parts_cannon_service.adapter.get_part_status("SR-100")
-        parts_queue = self.bot.container.parts_cannon_service.queue_summary()
+        parts = await self.bot.container.parts_handoff_service.adapter.get_part_status("SR-100")
+        parts_queue = self.bot.container.parts_handoff_service.queue_summary()
         photo = await self.bot.container.photo_ingest_service.status()
         notifications = await self.bot.container.notification_service.status()
         lines = [
@@ -484,8 +484,8 @@ class AdminCog(commands.Cog):
             f"BlueFolder detail: {bluefolder.message}",
             f"Dispatch: `{dispatch.integration_status}`",
             f"Dispatch detail: {dispatch.message}",
-            f"Parts Cannon: `{parts.integration_status}`",
-            f"Parts Cannon detail: {parts.message}",
+            f"Parts handoff: `{parts.integration_status}`",
+            f"Parts handoff detail: {parts.message}",
             f"Parts queue open: `{parts_queue.open_requests}` of `{parts_queue.total_requests}` total",
             f"Parts queue assigned/unassigned: `{parts_queue.assigned_requests}` / `{parts_queue.unassigned_requests}`",
             f"Parts queue synced: `{parts_queue.synced_requests}`",

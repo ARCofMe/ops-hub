@@ -145,7 +145,7 @@ def test_build_service_status_reports_adapter_states() -> None:
     assert "Ops Hub Service Status" in result
     assert "BlueFolder: `unconfigured`" in result
     assert "Dispatch: `unconfigured`" in result
-    assert "Parts Cannon: `unconfigured`" in result
+    assert "Parts handoff: `unconfigured`" in result
     assert "Parts queue open: `0` of `0` total" in result
     assert "Parts queue synced: `0`" in result
     assert "Photo ingest: `unconfigured`" in result

@@ -738,6 +738,125 @@ def test_bluefolder_adapter_builds_customer_contacts_from_fallback_customer_xml(
     assert result.customer_contacts[1].phone == "207-555-2222"
 
 
+def test_bluefolder_adapter_skips_non_xml_customer_fallback_payload(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = "Dryer repair"
+                    ET.SubElement(sr, "customerId").text = "55"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: int, location_id: int):
+                    root = ET.Element("response")
+                    ET.SubElement(root, "customerLocation")
+                    return root
+
+                def get_by_id(self, customer_id: int):
+                    return "<html>not xml</html>"
+
+            class _CustomerContacts:
+                def list_for_customer(self, customer_id: int):
+                    raise RuntimeError("404 Client Error: Not Found for url: /api/2.0/customerContacts/list.aspx")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+                    self.customer_contacts = _CustomerContacts()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    result = asyncio.run(adapter.get_job_summary("SR-100"))
+
+    assert result.available is True
+    assert result.customer_phone is None
+    assert result.customer_contacts == ()
+
+
+def test_bluefolder_adapter_disables_missing_customer_contacts_endpoint_after_first_404(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            contact_calls = 0
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "description").text = "Dryer repair"
+                    ET.SubElement(sr, "customerId").text = "55"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: int, location_id: int):
+                    root = ET.Element("response")
+                    ET.SubElement(root, "customerLocation")
+                    return root
+
+                def get_by_id(self, customer_id: int):
+                    root = ET.Element("response")
+                    contact = ET.SubElement(root, "customerContact")
+                    ET.SubElement(contact, "firstName").text = "Jane"
+                    ET.SubElement(contact, "lastName").text = "Owner"
+                    ET.SubElement(contact, "phone").text = "207-555-1111"
+                    ET.SubElement(contact, "isPrimary").text = "1"
+                    return root
+
+            class _CustomerContacts:
+                def list_for_customer(self, customer_id: int):
+                    global contact_calls
+                    contact_calls += 1
+                    raise RuntimeError("404 Client Error: Not Found for url: /api/2.0/customerContacts/list.aspx")
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+                    self.customer_contacts = _CustomerContacts()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    first = asyncio.run(adapter.get_job_summary("SR-100"))
+    second = asyncio.run(adapter.get_job_summary("SR-100"))
+
+    assert first.customer_contacts[0].name == "Jane Owner"
+    assert second.customer_contacts[0].name == "Jane Owner"
+    assert adapter._customer_contacts_endpoint_unavailable is True
+
+
 def test_bluefolder_service_logs_field_event_and_notifies() -> None:
     class AdapterStub:
         async def add_field_event_comment(self, sr_id, **kwargs):

@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     photo_mailbox_search_days: int = 21
     photo_required_sr_statuses: list[str] = []
     photo_required_tags: list[str] = ["model", "serial"]
+    parts_handoff_project_path: str | None = None
     parts_cannon_project_path: str | None = None
     dispatch_project_path: str | None = None
     service_smith_profile_file: str | None = None
@@ -165,6 +166,7 @@ class Settings(BaseSettings):
             "photo_mailbox_imap_use_ssl",
             "photo_mailbox_folder",
             "photo_mailbox_search_days",
+            "parts_handoff_project_path",
             "parts_cannon_project_path",
             "dispatch_project_path",
             "service_smith_profile_file",
@@ -197,6 +199,11 @@ class Settings(BaseSettings):
 
         if self.technician_mapping_file is None and self.operator_mapping_file is not None:
             self.technician_mapping_file = self.operator_mapping_file
+
+        if self.parts_handoff_project_path is None and self.parts_cannon_project_path is not None:
+            self.parts_handoff_project_path = self.parts_cannon_project_path
+        if self.parts_cannon_project_path is None and self.parts_handoff_project_path is not None:
+            self.parts_cannon_project_path = self.parts_handoff_project_path
 
         return self
 
@@ -327,7 +334,7 @@ class Settings(BaseSettings):
             ("OPS_HUB_BLUEFOLDER_API_PATH", self.bluefolder_api_path),
             ("OPS_HUB_BLUEBOT_DISCORD_EXTENSION_PATH", self.bluebot_discord_extension_path),
             ("OPS_HUB_PHOTO_INGEST_PROJECT_PATH", self.photo_ingest_project_path),
-            ("OPS_HUB_PARTS_CANNON_PROJECT_PATH", self.parts_cannon_project_path),
+            ("OPS_HUB_PARTS_HANDOFF_PROJECT_PATH", self.parts_handoff_project_path),
             ("OPS_HUB_DISPATCH_PROJECT_PATH", self.dispatch_project_path),
         ]:
             errors.extend(self._directory_path_errors(env_name, path_value))

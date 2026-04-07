@@ -434,4 +434,4 @@ Internal planning docs:
 
 Ops Hub is the app and platform name.
 
-`Parts Cannon` is an internal codename for the parts-related subsystem and the broader migration effort, but the bot itself is not limited to parts workflows.
+`Parts handoff` is the optional downstream export/import path for tracked parts requests. It is not the name of the bot or the PartsDesk app.

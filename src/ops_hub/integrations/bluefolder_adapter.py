@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from xml.etree.ElementTree import Element
 from types import TracebackType
 
 from datetime import date, datetime
@@ -42,6 +43,7 @@ class BlueFolderAdapter:
     )
     _active_user_directory_cache: dict[int, str] = field(default_factory=dict)
     _active_user_directory_unavailable: bool = False
+    _customer_contacts_endpoint_unavailable: bool = False
 
     async def get_job_summary(
         self,
@@ -204,14 +206,21 @@ class BlueFolderAdapter:
                         state = location.findtext("addressState")
                         postal_code = location.findtext("addressPostalCode")
                 contacts: list[dict[str, object]] | None = None
-                try:
-                    contacts = client.customer_contacts.list_for_customer(int(customer_id))
-                except Exception as exc:
-                    logger.warning("BlueFolder contact lookup unavailable for customer=%s: %s", customer_id, exc)
-                else:
-                    customer_contacts = self._build_customer_contacts(contacts or [], customer_location_id)
-                    if not customer_phone:
-                        customer_phone = self._select_customer_phone(contacts or [], customer_location_id)
+                if not self._customer_contacts_endpoint_unavailable:
+                    try:
+                        contacts = client.customer_contacts.list_for_customer(int(customer_id))
+                    except Exception as exc:
+                        if self._is_bluefolder_not_found(exc):
+                            self._customer_contacts_endpoint_unavailable = True
+                            logger.info(
+                                "BlueFolder contact lookup endpoint unavailable; disabling customerContacts enrichment and using customer fallback.",
+                            )
+                        else:
+                            logger.warning("BlueFolder contact lookup unavailable for customer=%s: %s", customer_id, exc)
+                    else:
+                        customer_contacts = self._build_customer_contacts(contacts or [], customer_location_id)
+                        if not customer_phone:
+                            customer_phone = self._select_customer_phone(contacts or [], customer_location_id)
                 if not customer_phone or not customer_contacts:
                     try:
                         customer_xml = client.customers.get_by_id(int(customer_id))
@@ -222,7 +231,7 @@ class BlueFolderAdapter:
                             exc,
                         )
                     else:
-                        if hasattr(customer_xml, "findtext"):
+                        if self._is_xml_element(customer_xml):
                             if not customer_phone:
                                 customer_phone = self._clean_phone(
                                     customer_xml.findtext(".//customerContactPhone")
@@ -230,6 +239,11 @@ class BlueFolderAdapter:
                                 )
                             if not customer_contacts:
                                 customer_contacts = self._build_customer_contacts_from_customer_xml(customer_xml)
+                        else:
+                            logger.info(
+                                "BlueFolder customer fallback returned non-XML payload for customer=%s; skipping contact enrichment.",
+                                customer_id,
+                            )
 
         return BlueFolderJobSummary(
             reference=reference,
@@ -340,6 +354,18 @@ class BlueFolderAdapter:
             seen.add(key)
             summaries.append(summary)
         return tuple(summaries[:5])
+
+    def _is_xml_element(self, value: object) -> bool:
+        """Return true when the fallback payload is a parsed ElementTree node."""
+        return isinstance(value, Element)
+
+    def _is_bluefolder_not_found(self, exc: Exception) -> bool:
+        """Treat endpoint-level 404s as optional capability gaps rather than warnings."""
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if status_code == 404:
+            return True
+        message = str(exc).lower()
+        return "404" in message and "not found" in message
 
     def _clean_text(self, value: object) -> str | None:
         """Normalize a candidate text value into a printable string."""

@@ -1,4 +1,4 @@
-"""Placeholder adapter for the Parts Cannon subsystem."""
+"""Parts handoff adapter for optional downstream queue export/import."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from ops_hub.models.requests import (
 from ops_hub.services.file_store_utils import atomic_write_text
 
 @dataclass(slots=True)
-class PartsCannonAdapter:
-    """Adapter boundary for parts workflow integration."""
+class PartsHandoffAdapter:
+    """Adapter boundary for optional parts handoff integration."""
 
     base_path: str | None = None
 
@@ -136,3 +136,6 @@ class PartsCannonAdapter:
             receipt_path=receipt_path,
             receipts=receipts,
         )
+
+
+PartsCannonAdapter = PartsHandoffAdapter

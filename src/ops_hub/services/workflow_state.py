@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from ops_hub.services.bluefolder import BlueFolderService
     from ops_hub.services.notifications import NotificationService
     from ops_hub.services.operator_directory import TechnicianDirectoryService
-    from ops_hub.services.parts_cannon import PartsCannonService
+    from ops_hub.services.parts_cannon import PartsHandoffService
     from ops_hub.services.photo_ingest import PhotoIngestService
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class WorkflowStateService:
 
     store: WorkflowStateStore
     bluefolder_service: "BlueFolderService"
-    parts_cannon_service: "PartsCannonService"
+    parts_cannon_service: "PartsHandoffService"
     technician_directory_service: "TechnicianDirectoryService | None" = None
     notification_service: "NotificationService | None" = None
     photo_ingest_service: "PhotoIngestService | None" = None
@@ -69,6 +69,11 @@ class WorkflowStateService:
     _last_unfiltered_refresh_at: float = field(default=0.0, init=False, repr=False)
     _last_unfiltered_refresh_mapping_ids: tuple[int, ...] = field(default_factory=tuple, init=False, repr=False)
     _last_unfiltered_scanned_jobs: int = field(default=0, init=False, repr=False)
+
+    @property
+    def parts_handoff_service(self) -> "PartsHandoffService":
+        """Preferred name for the parts handoff service dependency."""
+        return self.parts_cannon_service
 
     def current_snapshot(self) -> WorkflowStateSnapshot:
         """Return the current workflow snapshot."""
