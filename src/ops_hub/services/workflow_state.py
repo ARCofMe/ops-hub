@@ -617,13 +617,23 @@ class WorkflowStateService:
         if resolved_reference is None:
             raise ValueError("sr_id or reference is required")
         resolved_sr_id = sr_id if sr_id is not None else self._reference_sr_id(resolved_reference)
-        snapshot = await self.bluefolder_service.get_parts_snapshot(resolved_sr_id) if resolved_sr_id is not None else None
+        if resolved_sr_id is not None:
+            snapshot, job_summary = await asyncio.gather(
+                self.bluefolder_service.get_parts_snapshot(resolved_sr_id),
+                self.bluefolder_service.get_job_summary(resolved_reference, include_customer_contacts=False),
+            )
+            service_request_status = getattr(job_summary, "service_request_status", None)
+        else:
+            snapshot = None
+            job_summary = await self.bluefolder_service.get_job_summary(resolved_reference, include_customer_contacts=False)
+            service_request_status = getattr(job_summary, "service_request_status", None)
         matching_requests = self._matching_requests(self.parts_cannon_service.request_store.load(), resolved_reference)
         case = self._build_parts_case(
             reference=resolved_reference,
             sr_id=resolved_sr_id,
             snapshot=snapshot,
             matching_requests=matching_requests,
+            service_request_status=service_request_status,
         )
 
         state = self.store.load()
@@ -955,6 +965,7 @@ class WorkflowStateService:
             sr_id=sr_id,
             snapshot=snapshot,
             matching_requests=matching_requests,
+            service_request_status=getattr(job_summary, "service_request_status", None),
         )
 
         location = " ".join(part for part in [assignment.get("city"), assignment.get("state")] if part).strip()
@@ -994,12 +1005,22 @@ class WorkflowStateService:
         """Build a parts case from tracked-request state even when no active assignment is visible."""
         sr_id = self._reference_sr_id(reference)
         matching_requests = self._matching_requests(parts_records, reference)
-        snapshot = await self.bluefolder_service.get_parts_snapshot(sr_id) if sr_id is not None else None
+        if sr_id is not None:
+            snapshot, job_summary = await asyncio.gather(
+                self.bluefolder_service.get_parts_snapshot(sr_id),
+                self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False),
+            )
+            service_request_status = getattr(job_summary, "service_request_status", None)
+        else:
+            snapshot = None
+            job_summary = await self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False)
+            service_request_status = getattr(job_summary, "service_request_status", None)
         return self._build_parts_case(
             reference=reference,
             sr_id=sr_id,
             snapshot=snapshot,
             matching_requests=matching_requests,
+            service_request_status=service_request_status,
         )
 
     def _build_assignment_attention_items(
@@ -1217,10 +1238,17 @@ class WorkflowStateService:
         sr_id: int | None,
         snapshot: PartsLifecycleSnapshot | None,
         matching_requests: list[PartRequestRecord],
+        service_request_status: str | None,
     ) -> PartsCaseRecord:
         """Build a derived parts-case record from current known state."""
         open_requests = [record.request_id for record in matching_requests if record.status not in {"resolved", "cancelled"}]
         latest_request = max(matching_requests, key=lambda item: item.updated_at, default=None)
+        active_parts_context = self._has_active_parts_snapshot(snapshot) or self._is_active_parts_needed_status(
+            service_request_status
+        )
+        case_status = "inactive" if self._is_closed_service_request_status(service_request_status) else (
+            "open" if active_parts_context else "inactive"
+        )
         base_time = None
         if snapshot is None and latest_request is None:
             stage = "no_recent_parts_context"
@@ -1254,7 +1282,7 @@ class WorkflowStateService:
             sr_id=sr_id,
             stage=stage,
             stage_label=stage_label,
-            status="open" if open_requests else "inactive",
+            status=case_status,
             open_request_ids=open_requests,
             assigned_parts_user_id=latest_request.assigned_parts_user_id if latest_request is not None else None,
             requested_by_user_id=latest_request.requested_by_user_id if latest_request is not None else None,
@@ -1266,6 +1294,62 @@ class WorkflowStateService:
             updated_at=self._now(),
             age_hours=derived_age_hours,
             age_bucket=self._age_bucket_for_stage(stage, derived_age_hours),
+        )
+
+    @staticmethod
+    def _has_active_parts_snapshot(snapshot: PartsLifecycleSnapshot | None) -> bool:
+        """Return whether the current BlueFolder parts snapshot reflects active parts work."""
+        if snapshot is None:
+            return False
+        return snapshot.stage in {
+            "issue_reported",
+            "part_ordered",
+            "part_eta",
+            "part_tracking",
+            "part_received",
+            "part_ready",
+        }
+
+    @staticmethod
+    def _is_active_parts_needed_status(service_request_status: str | None) -> bool:
+        """Return whether the current SR status still reflects active parts-needed work."""
+        normalized = str(service_request_status or "").strip().casefold()
+        if not normalized:
+            return False
+        return any(
+            phrase in normalized
+            for phrase in {
+                "need parts",
+                "needs parts",
+                "parts/schedule",
+                "waiting parts",
+                "awaiting parts",
+                "part ordered",
+                "parts ordered",
+                "part eta",
+                "tracking",
+                "part received",
+                "ready to schedule",
+            }
+        )
+
+    @staticmethod
+    def _is_closed_service_request_status(service_request_status: str | None) -> bool:
+        """Return whether the current SR status should suppress open parts-case presentation."""
+        normalized = str(service_request_status or "").strip().casefold()
+        if not normalized:
+            return False
+        return any(
+            phrase in normalized
+            for phrase in {
+                "complete",
+                "completed",
+                "closed",
+                "cancelled",
+                "canceled",
+                "resolved",
+                "done",
+            }
         )
 
     @staticmethod

@@ -187,6 +187,69 @@ def test_workflow_state_service_derives_attention_and_parts_cases() -> None:
     assert snapshot.parts_cases[0].assigned_parts_user_id == 77
 
 
+def test_workflow_state_service_marks_completed_parts_cases_inactive() -> None:
+    bluefolder = FakeBlueFolderService()
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id=reference.replace("SR-", ""),
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Completed",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+
+    snapshot = service.current_snapshot()
+
+    assert snapshot.parts_cases[0].reference == "SR-100"
+    assert snapshot.parts_cases[0].open_request_ids == [1]
+    assert snapshot.parts_cases[0].status == "inactive"
+
+
+def test_workflow_state_service_keeps_need_parts_cases_open_without_snapshot() -> None:
+    bluefolder = FakeBlueFolderService()
+    bluefolder.snapshots = {}
+
+    async def get_job_summary(reference: str, *, include_customer_contacts: bool = True):
+        return BlueFolderJobSummary(
+            reference=reference,
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id=reference.replace("SR-", ""),
+            subject="Dryer repair",
+            customer_name="Acme Customer",
+            service_request_status="Need Parts/Schedule",
+        )
+
+    bluefolder.get_job_summary = get_job_summary
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=bluefolder,
+        parts_cannon_service=FakePartsCannonService(),
+    )
+
+    asyncio.run(service.refresh_dispatch_attention([TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]))
+
+    snapshot = service.current_snapshot()
+
+    assert snapshot.parts_cases[0].reference == "SR-100"
+    assert snapshot.parts_cases[0].stage == "ordered"
+    assert snapshot.parts_cases[0].status == "open"
+
+
 def test_workflow_state_service_filters_attention_by_age_and_owner() -> None:
     service = WorkflowStateService(
         store=WorkflowStateStore(file_path=None),
