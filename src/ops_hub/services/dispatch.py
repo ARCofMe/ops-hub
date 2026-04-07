@@ -685,9 +685,19 @@ class DispatchService:
                 return
             self._board_refresh_running = True
 
+        async def _refresh_and_warm() -> None:
+            await self.workflow_state_service.refresh_dispatch_attention(mappings)
+            sr_ids = self._board_snapshot_sr_ids(self.workflow_state_service.current_snapshot())
+            if sr_ids and hasattr(self.workflow_state_service, "warm_photo_compliance_for_sr_ids"):
+                warmed = await self.workflow_state_service.warm_photo_compliance_for_sr_ids(sr_ids)
+                logger.info(
+                    "Board photo compliance warmed",
+                    extra={"sr_count": len(sr_ids), "refreshed_count": warmed},
+                )
+
         def _runner() -> None:
             try:
-                asyncio.run(self.workflow_state_service.refresh_dispatch_attention(mappings))
+                asyncio.run(_refresh_and_warm())
             except Exception:
                 logger.exception("Background board refresh failed")
             finally:
@@ -695,6 +705,23 @@ class DispatchService:
                     self._board_refresh_running = False
 
         threading.Thread(target=_runner, name="ops-hub-board-refresh", daemon=True).start()
+
+    @staticmethod
+    def _board_snapshot_sr_ids(snapshot) -> list[int]:
+        """Collect unique SR ids represented in the current board snapshot."""
+        sr_ids: list[int] = []
+        seen: set[int] = set()
+        for item in getattr(snapshot, "attention_items", []):
+            sr_id = int(getattr(item, "sr_id", 0) or 0)
+            if sr_id > 0 and sr_id not in seen:
+                seen.add(sr_id)
+                sr_ids.append(sr_id)
+        for case in getattr(snapshot, "parts_cases", []):
+            sr_id = int(getattr(case, "sr_id", 0) or 0)
+            if sr_id > 0 and sr_id not in seen:
+                seen.add(sr_id)
+                sr_ids.append(sr_id)
+        return sr_ids
 
     async def _dispatch_board_technician_entry(self, record: TechnicianMappingRecord) -> dict[str, object]:
         """Build one dispatch-board technician row without blocking the rest of the board."""

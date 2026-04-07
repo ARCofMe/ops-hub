@@ -64,6 +64,7 @@ class WorkflowStateService:
         }
     )
     refresh_cache_ttl_seconds: float = 10.0
+    photo_compliance_ttl_seconds: float = 900.0
     _refresh_mutex: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _last_unfiltered_refresh_at: float = field(default=0.0, init=False, repr=False)
     _last_unfiltered_refresh_mapping_ids: tuple[int, ...] = field(default_factory=tuple, init=False, repr=False)
@@ -147,6 +148,26 @@ class WorkflowStateService:
         )
         self._persist_photo_compliance_record(record)
         return record
+
+    async def warm_photo_compliance_for_sr_ids(
+        self,
+        sr_ids: list[int],
+        *,
+        force: bool = False,
+    ) -> int:
+        """Refresh stale cached photo-compliance records for the provided SR ids."""
+        refreshed = 0
+        seen: set[int] = set()
+        for sr_id in sr_ids:
+            if sr_id <= 0 or sr_id in seen:
+                continue
+            seen.add(sr_id)
+            cached = self.get_cached_photo_compliance(sr_id=sr_id)
+            if not force and not self._photo_compliance_is_stale(cached):
+                continue
+            await self.refresh_photo_compliance(sr_id=sr_id)
+            refreshed += 1
+        return refreshed
 
     def attention_metrics(self, snapshot: WorkflowStateSnapshot | None = None) -> dict[str, object]:
         """Summarize current attention state for reporting surfaces."""
@@ -1286,6 +1307,17 @@ class WorkflowStateService:
     def _photo_compliance_map(snapshot: WorkflowStateSnapshot) -> dict[int, PhotoComplianceRecord]:
         """Index cached photo-compliance records by SR id."""
         return {record.sr_id: record for record in snapshot.photo_compliance_records}
+
+    def _photo_compliance_is_stale(self, record: PhotoComplianceRecord | None) -> bool:
+        """Return whether cached photo-compliance data should be refreshed."""
+        if record is None or not record.checked_at:
+            return True
+        try:
+            checked_at = datetime.fromisoformat(str(record.checked_at).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        now = datetime.now(checked_at.tzinfo) if checked_at.tzinfo is not None else datetime.now()
+        return (now - checked_at).total_seconds() > self.photo_compliance_ttl_seconds
 
     def _persist_photo_compliance_record(self, record: PhotoComplianceRecord) -> None:
         """Save one cached photo-compliance record back into workflow state."""

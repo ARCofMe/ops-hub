@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 
@@ -12,6 +13,7 @@ from ops_hub.models.requests import (
     PartRequestRecord,
     PartsCaseRecord,
     PartsLifecycleSnapshot,
+    PhotoComplianceRecord,
     TechnicianMappingRecord,
     WorkflowStateSnapshot,
 )
@@ -228,6 +230,69 @@ def test_workflow_state_service_persists_photo_compliance_and_derives_photo_gap(
     assert photo_gap.photo_should_notify is True
     assert photo_gap.photo_missing_tags == ["Serial"]
     assert snapshot.parts_cases[0].photo_missing_tags == ["Serial"]
+
+
+def test_workflow_state_service_warms_only_stale_photo_compliance_records() -> None:
+    refreshed: list[int] = []
+
+    class CountingPhotoIngestService(FakePhotoIngestService):
+        def __init__(self) -> None:
+            super().__init__()
+
+            async def get_photo_compliance_summary(sr_id: int):
+                refreshed.append(sr_id)
+                return type(
+                    "Summary",
+                    (),
+                    {
+                        "sr_id": sr_id,
+                        "mailbox_status": "found",
+                        "message": f"Summary for SR-{sr_id}",
+                        "matched_records": [],
+                        "total_photos": 1,
+                        "found_tags": ["Model"],
+                        "missing_tags": ["Serial"],
+                    },
+                )()
+
+            self.adapter = type("Adapter", (), {"get_photo_compliance_summary": staticmethod(get_photo_compliance_summary)})()
+
+    service = WorkflowStateService(
+        store=WorkflowStateStore(file_path=None),
+        bluefolder_service=FakeBlueFolderService(),
+        parts_cannon_service=FakePartsCannonService(),
+        photo_ingest_service=CountingPhotoIngestService(),
+        photo_compliance_ttl_seconds=60,
+    )
+    now = datetime.now(UTC)
+    service.store.snapshot = WorkflowStateSnapshot(
+        photo_compliance_records=[
+            PhotoComplianceRecord(
+                sr_id=100,
+                reference="SR-100",
+                enabled=True,
+                mailbox_status="found",
+                total_photos=1,
+                found_tags=["Model"],
+                missing_tags=["Serial"],
+                checked_at=(now - timedelta(minutes=10)).isoformat(),
+            ),
+            PhotoComplianceRecord(
+                sr_id=101,
+                reference="SR-101",
+                enabled=True,
+                mailbox_status="found",
+                total_photos=2,
+                found_tags=["Model", "Serial"],
+                missing_tags=[],
+                checked_at=now.isoformat(),
+            ),
+        ]
+    )
+    count = asyncio.run(service.warm_photo_compliance_for_sr_ids([100, 101, 100]))
+
+    assert count == 1
+    assert refreshed == [100]
 
 
 def test_workflow_state_refresh_runs_assignment_enrichment_concurrently() -> None:
