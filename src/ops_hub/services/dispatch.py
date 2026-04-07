@@ -995,7 +995,6 @@ class DispatchService:
                 continue
             summary = await self.bluefolder_service.get_job_summary(
                 f"SR-{sr_id}",
-                include_customer_contacts=False,
             )
             if not summary.available or not summary.address:
                 missing_address_count += 1
@@ -1182,7 +1181,6 @@ class DispatchService:
                 scanned_jobs += 1
                 summary = await self.bluefolder_service.get_job_summary(
                     f"SR-{sr_id}",
-                    include_customer_contacts=False,
                 )
                 address = self._format_summary_address(summary)
                 if not summary.available or not address:
@@ -1393,7 +1391,6 @@ class DispatchService:
                 continue
             summary = await self.bluefolder_service.get_job_summary(
                 f"SR-{sr_id}",
-                include_customer_contacts=False,
             )
             if not summary.available or not summary.address:
                 missing_address_count += 1
@@ -1483,7 +1480,6 @@ class DispatchService:
                 scanned_jobs += 1
                 summary = await self.bluefolder_service.get_job_summary(
                     f"SR-{sr_id}",
-                    include_customer_contacts=False,
                 )
                 address = self._format_summary_address(summary)
                 if not summary.available or not address:
