@@ -1,365 +1,72 @@
 # Ops Hub
 
-Ops Hub is a unified Discord operations bot for the appliance repair business.
+Ops Hub is the shared operations backend for ARCoM.
 
-It gives the team one Discord-facing surface for technician, dispatch, parts, and admin workflows while keeping the internals modular and testable.
+It sits between BlueFolder and the operator-facing products:
 
-BlueFolder technicians are now first-class operational identities in Ops Hub. Discord linkage is optional enrichment for mentions, role-based command access, and member-map workflows, not a hard requirement for dispatch, parts, or technician app data flows.
+- `RouteDesk` for dispatch and triage
+- `PartsDesk` for parts workflow
+- `FieldDesk` for technicians in the field
+- Discord commands for lightweight lookup, updates, and notifications
 
-## Who This Is For
+BlueFolder remains the main business record. Ops Hub adds workflow state,
+queueing, next-action logic, cross-role views, and API surfaces for the apps.
 
-Ops Hub is for:
+## What Ops Hub Covers
 
-- technicians in the field
-- dispatch staff coordinating jobs and follow-up
-- parts staff tracking part status and updates
-- admins supporting mappings, config, and runtime health
+- BlueFolder service request and assignment lookups
+- dispatch board, triage, attention, SR detail, routing, and intake APIs
+- parts board, case, request, and BlueFolder-native parts update APIs
+- technician mobile APIs for job, workflow, and photo flows
+- workflow-state ownership for attention queues, parts cases, policy events, and history
+- normalized BlueFolder status semantics for frontend clients
+- optional Discord commands and notifications
 
-If someone is new to Discord or slash commands, start with the guides in `docs/`.
+## Main Product Surfaces
 
-## What It Does
+- `RouteDesk`
+  Dispatch board, triage queue, attention queue, SR workspace, routes, and intake.
+- `PartsDesk`
+  Parts board, case workflow, tracked requests, and dispatch handoff.
+- `FieldDesk`
+  Technician workflow app for jobs, notes, photos, and field updates.
+- `Discord`
+  Useful for fast command access, notifications, and ad hoc operational actions, but no longer the center of the product.
 
-Ops Hub currently focuses on:
+## Identity Model
 
-- BlueFolder job lookups and service request context
-- technician assignment views
-- dispatcher assignment, board, triage, next-action, and queue-control views
-- BlueFolder-native parts comment/update flows
-- tracked internal parts queue workflows where supplemental coordination is useful
-- admin/debug visibility for runtime, config, mappings, service state, and workflow policy
-- owned workflow state for attention queues, parts cases, event history, and policy-driven reminders
-- distinct office/dispatch attention flows for parts follow-up, scheduling-ready work, and quote-needed handoffs
+Ops Hub is BlueFolder-first.
 
-BlueFolder remains the primary business source of truth for operational job and parts updates. Ops Hub is the Discord workflow layer around that process today.
+- BlueFolder users are first-class operational identities.
+- Discord linkage is optional enrichment for mentions, role gating, and notification routing.
+- Dispatch, technician, parts, and admin workflows should continue to work even when a user does not have a Discord account.
 
-The next product phase is to make Ops Hub own more of the system-of-action layer for queues, next actions, role-specific workflow views, and operational follow-up while still respecting BlueFolder as a core system of record.
+## Documentation
 
-Current app-facing backend surfaces now cover:
-
-- technician mobile workflow routes
-- dispatch board, queue, SR detail, route preview, optimized route preview, heatmap, bulk attention, and intake-profile routes
-- parts board, parts case, tracked request, and BlueFolder-native parts update routes
-- BlueFolder tenant status catalog and normalized SR status semantics for frontend clients
-
-Operational note:
-
-- dispatch technician visibility now uses the best available BlueFolder operator roster, including recent assigned technicians when the tenant active-user directory is incomplete
-- dispatch board rows now carry BlueFolder `userType` role hints so explicit dispatch/admin users can be flagged and excluded from routeable technician counts
-- dispatch board requests now render from the latest available workflow snapshot and refresh in the background, which keeps the board responsive instead of blocking on long workflow refreshes
-- parts cases now supplement assignment-derived workflow state with tenant-wide SRs whose current BlueFolder status still maps to active parts-needed work
-
-## Start Here
-
-If you are using the bot day to day:
+Operator guides:
 
 - `docs/user-guide.md`
 - `docs/technician-guide.md`
 - `docs/dispatch-guide.md`
-- `docs/dispatch-sms-adapters.md`
 - `docs/parts-guide.md`
 - `docs/admin-guide.md`
 - `docs/workflow-guide.md`
 
-If you are operating or deploying the bot:
+Operational and architecture docs:
 
 - `docs/cutover-checklist.md`
 - `docs/troubleshooting.md`
-
-If you are shaping the next product phase:
-
-- `docs/roadmap.md`
 - `docs/frontend-architecture.md`
+- `docs/roadmap.md`
+- `docs/dispatch-sms-adapters.md`
 
-## Current Roles
+Discord reference:
 
-Business-facing role model:
+- `docs/discord-command-reference.md`
 
-- `Admin`
-- `Dispatch`
-- `Parts`
-- `Technician`
+## API Surface
 
-Current implementation note:
-
-- `OPS_HUB_TECHNICIAN_*` settings are technician-facing
-- `OPS_HUB_DISPATCHER_*` settings are dispatch-facing
-- `OPS_HUB_PARTS_*` settings are parts-facing
-
-## Command Overview
-
-Open utility commands:
-
-- `/ping`
-- `/help`
-
-Technician / dispatch / admin:
-
-- `/job`
-- `/assignments`
-- `/customer`
-
-Dispatch / admin:
-
-- `/tech_assignments`
-- `/tech_job`
-- `/dispatch_board`
-- `/dispatch_attention`
-- `/triage_disposition`
-- `/attention_ack`
-- `/attention_snooze`
-- `/attention_assign`
-- `/attention_clear_owner`
-- `/attention_unsnooze`
-- `/attention_reopen`
-- `/attention_history`
-- `/dispatch_next`
-
-Technician / parts / admin:
-
-- `/part_request`
-- `/my_part_requests`
-- `/missing_part`
-- `/damaged_part`
-
-Technician / admin:
-
-- `/route_map`
-- `/eta`
-- `/enroute`
-- `/start`
-- `/no_answer`
-- `/not_home`
-- `/reschedule_needed`
-- `/note`
-- `/mdlsn`
-- `/photo_archive`
-
-Technician / parts / dispatch / admin:
-
-- `/parts_brief`
-- `/parts_notes`
-- `/photo_status`
-
-Parts / admin:
-
-- `/part`
-- `/part_requests`
-- `/part_request_detail`
-- `/part_update`
-- `/part_claim`
-- `/part_unclaim`
-- `/part_sync`
-- `/part_reconcile`
-- `/part_ordered`
-- `/part_eta`
-- `/part_tracking`
-- `/part_received`
-- `/part_ready`
-
-Admin only:
-
-- `/ops_status`
-- `/config_check`
-- `/service_status`
-- `/recent_notices`
-- `/policy_status`
-- `/policy_preview`
-- `/policy_run_now`
-- `/bluefolder_techs`
-- `/export_member_map`
-- `/suggest_tech_map`
-- `/lookup_member`
-- `/technician_mappings`
-- `/export_technician_mappings`
-- `/import_technician_mappings`
-- `/reload_technician_mappings`
-- `/set_technician_mapping`
-- `/remove_technician_mapping`
-- `/command_access`
-
-## Main Workflows
-
-### Job And Assignment Lookup
-
-- `/job` supports direct SR lookup
-- `/job` also supports mapped self-context when no reference is provided
-- `/assignments` shows the current mapped technician assignment view
-- `/customer` gives a quick SR customer/location snapshot in the field
-- dispatch has dedicated one-tech, team-board, triage, and next-action views
-
-### Technician Field Updates
-
-Ops Hub can log fast field updates directly back to BlueFolder and route notices to dispatch when needed:
-
-- `/eta`
-- `/enroute`
-- `/start`
-- `/no_answer`
-- `/not_home`
-- `/reschedule_needed`
-- `/note`
-
-These commands are intentionally shaped as workflow events so future side effects like customer SMS can be added without changing the command model.
-
-### BlueFolder-Native Parts Flow
-
-Ops Hub supports the parts comment/update lifecycle directly against BlueFolder:
-
-- `/parts_brief`
-- `/parts_notes`
-- `/missing_part`
-- `/damaged_part`
-- `/part_ordered`
-- `/part_eta`
-- `/part_tracking`
-- `/part_received`
-- `/part_ready`
-
-This aligns the bot with the real business workflow instead of forcing a separate parallel system.
-
-The BlueFolder-native path also supports:
-
-- normalized lifecycle stage summaries
-- recommended next-action guidance
-- dispatcher attention filtering by stage or technician
-- queue-based workflow objects that survive across command invocations
-
-That means statuses like `Need Parts`, `Waiting Parts`, and `Quote Needed` do not need to rely on BlueFolder comments plus Teams memory alone. Ops Hub can derive a queue item, route it to the right audience, and keep the next action and follow-up owner visible until the handoff is complete.
-
-Ops Hub now also supports early triage workflow stages for first-time-fix planning:
-
-- `new_sr_triage`
-- `model_serial_needed`
-- `likely_parts_previsit`
-- `diagnostic_required`
-- `previsit_quote_needed`
-
-Those stages are workflow-state owned today. They are derived from current SR status hints and dispatcher triage decisions, even though BlueFolder is still the source record.
-
-### Supplemental Internal Parts Queue
-
-Ops Hub also has an internal tracked parts queue for coordination where it helps:
-
-- `/part_request`
-- `/my_part_requests`
-- `/part_requests`
-- `/part_request_detail`
-- `/part_update`
-- `/part_claim`
-- `/part_unclaim`
-- `/part_sync`
-- `/part_reconcile`
-
-That queue is supplemental. The long-term direction is still BlueFolder-centered operations.
-
-## How The Bot Works In Discord
-
-- Commands are used with slash commands like `/job` or `/customer`
-- Most replies are ephemeral, which means only the person who ran the command sees the reply
-- BlueFolder is still the main operational record
-- Ops Hub helps the team move faster inside Discord while still writing the important updates back to BlueFolder
-- Dispatch queue actions now persist as Ops Hub workflow state, not just one-off command output
-
-## Workflow State
-
-Ops Hub now has a real workflow-state layer for dispatch and parts.
-
-Current workflow objects:
-
-- `attention_item`
-- `parts_case`
-
-Current queue states:
-
-- `open`
-- `acknowledged`
-- `snoozed`
-
-Dispatch can now:
-
-- inspect queue state with `/dispatch_board`, `/dispatch_attention`, and `/attention_history`
-- mutate queue state with `/attention_ack`, `/attention_snooze`, `/attention_assign`, `/attention_clear_owner`, `/attention_unsnooze`, and `/attention_reopen`
-- work from a persisted audit trail instead of only ephemeral command output
-
-The policy runner now distinguishes:
-
-- urgent open items
-- reopened urgent items
-- long-suppressed urgent items
-
-See `docs/workflow-guide.md` for the operator model.
-
-## Quick Start
-
-```bash
-cd ops-hub
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-cp .env.example .env
-python -m ops_hub
-```
-
-Once `OPS_HUB_DISCORD_TOKEN` is set, the bot should start and register the current command surface.
-
-To enable BlueFolder integration, set:
-
-- `OPS_HUB_BLUEFOLDER_API_PATH`
-- `OPS_HUB_BLUEFOLDER_API_KEY`
-- either `OPS_HUB_BLUEFOLDER_ACCOUNT_NAME` or `OPS_HUB_BLUEFOLDER_BASE_URL`
-
-To enable Discord notice routing, optionally set:
-
-- `OPS_HUB_NOTIFICATION_CHANNEL_ID` for a default notice channel
-- `OPS_HUB_NOTIFICATION_CHANNEL_MAP` to route topic families like `parts` or `dispatch` to specific channels
-
-Notification routing is prefix-based, so more specific queue-policy topics can go to different audiences.
-
-Example prefixes:
-
-- `dispatch.scheduling_attention.owner_gap`
-- `dispatch.scheduling_attention.reopened`
-- `dispatch.scheduling_attention.suppressed`
-- `parts.received_attention`
-
-To enable background workflow policy execution, also set:
-
-- `OPS_HUB_ENABLE_WORKFLOW_POLICY_RUNNER=true`
-- `OPS_HUB_WORKFLOW_POLICY_INTERVAL_SECONDS`
-- optionally `OPS_HUB_WORKFLOW_STATE_FILE` to persist workflow state to disk
-
-To enable the technician app API, also set:
-
-- `OPS_HUB_ENABLE_TECHNICIAN_API=true`
-- `OPS_HUB_TECHNICIAN_API_HOST`
-- `OPS_HUB_TECHNICIAN_API_PORT`
-- `OPS_HUB_TECHNICIAN_API_TOKEN`
-
-Current technician app routes:
-
-- `GET /health`
-- `GET /tech/me/today`
-- `GET /tech/jobs`
-- `GET /tech/jobs/<sr_id>`
-- `GET /tech/jobs/<sr_id>/photos`
-- `GET /tech/jobs/<sr_id>/parts`
-- `GET /tech/jobs/<sr_id>/timeline`
-- `POST /tech/jobs/<sr_id>/call_ahead`
-- `POST /tech/jobs/<sr_id>/status`
-- `POST /tech/jobs/<sr_id>/notes`
-- `POST /tech/jobs/<sr_id>/parts`
-- `POST /tech/jobs/<sr_id>/quote_needed`
-- `POST /tech/jobs/<sr_id>/reschedule`
-- `POST /tech/jobs/<sr_id>/photo_compliance`
-- `POST /tech/jobs/<sr_id>/photos/prepare`
-
-Requests use `Authorization: Bearer <token>` and resolve the technician from either:
-
-- query `technician_id=<bluefolder_user_id>` or `technician_id=<discord_user_id>`
-- header `X-Technician-Subject: <bluefolder_user_id>` or `X-Technician-Subject: <discord_user_id>`
-- explicit BlueFolder-prefixed tokens like `bf:<bluefolder_user_id>` also work
-
-Current dispatch app routes:
+Current app-facing routes include:
 
 - `GET /bluefolder/status_catalog`
 - `GET /dispatch/board`
@@ -373,97 +80,73 @@ Current dispatch app routes:
 - `POST /dispatch/attention/<item_id>/clear_owner`
 - `GET /dispatch/sr/<sr_id>/customer`
 - `GET /dispatch/sr/<sr_id>/timeline`
+- `GET /dispatch/sr/<sr_id>/work`
+- `GET /dispatch/sr/<sr_id>/photo_compliance`
 - `GET /dispatch/sr/<sr_id>/sms_capabilities`
 - `GET /dispatch/sr/<sr_id>/sms/history`
 - `POST /dispatch/sr/<sr_id>/sms/preview`
 - `POST /dispatch/sr/<sr_id>/sms/send`
 - `GET /dispatch/routes/preview`
+- `POST /dispatch/routes/simulate`
 - `GET /dispatch/routes/heatmap`
 - `GET /dispatch/intake/formats`
+- `GET /dispatch/intake/profiles`
+- `POST /dispatch/intake/profiles`
+- `POST /dispatch/intake/upload`
 - `POST /dispatch/intake/analyze`
 - `POST /dispatch/intake/preview`
 - `POST /dispatch/intake/import`
+- `GET /parts/board`
+- `GET /parts/cases`
+- `GET /parts/cases/<reference>`
+- `GET /parts/cases/<reference>/timeline`
+- `GET /parts/requests`
+- `GET /parts/requests/<request_id>`
+- `POST /parts/requests/<request_id>/claim`
+- `POST /parts/requests/<request_id>/unclaim`
+- `POST /parts/requests/<request_id>/status`
+- `POST /parts/requests/sync`
+- `POST /parts/requests/reconcile`
+- `POST /parts/sr/<sr_id>/ordered`
+- `POST /parts/sr/<sr_id>/eta`
+- `POST /parts/sr/<sr_id>/tracking`
+- `POST /parts/sr/<sr_id>/received`
+- `POST /parts/sr/<sr_id>/ready`
 
-Dispatch and parts payloads now include normalized BlueFolder SR `statusMeta` fields when an SR status is present. Those fields are derived from the tenant status catalog when available and include flags such as `isClosed`, `isQuoteNeeded`, `isActiveParts`, `isWaitingCustomer`, `isScheduling`, and `isReview`.
+## Configuration
 
-Dispatch attention owner assignment is now BlueFolder-first. `GET /dispatch/attention` returns `ownerOptions` built from dispatch-capable BlueFolder users, and `POST /dispatch/attention/<item_id>/assign` accepts `assignedOwnerBluefolderUserId`. Legacy `assignedOwnerDiscordUserId` input is still accepted for compatibility, but Discord linkage is treated as optional enrichment rather than the core owner identity.
+Ops Hub uses environment variables through `.env`.
 
-Dispatch SMS groundwork is now live behind a provider seam. The default `dry_run` provider records preview/send attempts without sending real messages, while the config surface is ready for a Twilio-class adapter later. Set `OPS_HUB_SMS_PROVIDER`, `OPS_HUB_SMS_FROM_NUMBER`, and `OPS_HUB_SMS_AUDIT_FILE` to turn on the SR-level SMS capability and audit trail.
+The main groups are:
 
-Dispatch requests use the same bearer token and resolve the caller from either:
+- Discord and role access
+- technician API host/token settings
+- BlueFolder credentials and connection settings
+- workflow, notification, and store-file paths
+- optional parts handoff integration
+- optional photo archive/mailbox integration
+- optional ServiceSmith intake profile storage
+- optional SMS provider settings
 
-- query `dispatcher_id=<discord_user_id>`
-- header `X-Dispatch-Subject: <discord_user_id>`
+For the supported variables and inline examples, use:
 
-Dispatch API access currently requires the resolved user to be an Ops Hub dispatcher or admin.
+- `.env.example`
 
-BlueFolder operator roles are inferred from BlueFolder user roles first, then optionally overridden locally through `OPS_HUB_OPERATOR_ROLE_FILE`. That override file is a JSON object keyed by BlueFolder user id, for example:
+## Local Run
 
-```json
-{
-  "33491758": "parts"
-}
-```
-
-## Project Layout
-
-```text
-ops-hub/
-├── .env.example
-├── pyproject.toml
-├── README.md
-├── docs/
-│   ├── milestones.md
-│   └── photo-ingest-scope.md
-├── src/
-│   └── ops_hub/
-│       ├── bot/
-│       ├── core/
-│       ├── integrations/
-│       ├── models/
-│       └── services/
-└── tests/
-```
-
-Key areas:
-
-- `src/ops_hub/bot/`: Discord client and cogs
-- `src/ops_hub/services/`: business/service layer
-- `src/ops_hub/integrations/`: wrappers around external/local systems
-- `src/ops_hub/core/`: config, logging, and dependency wiring
-- `tests/`: regression coverage
-
-## Development
-
-Typical local loop:
+Create a virtual environment, install the package, then start Ops Hub:
 
 ```bash
+python -m venv .venv
 source .venv/bin/activate
-PYTHONPATH=src pytest -q
+pip install -e .
+cp .env.example .env
+PYTHONPATH=src python -m ops_hub
 ```
 
-The codebase is structured to keep bot behavior, service logic, and integration boundaries separate so workflows can be tested without coupling everything to Discord or external systems.
+## Notes
 
-## Docs
-
-User and operator docs live in `docs/`:
-
-- `docs/user-guide.md`
-- `docs/technician-guide.md`
-- `docs/dispatch-guide.md`
-- `docs/parts-guide.md`
-- `docs/dispatch-sms-adapters.md`
-- `docs/admin-guide.md`
-- `docs/troubleshooting.md`
-
-Internal planning docs:
-
-- `docs/milestones.md`
-- `docs/photo-ingest-scope.md`
-- `docs/cutover-checklist.md`
-
-## Project Direction
-
-Ops Hub is the app and platform name.
-
-`Parts handoff` is the optional downstream export/import path for tracked parts requests. It is not the name of the bot or the PartsDesk app.
+- The dispatch board and attention queue now render from the latest workflow snapshot first, then refresh in the background.
+- Parts cases are no longer limited only to the currently scanned assignment set; tenant-wide parts-active SRs can surface as cases too.
+- Dispatch attention ownership is BlueFolder-first. Discord owner ids remain compatibility input, not the preferred model.
+- The default SMS provider mode is `dry_run`, which records preview and send attempts without sending real texts.

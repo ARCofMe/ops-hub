@@ -57,6 +57,7 @@ Then go to the role guide that matches your job:
 - `parts-guide.md`
 - `admin-guide.md`
 - `workflow-guide.md` if you need to understand queue status and policy behavior
+- `discord-command-reference.md` if you need the full command inventory
 
 ## Typical Use Pattern
 
