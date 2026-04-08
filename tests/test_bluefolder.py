@@ -15,6 +15,7 @@ from ops_hub.models.requests import (
     CustomerContactSummary,
     JobLookupRequest,
     PartsCaseRecord,
+    TechnicianCloseoutDraft,
     TechnicianMappingRecord,
     WorkflowEventRecord,
     WorkflowStateSnapshot,
@@ -2692,3 +2693,99 @@ def test_dispatch_service_sends_sr_sms_payload() -> None:
 
     assert payload["success"] is True
     assert payload["status"] == "dry_run"
+
+
+def test_bluefolder_adapter_uses_closeout_matrix_for_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "technician_closeout_matrix.json").write_text(
+        '{"oow_hourly":{"label":"Customer Hourly","itemDescription":"Customer Hourly","billable":true,"billingStatus":"billable"}}',
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter()
+
+    preview = asyncio.run(
+        adapter.preview_technician_closeout(
+            TechnicianCloseoutDraft(
+                sr_id=100,
+                labor_code="oow_hourly",
+                work_performed="Replaced failed inlet valve.",
+                started_at_epoch_ms=1_000,
+                ended_at_epoch_ms=5_401_000,
+                signed_by="Pat Customer",
+                customer_approved=True,
+            )
+        )
+    )
+
+    assert preview.labor_label == "Customer Hourly"
+    assert preview.billable is True
+    assert preview.signoff_label == "Customer approved and signed by Pat Customer."
+
+
+def test_bluefolder_adapter_submit_closeout_attaches_receipt(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "technician_closeout_matrix.json").write_text(
+        '{"warranty":{"label":"Warranty Labor","itemDescription":"Warranty Labor","billable":false,"billingStatus":"nonbillable"}}',
+        encoding="utf-8",
+    )
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            LABOR_CALLS = []
+            COMMENT_CALLS = []
+            ATTACHMENT_CALLS = []
+
+            class _ServiceRequests:
+                def add_labor(self, service_request_id, user_id, duration, **fields):
+                    LABOR_CALLS.append((service_request_id, user_id, duration, fields))
+                    return {"ok": True}
+
+                def add_comment(self, service_request_id, comment, user_id=None, comment_is_public=False):
+                    COMMENT_CALLS.append((service_request_id, comment, user_id, comment_is_public))
+                    return {"ok": True}
+
+            class _Attachments:
+                def add_bytes_to_service_request(self, service_request_id, file_name, file_bytes, description="", content_type=None, is_public=False):
+                    ATTACHMENT_CALLS.append((service_request_id, file_name, file_bytes, description, content_type, is_public))
+                    return {"ok": True}
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.service_requests = _ServiceRequests()
+                    self.attachments = _Attachments()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(base_path=str(tmp_path), api_key="key", account_name="acme")
+
+    result = asyncio.run(
+        adapter.submit_technician_closeout(
+            TechnicianCloseoutDraft(
+                sr_id=100,
+                labor_code="warranty",
+                work_performed="Verified sealed system pressures and completed repair.",
+                started_at_epoch_ms=1_000,
+                ended_at_epoch_ms=3_601_000,
+                signed_by="Pat Customer",
+                customer_approved=True,
+                final_outcome="completed",
+            ),
+            bluefolder_user_id=9001,
+        )
+    )
+
+    module = __import__("bluefolder_api.client", fromlist=["LABOR_CALLS", "ATTACHMENT_CALLS"])
+
+    assert result["ok"] is True
+    assert module.LABOR_CALLS[0][3]["billingStatus"] == "nonbillable"
+    assert module.ATTACHMENT_CALLS[0][1] == "sr-100-fielddesk-closeout.txt"
+    assert b"FieldDesk Closeout Receipt" in module.ATTACHMENT_CALLS[0][2]

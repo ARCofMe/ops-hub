@@ -135,6 +135,11 @@ For the supported variables and inline examples, use:
 
 - `.env.example`
 
+Repository-backed config files:
+
+- `config/operator_roles.json`
+- `config/technician_closeout_matrix.json`
+
 ## Local Run
 
 Create a virtual environment, install the package, then start Ops Hub:
@@ -154,3 +159,4 @@ PYTHONPATH=src python -m ops_hub
 - Dispatch attention ownership is BlueFolder-first. Discord owner ids remain compatibility input, not the preferred model.
 - The default SMS provider mode is `dry_run`, which records preview and send attempts without sending real texts.
 - Technician completed-closeout flows can now compile work summary, elapsed time, labor type, and customer signoff acknowledgement into a BlueFolder labor submission path.
+- The default technician closeout billing matrix now lives in `config/technician_closeout_matrix.json` so warranty, OOW hourly, diagnostic-fee, and declined-repair labor can be tuned without changing app code.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import html
+import json
 import logging
 import os
 from pathlib import Path
@@ -52,6 +53,7 @@ class BlueFolderAdapter:
     _customer_contacts_endpoint_unavailable: bool = False
     _recent_assigned_user_directory_cache: dict[int, dict[str, object]] = field(default_factory=dict)
     _recent_assigned_user_directory_unavailable: bool = False
+    _closeout_matrix_cache: dict[str, dict[str, object]] | None = None
 
     async def get_job_summary(
         self,
@@ -624,7 +626,9 @@ class BlueFolderAdapter:
             ended_at=ended_at,
             duration_minutes=draft.duration_minutes,
         )
-        labor_label, billable = self._closeout_labor_profile(draft.labor_code)
+        profile = self._closeout_labor_profile(draft.labor_code)
+        labor_label = str(profile.get("itemDescription") or profile.get("label") or "Field Service Labor")
+        billable = bool(profile.get("billable", True))
         signoff_label = (
             f"Customer approved and signed by {draft.signed_by.strip()}."
             if draft.customer_approved and (draft.signed_by or "").strip()
@@ -667,23 +671,52 @@ class BlueFolderAdapter:
 
         preview = await self.preview_technician_closeout(draft)
         comment_text = self._build_closeout_comment_text(draft, preview)
+        profile = self._closeout_labor_profile(draft.labor_code)
 
         try:
+            labor_fields = {
+                "dateWorked": preview.date_worked,
+                "startTime": preview.start_time,
+                "itemDescription": preview.labor_label,
+                "comment": comment_text,
+                "commentIsPublic": "false",
+            }
+            billing_status = str(profile.get("billingStatus") or "").strip()
+            if billing_status:
+                labor_fields["billingStatus"] = billing_status
+            item_no = str(profile.get("itemNo") or "").strip()
+            if item_no:
+                labor_fields["itemNo"] = item_no
+            hourly_rate = profile.get("itemUnitPrice")
+            if hourly_rate not in (None, ""):
+                labor_fields["itemUnitPrice"] = str(hourly_rate)
+            unit_cost = profile.get("itemUnitCost")
+            if unit_cost not in (None, ""):
+                labor_fields["itemUnitCost"] = str(unit_cost)
+            taxable = profile.get("taxable")
+            if taxable is not None:
+                labor_fields["taxable"] = str(bool(taxable)).lower()
+
             client.service_requests.add_labor(
                 draft.sr_id,
                 bluefolder_user_id,
                 preview.duration_label,
-                dateWorked=preview.date_worked,
-                startTime=preview.start_time,
-                itemDescription=preview.labor_label,
-                comment=comment_text,
-                commentIsPublic="false",
+                **labor_fields,
             )
             client.service_requests.add_comment(
                 draft.sr_id,
                 f"FieldDesk closeout submitted. {preview.signoff_label}",
                 user_id=bluefolder_user_id,
                 comment_is_public=False,
+            )
+            receipt_name = f"sr-{draft.sr_id}-fielddesk-closeout.txt"
+            client.attachments.add_bytes_to_service_request(
+                draft.sr_id,
+                receipt_name,
+                self._build_closeout_receipt_bytes(draft, preview),
+                description="FieldDesk closeout receipt",
+                content_type="text/plain",
+                is_public=False,
             )
         except Exception as exc:
             logger.exception("BlueFolder closeout labor write failed for SR %s", draft.sr_id)
@@ -1189,17 +1222,22 @@ class BlueFolderAdapter:
         derived = int(max(15, round((ended_at - started_at).total_seconds() / 60)))
         return min(derived, 12 * 60)
 
-    @staticmethod
-    def _closeout_labor_profile(labor_code: str) -> tuple[str, bool]:
-        """Map FieldDesk closeout codes into BlueFolder labor labels."""
+    def _closeout_labor_profile(self, labor_code: str) -> dict[str, object]:
+        """Map FieldDesk closeout codes into BlueFolder billing metadata."""
         normalized = labor_code.strip().casefold()
-        profiles = {
-            "warranty": ("Warranty Labor", False),
-            "oow_hourly": ("OOW Hourly Labor", True),
-            "diagnostic_fee": ("Diagnostic / No Defect Found", True),
-            "declined_repair": ("Declined Repair / Diagnostic", True),
-        }
-        return profiles.get(normalized, ("Field Service Labor", True))
+        matrix = self._load_closeout_matrix()
+        return dict(
+            matrix.get(
+                normalized,
+                {
+                    "label": "Field Service Labor",
+                    "itemDescription": "Field Service Labor",
+                    "billable": True,
+                    "billingStatus": "billable",
+                    "taxable": False,
+                },
+            )
+        )
 
     @staticmethod
     def _format_duration_label(duration_minutes: int) -> str:
@@ -1223,6 +1261,56 @@ class BlueFolderAdapter:
         if (draft.outcome_note or "").strip():
             lines.append(f"Outcome note: {' '.join((draft.outcome_note or '').split()).strip()}")
         return "\n".join(lines)
+
+    def _build_closeout_receipt_bytes(
+        self,
+        draft: TechnicianCloseoutDraft,
+        preview: TechnicianCloseoutPreview,
+    ) -> bytes:
+        """Build a simple closeout receipt artifact for attachment storage."""
+        receipt = "\n".join(
+            [
+                "FieldDesk Closeout Receipt",
+                f"SR: {draft.sr_id}",
+                f"Labor code: {draft.labor_code}",
+                f"Labor label: {preview.labor_label}",
+                f"Date worked: {preview.date_worked}",
+                f"Time worked: {preview.start_time} - {preview.end_time}",
+                f"Duration: {preview.duration_label}",
+                f"Billable: {'yes' if preview.billable else 'no'}",
+                f"Customer approved: {'yes' if draft.customer_approved else 'no'}",
+                f"Signed by: {(draft.signed_by or '').strip() or 'not captured'}",
+                f"Outcome: {draft.final_outcome}",
+                "",
+                "Work performed:",
+                preview.work_performed,
+                "",
+                "Outcome note:",
+                " ".join((draft.outcome_note or "").split()).strip() or "none",
+            ]
+        )
+        return receipt.encode("utf-8")
+
+    def _load_closeout_matrix(self) -> dict[str, dict[str, object]]:
+        """Load the technician closeout billing matrix from config when available."""
+        if self._closeout_matrix_cache is not None:
+            return self._closeout_matrix_cache
+        path = Path.cwd() / "config" / "technician_closeout_matrix.json"
+        if not path.exists():
+            self._closeout_matrix_cache = {}
+            return self._closeout_matrix_cache
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.exception("Failed to load technician closeout matrix from %s", path)
+            self._closeout_matrix_cache = {}
+            return self._closeout_matrix_cache
+        matrix: dict[str, dict[str, object]] = {}
+        for key, value in raw.items() if isinstance(raw, dict) else ():
+            if isinstance(key, str) and isinstance(value, dict):
+                matrix[key.strip().casefold()] = dict(value)
+        self._closeout_matrix_cache = matrix
+        return self._closeout_matrix_cache
 
     def _resolve_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

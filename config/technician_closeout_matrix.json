@@ -1,0 +1,30 @@
+{
+  "warranty": {
+    "label": "Warranty Labor",
+    "itemDescription": "Warranty Labor",
+    "billable": false,
+    "billingStatus": "nonbillable",
+    "taxable": false
+  },
+  "oow_hourly": {
+    "label": "OOW Hourly Labor",
+    "itemDescription": "OOW Hourly Labor",
+    "billable": true,
+    "billingStatus": "billable",
+    "taxable": false
+  },
+  "diagnostic_fee": {
+    "label": "Diagnostic / No Defect Found",
+    "itemDescription": "Diagnostic / No Defect Found",
+    "billable": true,
+    "billingStatus": "billable",
+    "taxable": false
+  },
+  "declined_repair": {
+    "label": "Declined Repair / Diagnostic",
+    "itemDescription": "Declined Repair / Diagnostic",
+    "billable": true,
+    "billingStatus": "billable",
+    "taxable": false
+  }
+}
