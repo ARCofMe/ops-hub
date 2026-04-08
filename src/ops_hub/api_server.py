@@ -175,14 +175,16 @@ async def dispatch_technician_api_request(
                         actor_user_id=dispatcher_user_id,
                     )
                 elif action == "assign":
-                    assigned_owner_discord_user_id = int(payload_body.get("assignedOwnerDiscordUserId") or 0)
-                    if assigned_owner_discord_user_id <= 0:
+                    assigned_owner_bluefolder_user_id = int(payload_body.get("assignedOwnerBluefolderUserId") or 0) or None
+                    assigned_owner_discord_user_id = int(payload_body.get("assignedOwnerDiscordUserId") or 0) or None
+                    if assigned_owner_bluefolder_user_id is None and assigned_owner_discord_user_id is None:
                         return HTTPStatus.BAD_REQUEST, {
                             "success": False,
-                            "message": "assignedOwnerDiscordUserId must be a positive Discord user id.",
+                            "message": "assignedOwnerBluefolderUserId must be a positive BlueFolder user id.",
                         }
                     payload = await container.dispatch_service.assign_dispatch_attention_item(
                         item_id=item_id,
+                        assigned_owner_bluefolder_user_id=assigned_owner_bluefolder_user_id,
                         assigned_owner_discord_user_id=assigned_owner_discord_user_id,
                         actor_user_id=dispatcher_user_id,
                     )

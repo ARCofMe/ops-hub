@@ -381,12 +381,22 @@ Current dispatch app routes:
 
 Dispatch and parts payloads now include normalized BlueFolder SR `statusMeta` fields when an SR status is present. Those fields are derived from the tenant status catalog when available and include flags such as `isClosed`, `isQuoteNeeded`, `isActiveParts`, `isWaitingCustomer`, `isScheduling`, and `isReview`.
 
+Dispatch attention owner assignment is now BlueFolder-first. `GET /dispatch/attention` returns `ownerOptions` built from dispatch-capable BlueFolder users, and `POST /dispatch/attention/<item_id>/assign` accepts `assignedOwnerBluefolderUserId`. Legacy `assignedOwnerDiscordUserId` input is still accepted for compatibility, but Discord linkage is treated as optional enrichment rather than the core owner identity.
+
 Dispatch requests use the same bearer token and resolve the caller from either:
 
 - query `dispatcher_id=<discord_user_id>`
 - header `X-Dispatch-Subject: <discord_user_id>`
 
 Dispatch API access currently requires the resolved user to be an Ops Hub dispatcher or admin.
+
+BlueFolder operator roles are inferred from BlueFolder user roles first, then optionally overridden locally through `OPS_HUB_OPERATOR_ROLE_FILE`. That override file is a JSON object keyed by BlueFolder user id, for example:
+
+```json
+{
+  "33491758": "parts"
+}
+```
 
 ## Project Layout
 

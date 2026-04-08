@@ -15,6 +15,7 @@ from ops_hub.services.dispatch import DispatchService
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
+from ops_hub.services.operator_role_store import OperatorRoleStore
 from ops_hub.services.parts_cannon import PartsHandoffService
 from ops_hub.services.photo_feature_flags import PhotoFeatureFlagsService
 from ops_hub.services.photo_feature_store import PhotoFeatureStore
@@ -59,6 +60,11 @@ def build_container(settings: Settings) -> ServiceContainer:
         settings=settings,
         store=OperatorMappingStore(
             file_path=Path(settings.technician_mapping_file).expanduser() if settings.technician_mapping_file else None,
+        ),
+        role_store=OperatorRoleStore(
+            file_path=Path(settings.operator_role_file).expanduser()
+            if settings.operator_role_file
+            else Path.cwd() / "config" / "operator_roles.json",
         ),
     )
     photo_feature_flags_service = PhotoFeatureFlagsService(

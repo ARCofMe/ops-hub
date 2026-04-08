@@ -717,6 +717,35 @@ def test_dispatch_posts_attention_ack() -> None:
     assert payload["actor_user_id"] == 99
 
 
+def test_dispatch_posts_attention_assign_with_bluefolder_owner() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            assign_dispatch_attention_item=lambda **kwargs: asyncio.sleep(0, result=kwargs)
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/attention/dispatch:SR-100:quote_needed/assign",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+            body={"assignedOwnerBluefolderUserId": 1001},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["item_id"] == "dispatch:SR-100:quote_needed"
+    assert payload["assigned_owner_bluefolder_user_id"] == 1001
+    assert payload["actor_user_id"] == 99
+
+
 def test_dispatch_returns_sr_customer_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

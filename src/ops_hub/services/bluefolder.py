@@ -43,11 +43,11 @@ class BlueFolderService:
         """Return active BlueFolder users keyed by user id."""
         return await self.adapter.get_active_user_directory()
 
-    async def get_active_user_profiles(self) -> dict[int, dict[str, str | None]]:
+    async def get_active_user_profiles(self) -> dict[int, dict[str, object]]:
         """Return active BlueFolder user profiles keyed by user id."""
         return await self.adapter.get_active_user_profiles()
 
-    async def get_operator_profiles(self) -> dict[int, dict[str, str | None]]:
+    async def get_operator_profiles(self) -> dict[int, dict[str, object]]:
         """Return the best available BlueFolder operator profiles."""
         profiles = await self.adapter.get_active_user_profiles()
         recent_assigned = await self.adapter.get_recent_assigned_user_profiles()

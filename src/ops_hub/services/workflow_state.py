@@ -182,7 +182,7 @@ class WorkflowStateService:
         status_counts = self._count_by(items, key=lambda item: item.status)
         stage_counts = self._count_by(items, key=lambda item: item.stage_label)
         age_counts = self._count_by(items, key=lambda item: item.age_bucket or "unknown")
-        assigned_owner_items = sum(1 for item in items if item.assigned_owner_discord_user_id is not None)
+        assigned_owner_items = sum(1 for item in items if item.assigned_owner_bluefolder_user_id is not None)
         urgent_open_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status == "open")
         urgent_suppressed_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status != "open")
         return {
@@ -209,7 +209,7 @@ class WorkflowStateService:
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent" and item.status == "open"]
         reopened_urgent_items = [item for item in urgent_items if self._was_reopened_recently(item=item, hours=24)]
-        owner_gap_urgent_items = [item for item in urgent_items if item.assigned_owner_discord_user_id is None]
+        owner_gap_urgent_items = [item for item in urgent_items if item.assigned_owner_bluefolder_user_id is None]
         suppressed_urgent_items = [
             item
             for item in attention_items
@@ -381,13 +381,25 @@ class WorkflowStateService:
         *,
         sr_id: int,
         stage: str | None,
-        assigned_owner_discord_user_id: int,
+        assigned_owner_bluefolder_user_id: int | None = None,
+        assigned_owner_discord_user_id: int | None = None,
         actor_user_id: int,
     ) -> AttentionItemRecord:
         """Assign one attention item to a specific follow-up owner."""
 
+        resolved_bluefolder_user_id = assigned_owner_bluefolder_user_id
+        if resolved_bluefolder_user_id is None and assigned_owner_discord_user_id is not None:
+            mappings = self.technician_directory_service.mappings() if self.technician_directory_service is not None else {}
+            resolved_bluefolder_user_id = mappings.get(assigned_owner_discord_user_id) or assigned_owner_discord_user_id
+        if resolved_bluefolder_user_id is None or resolved_bluefolder_user_id <= 0:
+            raise ValueError("Dispatch attention owner assignment requires a positive BlueFolder user id.")
+
         def mutate(item: AttentionItemRecord) -> None:
-            item.assigned_owner_discord_user_id = assigned_owner_discord_user_id
+            item.assigned_owner_bluefolder_user_id = resolved_bluefolder_user_id
+            item.assigned_owner_discord_user_id = (
+                assigned_owner_discord_user_id
+                or self._discord_user_id_for_bluefolder_user_id(resolved_bluefolder_user_id)
+            )
 
         item = self._update_attention_item(
             sr_id=sr_id,
@@ -403,11 +415,11 @@ class WorkflowStateService:
             actor_user_id=actor_user_id,
             actor_label=self._user_label(actor_user_id),
             summary=f"Assigned dispatch attention owner for {item.reference}.",
-            details=f"{item.stage_label} -> {self._user_label(assigned_owner_discord_user_id)}",
+            details=f"{item.stage_label} -> {self._operator_label(bluefolder_user_id=resolved_bluefolder_user_id, discord_user_id=assigned_owner_discord_user_id)}",
             metadata={
                 "item_id": item.item_id,
                 "stage": item.stage,
-                "assigned_owner_discord_user_id": str(assigned_owner_discord_user_id),
+                "assigned_owner_bluefolder_user_id": str(resolved_bluefolder_user_id),
             },
         )
         return item
@@ -422,6 +434,7 @@ class WorkflowStateService:
         """Clear any explicit follow-up owner on one attention item."""
 
         def mutate(item: AttentionItemRecord) -> None:
+            item.assigned_owner_bluefolder_user_id = None
             item.assigned_owner_discord_user_id = None
 
         item = self._update_attention_item(
@@ -581,8 +594,10 @@ class WorkflowStateService:
             f"Stage: `{item.stage_label}`",
             f"Status: `{item.status}`",
         ]
-        if item.assigned_owner_discord_user_id is not None:
-            lines.append(f"Follow-up owner: {self._user_label(item.assigned_owner_discord_user_id)}")
+        if item.assigned_owner_bluefolder_user_id is not None:
+            lines.append(
+                f"Follow-up owner: {self._operator_label(bluefolder_user_id=item.assigned_owner_bluefolder_user_id)}"
+            )
         if item.snoozed_until:
             lines.append(f"Snoozed until: `{item.snoozed_until}`")
         if not history:
@@ -1473,6 +1488,33 @@ class WorkflowStateService:
                 return discord_mention(user_id)
         return str(user_id)
 
+    def _operator_label(
+        self,
+        *,
+        bluefolder_user_id: int | None = None,
+        discord_user_id: int | None = None,
+    ) -> str | None:
+        if self.technician_directory_service is not None:
+            technician_display_label = getattr(self.technician_directory_service, "technician_display_label", None)
+            if callable(technician_display_label):
+                resolved = technician_display_label(
+                    bluefolder_user_id=bluefolder_user_id,
+                    discord_user_id=discord_user_id,
+                )
+                if resolved:
+                    return resolved
+        if bluefolder_user_id is not None:
+            return f"Tech {bluefolder_user_id}"
+        return self._user_label(discord_user_id)
+
+    def _discord_user_id_for_bluefolder_user_id(self, bluefolder_user_id: int | None) -> int | None:
+        if bluefolder_user_id is None or self.technician_directory_service is None:
+            return None
+        reverse_mappings = getattr(self.technician_directory_service, "reverse_mappings", None)
+        if callable(reverse_mappings):
+            return reverse_mappings().get(bluefolder_user_id)
+        return None
+
     def _carry_attention_state(
         self,
         item: AttentionItemRecord,
@@ -1481,7 +1523,14 @@ class WorkflowStateService:
         """Preserve manual workflow actions when the derived item is recomputed."""
         if previous is None:
             return
-        item.assigned_owner_discord_user_id = previous.assigned_owner_discord_user_id
+        item.assigned_owner_bluefolder_user_id = previous.assigned_owner_bluefolder_user_id
+        if item.assigned_owner_bluefolder_user_id is None and previous.assigned_owner_discord_user_id is not None:
+            mappings = self.technician_directory_service.mappings() if self.technician_directory_service is not None else {}
+            item.assigned_owner_bluefolder_user_id = mappings.get(previous.assigned_owner_discord_user_id)
+        item.assigned_owner_discord_user_id = (
+            previous.assigned_owner_discord_user_id
+            or self._discord_user_id_for_bluefolder_user_id(item.assigned_owner_bluefolder_user_id)
+        )
         item.acknowledged_at = previous.acknowledged_at
         item.acknowledged_by_user_id = previous.acknowledged_by_user_id
         item.snoozed_until = previous.snoozed_until

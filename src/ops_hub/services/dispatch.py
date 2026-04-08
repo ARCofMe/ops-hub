@@ -296,7 +296,11 @@ class DispatchService:
                         f"Stage: `{item.stage_label}`",
                         *([f"Age: `{item.age_bucket}` ({item.age_hours}h)"] if item.age_bucket and item.age_hours is not None else []),
                         f"Technician: {await self._technician_label(bluefolder_user_id=item.owner_bluefolder_user_id)}",
-                        *([f"Follow-up owner: {await self._technician_label(discord_user_id=item.assigned_owner_discord_user_id)}"] if item.assigned_owner_discord_user_id is not None else []),
+                        *(
+                            [f"Follow-up owner: {await self._technician_label(bluefolder_user_id=item.assigned_owner_bluefolder_user_id)}"]
+                            if item.assigned_owner_bluefolder_user_id is not None
+                            else []
+                        ),
                         *([f"Status: `{item.status}`"] if item.status != "open" else []),
                         *([f"Snoozed until: `{item.snoozed_until}`"] if item.snoozed_until else []),
                         *([f"Acknowledged by: {await self._technician_label(discord_user_id=item.acknowledged_by_user_id)}"] if item.acknowledged_by_user_id is not None else []),
@@ -456,16 +460,25 @@ class DispatchService:
         *,
         sr_id: int,
         stage: str | None,
-        assigned_owner_discord_user_id: int,
+        assigned_owner_bluefolder_user_id: int | None = None,
+        assigned_owner_discord_user_id: int | None = None,
         actor_user_id: int,
     ) -> CommandResult:
         """Assign an explicit follow-up owner on one attention item."""
         if self.workflow_state_service is None:
             return CommandResult(message="Dispatch attention actions require the workflow state service.")
+        resolved_bluefolder_user_id = assigned_owner_bluefolder_user_id
+        if resolved_bluefolder_user_id is None:
+            resolved_bluefolder_user_id = self._bluefolder_user_id_for_discord_user_id(assigned_owner_discord_user_id)
+        if resolved_bluefolder_user_id is None and assigned_owner_discord_user_id is not None:
+            resolved_bluefolder_user_id = assigned_owner_discord_user_id
+        if resolved_bluefolder_user_id is None or resolved_bluefolder_user_id <= 0:
+            return CommandResult(message="Dispatch attention owner assignment requires a positive BlueFolder user id.")
         try:
             item = self.workflow_state_service.assign_attention_owner(
                 sr_id=sr_id,
                 stage=stage,
+                assigned_owner_bluefolder_user_id=resolved_bluefolder_user_id,
                 assigned_owner_discord_user_id=assigned_owner_discord_user_id,
                 actor_user_id=actor_user_id,
             )
@@ -864,6 +877,7 @@ class DispatchService:
                 "status": normalized_status,
                 "reference": normalized_reference,
             },
+            "ownerOptions": [self._dispatch_owner_option_payload(record) for record in await self._dispatch_owner_records()],
             "items": [await self._attention_item_payload(item) for item in items],
         }
 
@@ -966,7 +980,11 @@ class DispatchService:
             "partsCase": parts_case,
             "photoCompliance": photo_compliance,
             "nextActions": next_actions,
-            "ownerGapCount": sum(1 for item in attention.get("items", []) if not item.get("assignedOwnerDiscordUserId")),
+            "ownerGapCount": sum(
+                1
+                for item in attention.get("items", [])
+                if not (item.get("assignedOwnerBluefolderUserId") or item.get("assignedOwnerDiscordUserId"))
+            ),
             "urgentCount": sum(1 for item in attention.get("items", []) if item.get("ageBucket") == "urgent"),
         }
 
@@ -1329,7 +1347,8 @@ class DispatchService:
         self,
         *,
         item_id: str,
-        assigned_owner_discord_user_id: int,
+        assigned_owner_bluefolder_user_id: int | None = None,
+        assigned_owner_discord_user_id: int | None = None,
         actor_user_id: int,
     ) -> dict[str, object]:
         """Assign one attention item by item id."""
@@ -1337,6 +1356,7 @@ class DispatchService:
         result = await self.assign_dispatch_attention_owner(
             sr_id=item.sr_id,
             stage=item.stage,
+            assigned_owner_bluefolder_user_id=assigned_owner_bluefolder_user_id,
             assigned_owner_discord_user_id=assigned_owner_discord_user_id,
             actor_user_id=actor_user_id,
         )
@@ -1387,9 +1407,15 @@ class DispatchService:
                 elif action == "reopen":
                     payload = await self.reopen_dispatch_attention_item(item_id=item_id, actor_user_id=actor_user_id)
                 elif action == "assign":
+                    assigned_owner_bluefolder_user_id = int(
+                        payload_body.get("assignedOwnerBluefolderUserId")
+                        or self._bluefolder_user_id_for_discord_user_id(int(payload_body.get("assignedOwnerDiscordUserId") or 0))
+                        or 0
+                    )
                     payload = await self.assign_dispatch_attention_item(
                         item_id=item_id,
-                        assigned_owner_discord_user_id=int(payload_body.get("assignedOwnerDiscordUserId") or 0),
+                        assigned_owner_bluefolder_user_id=assigned_owner_bluefolder_user_id or None,
+                        assigned_owner_discord_user_id=int(payload_body.get("assignedOwnerDiscordUserId") or 0) or None,
                         actor_user_id=actor_user_id,
                     )
                 elif action == "clear_owner":
@@ -1573,10 +1599,19 @@ class DispatchService:
             return await operator_records(bluefolder_service=self.bluefolder_service)
         return self.technician_directory_service.mapping_records()
 
+    async def _dispatch_owner_records(self) -> list[TechnicianMappingRecord]:
+        """Return BlueFolder-backed follow-up owner choices for dispatch surfaces."""
+        if self.technician_directory_service is None:
+            return []
+        owner_records = getattr(self.technician_directory_service, "dispatch_owner_records", None)
+        if callable(owner_records):
+            return await owner_records(bluefolder_service=self.bluefolder_service)
+        return []
+
     @staticmethod
     def _is_dispatch_board_candidate(record: TechnicianMappingRecord) -> bool:
         """Return whether a BlueFolder operator should appear as a routeable technician."""
-        return record.bluefolder_role not in {"admin", "dispatch"}
+        return record.bluefolder_role not in {"admin", "dispatch", "parts"}
 
     def _get_attention_item_for_action(self, *, item_id: str):
         """Resolve one attention item before mutating it."""
@@ -1596,6 +1631,15 @@ class DispatchService:
             discord_user_id=discord_user_id,
             bluefolder_user_id=bluefolder_user_id,
         )
+
+    def _dispatch_owner_option_payload(self, record: TechnicianMappingRecord) -> dict[str, object]:
+        return {
+            "bluefolderUserId": record.bluefolder_user_id,
+            "discordUserId": record.discord_user_id,
+            "label": record.display_name or record.global_name or record.username or record.bluefolder_name or f"Tech {record.bluefolder_user_id}",
+            "role": record.bluefolder_role,
+            "roles": list(record.bluefolder_roles),
+        }
 
     def _workflow_event_payload(self, event) -> dict[str, object]:
         """Serialize a workflow event for API responses."""
@@ -1724,11 +1768,12 @@ class DispatchService:
             f"Stage: `{item.stage_label}`",
             f"Status: `{item.status}`",
         ]
-        if item.assigned_owner_discord_user_id is not None:
-            lines.append(
-                "Follow-up owner: "
-                f"{await self._technician_label(discord_user_id=item.assigned_owner_discord_user_id)}"
+        if item.assigned_owner_bluefolder_user_id is not None:
+            owner_label = await self._technician_label(
+                discord_user_id=item.assigned_owner_discord_user_id,
+                bluefolder_user_id=None if item.assigned_owner_discord_user_id is not None else item.assigned_owner_bluefolder_user_id,
             )
+            lines.append(f"Follow-up owner: {owner_label}")
         if item.snoozed_until:
             lines.append(f"Snoozed until: `{item.snoozed_until}`")
         if item.next_action:
@@ -1755,9 +1800,11 @@ class DispatchService:
                 discord_user_id=item.owner_discord_user_id,
                 bluefolder_user_id=item.owner_bluefolder_user_id,
             ),
+            "assignedOwnerBluefolderUserId": item.assigned_owner_bluefolder_user_id,
             "assignedOwnerDiscordUserId": item.assigned_owner_discord_user_id,
             "assignedOwnerLabel": await self._technician_label_payload(
                 discord_user_id=item.assigned_owner_discord_user_id,
+                bluefolder_user_id=item.assigned_owner_bluefolder_user_id,
             ),
             "acknowledgedAt": item.acknowledged_at,
             "acknowledgedByUserId": item.acknowledged_by_user_id,
@@ -1890,12 +1937,29 @@ class DispatchService:
 
     async def _bluefolder_label(self, bluefolder_user_id: int, *, markdown: bool) -> str:
         """Render a BlueFolder-first label, falling back to a BlueFolder-specific identifier."""
-        user_name = await self.bluefolder_service.get_user_name(bluefolder_user_id)
-        if user_name:
-            return user_name
+        get_user_name = getattr(self.bluefolder_service, "get_user_name", None)
+        if callable(get_user_name):
+            user_name = await get_user_name(bluefolder_user_id)
+            if user_name:
+                return user_name
+        if self.technician_directory_service is not None:
+            technician_display_label = getattr(self.technician_directory_service, "technician_display_label", None)
+            if callable(technician_display_label):
+                label = technician_display_label(bluefolder_user_id=bluefolder_user_id)
+                if label:
+                    return label
         if markdown:
             return f"BlueFolder user `{bluefolder_user_id}`"
         return f"BlueFolder {bluefolder_user_id}"
+
+    def _bluefolder_user_id_for_discord_user_id(self, discord_user_id: int | None) -> int | None:
+        """Resolve a mapped BlueFolder user id from a Discord user id when available."""
+        if discord_user_id is None or self.technician_directory_service is None:
+            return None
+        mappings = getattr(self.technician_directory_service, "mappings", None)
+        if callable(mappings):
+            return mappings().get(discord_user_id)
+        return None
 
     async def _assignments_for_user(
         self,

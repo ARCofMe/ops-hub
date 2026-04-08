@@ -41,10 +41,10 @@ class BlueFolderAdapter:
         "backorder",
         "received",
     )
-    _active_user_directory_cache: dict[int, dict[str, str | None]] = field(default_factory=dict)
+    _active_user_directory_cache: dict[int, dict[str, object]] = field(default_factory=dict)
     _active_user_directory_unavailable: bool = False
     _customer_contacts_endpoint_unavailable: bool = False
-    _recent_assigned_user_directory_cache: dict[int, dict[str, str | None]] = field(default_factory=dict)
+    _recent_assigned_user_directory_cache: dict[int, dict[str, object]] = field(default_factory=dict)
     _recent_assigned_user_directory_unavailable: bool = False
 
     async def get_job_summary(
@@ -701,7 +701,7 @@ class BlueFolderAdapter:
             return text
         return f"Discord user {requested_by_user_id}"
 
-    async def get_active_user_profiles(self) -> dict[int, dict[str, str | None]]:
+    async def get_active_user_profiles(self) -> dict[int, dict[str, object]]:
         """Return BlueFolder active-user profiles keyed by user id."""
         if self._active_user_directory_cache:
             return {user_id: dict(profile) for user_id, profile in self._active_user_directory_cache.items()}
@@ -713,13 +713,13 @@ class BlueFolderAdapter:
             return {}
 
         try:
-            users = client.users.list_active()
+            users = client.users.list_active(list_type="full")
         except Exception as exc:
             self._active_user_directory_unavailable = True
             logger.warning("BlueFolder active-user lookup unavailable: %s", exc)
             return {}
 
-        directory: dict[int, dict[str, str | None]] = {}
+        directory: dict[int, dict[str, object]] = {}
         for row in users or []:
             parsed = self._parse_user_profile(row)
             if parsed is None:
@@ -728,6 +728,7 @@ class BlueFolderAdapter:
                 "name": parsed["name"],
                 "user_type": parsed["user_type"],
                 "role": parsed["role"],
+                "roles": parsed["roles"],
             }
 
         self._active_user_directory_cache = dict(directory)
@@ -770,7 +771,7 @@ class BlueFolderAdapter:
         }
         return parsed["name"]
 
-    async def get_user_profile(self, user_id: int) -> dict[str, str | None] | None:
+    async def get_user_profile(self, user_id: int) -> dict[str, object] | None:
         """Return a BlueFolder user profile when available."""
         directory = await self.get_active_user_profiles()
         if user_id in directory:
@@ -795,11 +796,12 @@ class BlueFolderAdapter:
             "name": parsed["name"],
             "user_type": parsed["user_type"],
             "role": parsed["role"],
+            "roles": parsed["roles"],
         }
         self._active_user_directory_cache[parsed["user_id"]] = dict(profile)
         return profile
 
-    async def get_recent_assigned_user_profiles(self, *, lookback_days: int = 180) -> dict[int, dict[str, str | None]]:
+    async def get_recent_assigned_user_profiles(self, *, lookback_days: int = 180) -> dict[int, dict[str, object]]:
         """Return BlueFolder users seen on recent SR assignments when the user directory is incomplete."""
         if self._recent_assigned_user_directory_cache:
             return {user_id: dict(profile) for user_id, profile in self._recent_assigned_user_directory_cache.items()}
@@ -822,7 +824,7 @@ class BlueFolderAdapter:
             logger.warning("BlueFolder recent assigned-user lookup unavailable: %s", exc)
             return {}
 
-        discovered: dict[int, dict[str, str | None]] = {}
+        discovered: dict[int, dict[str, object]] = {}
         for row in service_requests or []:
             if not isinstance(row, dict):
                 continue
@@ -929,7 +931,7 @@ class BlueFolderAdapter:
         match = re.search(r"(\d+)", reference)
         return match.group(1) if match else None
 
-    def _parse_user_profile(self, row: object) -> dict[str, int | str | None] | None:
+    def _parse_user_profile(self, row: object) -> dict[str, object] | None:
         """Extract a stable id/name/role profile from a BlueFolder user row."""
         if not isinstance(row, dict):
             return None
@@ -942,16 +944,33 @@ class BlueFolderAdapter:
         last_name = str(row.get("lastName") or "").strip()
         name = " ".join(part for part in [first_name, last_name] if part).strip() or f"Tech {user_id}"
         user_type = str(row.get("userType") or "").strip() or None
+        role_names = tuple(
+            role_name
+            for role_name in (
+                str(role.get("customName") or role.get("name") or "").strip()
+                for role in (row.get("roles") or [])
+                if isinstance(role, dict)
+            )
+            if role_name
+        )
         return {
             "user_id": user_id,
             "name": name,
             "user_type": user_type,
-            "role": self._normalize_user_role(user_type),
+            "role": self._normalize_user_role(user_type, role_names),
+            "roles": role_names,
         }
 
     @staticmethod
-    def _normalize_user_role(user_type: str | None) -> str | None:
+    def _normalize_user_role(user_type: str | None, role_names: tuple[str, ...] = ()) -> str | None:
         """Map BlueFolder userType strings into coarse operational roles."""
+        normalized_roles = {str(role or "").strip().casefold() for role in role_names if str(role or "").strip()}
+        if normalized_roles & {"administrator", "bookkeeper"}:
+            return "admin"
+        if normalized_roles & {"scheduler", "service manager", "sales"}:
+            return "dispatch"
+        if normalized_roles & {"lead technician", "technician", "subcontractor"}:
+            return "technician"
         normalized = str(user_type or "").strip().casefold()
         if not normalized:
             return None

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     dispatcher_role_ids: list[int] = []
     technician_bluefolder_user_map: dict[int, int] = {}
     technician_mapping_file: str | None = None
+    operator_role_file: str | None = None
     member_export_path: str | None = None
     member_export_timestamped: bool = True
     parts_request_file: str | None = None
@@ -130,6 +131,7 @@ class Settings(BaseSettings):
             "technician_api_port",
             "technician_api_token",
             "technician_mapping_file",
+            "operator_role_file",
             "member_export_path",
             "member_export_timestamped",
             "operator_mapping_file",

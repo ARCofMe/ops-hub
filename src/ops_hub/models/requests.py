@@ -136,6 +136,7 @@ class TechnicianMappingRecord:
     bluefolder_name: str | None = None
     bluefolder_user_type: str | None = None
     bluefolder_role: str | None = None
+    bluefolder_roles: tuple[str, ...] = ()
     username: str | None = None
     display_name: str | None = None
     global_name: str | None = None
@@ -441,6 +442,7 @@ class AttentionItemRecord:
     photo_checked_at: str | None = None
     photo_should_notify: bool = False
     photo_reason: str | None = None
+    assigned_owner_bluefolder_user_id: int | None = None
     assigned_owner_discord_user_id: int | None = None
     acknowledged_at: str | None = None
     acknowledged_by_user_id: int | None = None

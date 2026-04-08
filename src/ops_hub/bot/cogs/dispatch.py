@@ -161,21 +161,21 @@ class DispatchCog(commands.Cog):
     @app_commands.command(name="attention_assign", description="Assign a follow-up owner to one workflow attention item.")
     @app_commands.describe(
         sr_id="Service request id to assign.",
-        owner_discord_user_id="Discord user id that should own the follow-up.",
+        owner_bluefolder_user_id="BlueFolder user id that should own the follow-up.",
         stage="Optional stage when an SR has more than one attention item.",
     )
     async def attention_assign(
         self,
         interaction: discord.Interaction,
         sr_id: int,
-        owner_discord_user_id: int,
+        owner_bluefolder_user_id: int,
         stage: str | None = None,
     ) -> None:
         """Assign a follow-up owner on one dispatch attention item."""
         result = await self.bot.container.dispatch_service.assign_dispatch_attention_owner(
             sr_id=sr_id,
             stage=stage,
-            assigned_owner_discord_user_id=owner_discord_user_id,
+            assigned_owner_bluefolder_user_id=owner_bluefolder_user_id,
             actor_user_id=interaction.user.id,
         )
         await self._send_deferred_result(interaction, result.message)

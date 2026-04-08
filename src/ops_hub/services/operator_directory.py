@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ops_hub.core.config import Settings
 from ops_hub.models.requests import DiscordMemberRecord, TechnicianIdentity, TechnicianMappingRecord
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
+from ops_hub.services.operator_role_store import OperatorRoleStore
 
 if TYPE_CHECKING:
     from ops_hub.services.bluefolder import BlueFolderService
@@ -21,6 +22,7 @@ class TechnicianDirectoryService:
 
     settings: Settings
     store: OperatorMappingStore
+    role_store: OperatorRoleStore = field(default_factory=OperatorRoleStore)
 
     def resolve_identity(
         self,
@@ -94,10 +96,19 @@ class TechnicianDirectoryService:
         if not bluefolder_profiles and bluefolder_service is not None:
             bluefolder_directory = await bluefolder_service.get_operator_directory()
             bluefolder_profiles = {
-                user_id: {"name": name, "user_type": None, "role": None}
+                user_id: {"name": name, "user_type": None, "role": None, "roles": ()}
                 for user_id, name in bluefolder_directory.items()
             }
         return self._operator_records_from_directory(bluefolder_profiles)
+
+    async def dispatch_owner_records(
+        self,
+        *,
+        bluefolder_service: "BlueFolderService | None" = None,
+    ) -> list[TechnicianMappingRecord]:
+        """Return BlueFolder-backed operators who can own dispatch follow-up work."""
+        records = await self.operator_records(bluefolder_service=bluefolder_service)
+        return [record for record in records if record.bluefolder_role in {"dispatch", "admin", "parts"}]
 
     def reverse_mappings(self) -> dict[int, int]:
         """Return BlueFolder-to-Discord technician mappings."""
@@ -191,9 +202,10 @@ class TechnicianDirectoryService:
 
     def _operator_records_from_directory(
         self,
-        bluefolder_profiles: dict[int, dict[str, str | None]],
+        bluefolder_profiles: dict[int, dict[str, object]],
     ) -> list[TechnicianMappingRecord]:
         """Merge active BlueFolder users with optional Discord-linked metadata."""
+        role_overrides = self.role_store.load()
         bluefolder_to_discord_ids: dict[int, list[int]] = {}
         for discord_user_id, bluefolder_user_id in self.mappings().items():
             bluefolder_to_discord_ids.setdefault(bluefolder_user_id, []).append(discord_user_id)
@@ -209,13 +221,22 @@ class TechnicianDirectoryService:
             discord_user_id = next(iter(sorted(bluefolder_to_discord_ids.get(bluefolder_user_id, []))), None)
             member = member_directory.get(discord_user_id) if discord_user_id is not None else None
             bluefolder_profile = bluefolder_profiles.get(bluefolder_user_id) or {}
+            effective_role = str(
+                role_overrides.get(bluefolder_user_id)
+                or bluefolder_profile.get("role")
+                or ""
+            ).strip() or None
+            bluefolder_roles = tuple(
+                str(role).strip() for role in (bluefolder_profile.get("roles") or ()) if str(role).strip()
+            )
             records.append(
                 TechnicianMappingRecord(
                     discord_user_id=discord_user_id,
                     bluefolder_user_id=bluefolder_user_id,
                     bluefolder_name=str(bluefolder_profile.get("name") or "").strip() or None,
                     bluefolder_user_type=str(bluefolder_profile.get("user_type") or "").strip() or None,
-                    bluefolder_role=str(bluefolder_profile.get("role") or "").strip() or None,
+                    bluefolder_role=effective_role,
+                    bluefolder_roles=bluefolder_roles,
                     username=member.username if member is not None else None,
                     display_name=member.display_name if member is not None else None,
                     global_name=member.global_name if member is not None else None,
