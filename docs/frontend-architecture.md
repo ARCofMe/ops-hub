@@ -141,7 +141,7 @@ Useful query filters:
 - `reference`
 - `status`
 
-Current parts-app support is split intentionally:
+Current PartsDesk support is split intentionally:
 
 - `parts_case` routes give the board and case detail that the app should center on
 - tracked-request routes expose the supplemental internal queue
@@ -153,14 +153,14 @@ The next parts API expansion after the current routes should add direct case-lev
 
 ### Technician App
 
-There is already a native Android project in `ARCoMTechApp`.
+There is already a native Android project in `field-desk`.
 
 Important observations:
 
-- it already has an Ops Hub repository in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt`
-- it already has a backend seam in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt`
+- it already has an Ops Hub repository in `field-desk/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt`
+- it already has a backend seam in `field-desk/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt`
 - it still supports direct BlueFolder mode
-- it already has technician-oriented workflow logic in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/workflow/JobWorkflow.kt`
+- it already has technician-oriented workflow logic in `field-desk/app/src/main/java/com/example/arcomtechapp/workflow/JobWorkflow.kt`
 
 That means the tech app should evolve by deepening the Ops Hub path, not by treating BlueFolder-direct as the long-term primary mode.
 

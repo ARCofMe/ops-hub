@@ -12,7 +12,7 @@ This is the recommended shape for adding SMS notifications to RouteDesk and Ops 
 
 ## Recommended architecture
 
-1. `dispatch-app` emits intent, not provider calls.
+1. `RouteDesk` emits intent, not provider calls.
    Example actions:
    - notify customer that the tech is en route
    - request missing model/serial info
