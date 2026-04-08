@@ -583,10 +583,11 @@ class DispatchService:
     async def get_dispatch_board_payload(self) -> dict[str, object]:
         """Return a structured dispatch board payload for frontend clients."""
         started_at = time.perf_counter()
-        mappings = self._dispatch_mappings()
+        mappings = await self._dispatch_operator_records()
         if not mappings:
             return {
                 "mappedTechs": 0,
+                "discordLinkedTechs": 0,
                 "activeTechs": 0,
                 "totalVisibleAssignments": 0,
                 "scannedJobs": 0,
@@ -650,6 +651,7 @@ class DispatchService:
 
         return {
             "mappedTechs": len(mappings),
+            "discordLinkedTechs": sum(1 for record in mappings if record.discord_user_id is not None),
             "activeTechs": active_techs,
             "totalVisibleAssignments": total_assignments,
             "scannedJobs": scanned_jobs,
@@ -788,7 +790,7 @@ class DispatchService:
         reference: str | None = None,
     ) -> dict[str, object]:
         """Return structured attention queue payload for frontend clients."""
-        mappings = self._dispatch_mappings()
+        mappings = await self._dispatch_operator_records()
         if self.workflow_state_service is None:
             return {
                 "scannedJobs": 0,
@@ -1148,7 +1150,7 @@ class DispatchService:
         technician_bluefolder_user_id: int | None = None,
     ) -> dict[str, object]:
         """Return a structured assignment heatmap payload."""
-        mappings = self._dispatch_mappings()
+        mappings = await self._dispatch_operator_records()
         if not mappings:
             return {
                 "success": False,
@@ -1525,10 +1527,13 @@ class DispatchService:
         text = (value or "").strip()
         return text or None
 
-    def _dispatch_mappings(self) -> list[TechnicianMappingRecord]:
-        """Return current technician mappings for dispatch surfaces."""
+    async def _dispatch_operator_records(self) -> list[TechnicianMappingRecord]:
+        """Return BlueFolder-first operator records for dispatch surfaces."""
         if self.technician_directory_service is None:
             return []
+        operator_records = getattr(self.technician_directory_service, "operator_records", None)
+        if callable(operator_records):
+            return await operator_records(bluefolder_service=self.bluefolder_service)
         return self.technician_directory_service.mapping_records()
 
     def _get_attention_item_for_action(self, *, item_id: str):

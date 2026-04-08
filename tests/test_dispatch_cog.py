@@ -194,6 +194,38 @@ def test_dispatch_cog_fetches_members_when_guild_cache_is_empty() -> None:
     assert records[0].bluefolder_user_id == 13051
 
 
+def test_dispatch_cog_keeps_unmapped_bluefolder_techs_visible() -> None:
+    cog = _build_cog(
+        dispatcher_user_ids=[99],
+        technician_role_ids=[7],
+        technician_bluefolder_user_map={42: 13051},
+    )
+    interaction = _DummyInteraction(
+        user=_DummyUser(id=99, roles=[]),
+        guild=_DummyGuild(
+            members=[
+                _DummyUser(id=42, roles=[_DummyRole(id=7)]),
+            ]
+        ),
+    )
+
+    async def fake_operator_records(self, *, bluefolder_service):
+        _ = self
+        _ = bluefolder_service
+        return [
+            SimpleNamespace(discord_user_id=42, bluefolder_user_id=13051),
+            SimpleNamespace(discord_user_id=None, bluefolder_user_id=13052),
+        ]
+
+    with patch.object(type(cog.bot.container.technician_directory_service), "operator_records", new=fake_operator_records):
+        records = asyncio.run(cog._technician_dispatch_mappings(interaction))
+
+    assert [(record.discord_user_id, record.bluefolder_user_id) for record in records] == [
+        (42, 13051),
+        (None, 13052),
+    ]
+
+
 def test_dispatch_cog_tech_assignments_sends_result() -> None:
     cog = _build_cog(dispatcher_user_ids=[99])
     interaction = _DummyInteraction(user=_DummyUser(id=99, roles=[]))

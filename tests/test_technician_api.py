@@ -13,14 +13,43 @@ from ops_hub.services.technician_api import TechnicianApiService
 def test_resolve_technician_uses_mapping_subject() -> None:
     service = TechnicianApiService(
         bluefolder_service=SimpleNamespace(),
-        technician_directory_service=SimpleNamespace(mappings=lambda: {123: 9001}),
+        technician_directory_service=SimpleNamespace(
+            mappings=lambda: {123: 9001},
+            technician_display_label=lambda **kwargs: "Mapped Tech" if kwargs.get("bluefolder_user_id") == 9001 else f"Tech {kwargs.get('bluefolder_user_id')}",
+        ),
         parts_cannon_service=SimpleNamespace(),
         photo_ingest_service=SimpleNamespace(),
         workflow_state_service=SimpleNamespace(),
     )
 
-    assert service.resolve_technician(token_subject="123") == (123, 9001)
-    assert service.resolve_technician(token_subject="999") is None
+    resolved = service.resolve_technician(token_subject="123")
+    assert resolved is not None
+    assert resolved.discord_user_id == 123
+    assert resolved.bluefolder_user_id == 9001
+    fallback = service.resolve_technician(token_subject="999")
+    assert fallback is not None
+    assert fallback.discord_user_id is None
+    assert fallback.bluefolder_user_id == 999
+
+
+def test_resolve_technician_accepts_bluefolder_subject_without_mapping() -> None:
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(),
+        technician_directory_service=SimpleNamespace(
+            mappings=lambda: {},
+            technician_display_label=lambda **kwargs: "Field Sam" if kwargs.get("bluefolder_user_id") == 9001 else None,
+        ),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    resolved = service.resolve_technician(technician_id="9001")
+
+    assert resolved is not None
+    assert resolved.discord_user_id is None
+    assert resolved.bluefolder_user_id == 9001
+    assert resolved.actor_label == "Field Sam"
 
 
 def test_get_today_normalizes_assignment_shape() -> None:
@@ -141,13 +170,17 @@ def test_upload_job_photo_attaches_photo_payload() -> None:
             filename="tag.jpg",
             content_type="image/jpeg",
             data_base64=base64.b64encode(b"jpeg-bytes").decode("ascii"),
-            technician_discord_user_id=55,
+            technician_discord_user_id=None,
+            technician_bluefolder_user_id=9001,
+            technician_actor_label="Field Sam",
         )
     )
 
     assert payload == {"success": True, "message": "Photo attached"}
     assert captured["sr_id"] == 100
     assert captured["label"] == "MODEL / SERIAL"
+    assert captured["requested_by_user_id"] == 9001
+    assert captured["requested_by_label"] == "Field Sam"
     assert captured["photo"].filename == "tag.jpg"
     assert captured["photo"].data == b"jpeg-bytes"
 

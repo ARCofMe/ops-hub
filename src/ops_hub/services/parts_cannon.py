@@ -771,7 +771,14 @@ class PartsHandoffService:
     async def _current_parts_cases(self):
         """Return the current derived parts-case list, refreshing shared workflow state when available."""
         if self.workflow_state_service is not None:
-            mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
+            if self.technician_directory_service is None:
+                mappings = []
+            else:
+                operator_records = getattr(self.technician_directory_service, "operator_records", None)
+                if callable(operator_records):
+                    mappings = await operator_records(bluefolder_service=self.bluefolder_service)
+                else:
+                    mappings = self.technician_directory_service.mapping_records()
             await self.workflow_state_service.refresh_dispatch_attention(mappings)
             return list(self.workflow_state_service.current_snapshot().parts_cases)
 

@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ops_hub.core.config import Settings
 from ops_hub.models.requests import DiscordMemberRecord, TechnicianIdentity, TechnicianMappingRecord
 from ops_hub.services.operator_mapping_store import OperatorMappingStore
+
+if TYPE_CHECKING:
+    from ops_hub.services.bluefolder import BlueFolderService
 
 
 @dataclass(slots=True)
@@ -71,6 +75,7 @@ class TechnicianDirectoryService:
             TechnicianMappingRecord(
                 discord_user_id=record.discord_user_id,
                 bluefolder_user_id=record.bluefolder_user_id,
+                bluefolder_name=None,
                 username=member_directory.get(record.discord_user_id).username if record.discord_user_id in member_directory else None,
                 display_name=member_directory.get(record.discord_user_id).display_name if record.discord_user_id in member_directory else None,
                 global_name=member_directory.get(record.discord_user_id).global_name if record.discord_user_id in member_directory else None,
@@ -78,6 +83,15 @@ class TechnicianDirectoryService:
             )
             for record in self.store.current_records()
         ]
+
+    async def operator_records(
+        self,
+        *,
+        bluefolder_service: "BlueFolderService | None" = None,
+    ) -> list[TechnicianMappingRecord]:
+        """Return BlueFolder-first operator records with optional Discord linkage."""
+        bluefolder_directory = await bluefolder_service.get_active_user_directory() if bluefolder_service is not None else {}
+        return self._operator_records_from_directory(bluefolder_directory)
 
     def reverse_mappings(self) -> dict[int, int]:
         """Return BlueFolder-to-Discord technician mappings."""
@@ -168,6 +182,35 @@ class TechnicianDirectoryService:
         if resolved_discord_user_id is not None:
             return str(resolved_discord_user_id)
         return None
+
+    def _operator_records_from_directory(self, bluefolder_directory: dict[int, str]) -> list[TechnicianMappingRecord]:
+        """Merge active BlueFolder users with optional Discord-linked metadata."""
+        bluefolder_to_discord_ids: dict[int, list[int]] = {}
+        for discord_user_id, bluefolder_user_id in self.mappings().items():
+            bluefolder_to_discord_ids.setdefault(bluefolder_user_id, []).append(discord_user_id)
+        member_directory = self.member_directory()
+        known_bluefolder_ids = set(bluefolder_to_discord_ids)
+        known_bluefolder_ids.update(int(user_id) for user_id in bluefolder_directory)
+
+        records: list[TechnicianMappingRecord] = []
+        for bluefolder_user_id in sorted(
+            known_bluefolder_ids,
+            key=lambda user_id: (str(bluefolder_directory.get(user_id) or "").casefold(), user_id),
+        ):
+            discord_user_id = next(iter(sorted(bluefolder_to_discord_ids.get(bluefolder_user_id, []))), None)
+            member = member_directory.get(discord_user_id) if discord_user_id is not None else None
+            records.append(
+                TechnicianMappingRecord(
+                    discord_user_id=discord_user_id,
+                    bluefolder_user_id=bluefolder_user_id,
+                    bluefolder_name=bluefolder_directory.get(bluefolder_user_id),
+                    username=member.username if member is not None else None,
+                    display_name=member.display_name if member is not None else None,
+                    global_name=member.global_name if member is not None else None,
+                    role_names=member.role_names if member is not None else (),
+                )
+            )
+        return records
 
     def _latest_member_export_path(self) -> Path | None:
         """Return the newest member-map export path when available."""

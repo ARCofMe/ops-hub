@@ -4,6 +4,8 @@ Ops Hub is a unified Discord operations bot for the appliance repair business.
 
 It gives the team one Discord-facing surface for technician, dispatch, parts, and admin workflows while keeping the internals modular and testable.
 
+BlueFolder technicians are now first-class operational identities in Ops Hub. Discord linkage is optional enrichment for mentions, role-based command access, and member-map workflows, not a hard requirement for dispatch, parts, or technician app data flows.
+
 ## Who This Is For
 
 Ops Hub is for:
@@ -345,8 +347,9 @@ Current technician app routes:
 
 Requests use `Authorization: Bearer <token>` and resolve the technician from either:
 
-- query `technician_id=<discord_user_id>`
-- header `X-Technician-Subject: <discord_user_id>`
+- query `technician_id=<bluefolder_user_id>` or `technician_id=<discord_user_id>`
+- header `X-Technician-Subject: <bluefolder_user_id>` or `X-Technician-Subject: <discord_user_id>`
+- explicit BlueFolder-prefixed tokens like `bf:<bluefolder_user_id>` also work
 
 Current dispatch app routes:
 

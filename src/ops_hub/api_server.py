@@ -556,8 +556,10 @@ async def dispatch_technician_api_request(
         technician_id=(query.get("technician_id") or [None])[0],
     )
     if technician is None:
-        return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Technician mapping could not be resolved."}
-    discord_user_id, bluefolder_user_id = technician
+        return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Technician identity could not be resolved."}
+    discord_user_id = technician.discord_user_id
+    bluefolder_user_id = technician.bluefolder_user_id
+    actor_label = technician.actor_label
 
     if method == "GET" and route_path == "/tech/me/today":
         payload = await container.technician_api_service.get_today(
@@ -607,6 +609,7 @@ async def dispatch_technician_api_request(
             sr_id=sr_id,
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
             status=str(payload_body.get("status") or ""),
         )
         return HTTPStatus.OK, payload
@@ -620,6 +623,7 @@ async def dispatch_technician_api_request(
             note=str(payload_body.get("note") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -643,6 +647,7 @@ async def dispatch_technician_api_request(
             sr_id=sr_id,
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
             minutes=payload_body.get("minutes") if isinstance(payload_body.get("minutes"), int) else None,
         )
         return HTTPStatus.OK, payload
@@ -656,6 +661,7 @@ async def dispatch_technician_api_request(
             details=str(payload_body.get("details") or "") or None,
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -668,6 +674,7 @@ async def dispatch_technician_api_request(
             details=str(payload_body.get("details") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -680,6 +687,7 @@ async def dispatch_technician_api_request(
             details=str(payload_body.get("details") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -693,6 +701,7 @@ async def dispatch_technician_api_request(
             subtype=str(payload_body.get("subtype") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -705,6 +714,7 @@ async def dispatch_technician_api_request(
             reason=str(payload_body.get("reason") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -717,6 +727,7 @@ async def dispatch_technician_api_request(
             reason=str(payload_body.get("reason") or ""),
             technician_discord_user_id=discord_user_id,
             technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 
@@ -752,6 +763,8 @@ async def dispatch_technician_api_request(
             content_type=str(payload_body.get("contentType") or "") or None,
             data_base64=str(payload_body.get("dataBase64") or ""),
             technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
         )
         return HTTPStatus.OK, payload
 

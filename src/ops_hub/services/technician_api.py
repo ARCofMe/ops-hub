@@ -18,6 +18,15 @@ if TYPE_CHECKING:
 
 
 @dataclass(slots=True)
+class ResolvedTechnicianContext:
+    """Resolved technician identity for app-facing requests."""
+
+    bluefolder_user_id: int
+    discord_user_id: int | None = None
+    actor_label: str | None = None
+
+
+@dataclass(slots=True)
 class TechnicianApiService:
     """Expose technician-friendly JSON-ready workflows."""
 
@@ -61,31 +70,44 @@ class TechnicianApiService:
         self,
         *,
         sr_id: int,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         status: str,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Apply a technician status transition."""
         normalized = status.strip().casefold()
+        actor_user_id = self._actor_user_id(
+            technician_discord_user_id=technician_discord_user_id,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
+        )
+        actor_label = self._actor_label(
+            technician_discord_user_id=technician_discord_user_id,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
+            actor_label=technician_actor_label,
+        )
         if normalized == "enroute":
             result = await self.bluefolder_service.log_route_update(
                 sr_id,
                 update_type="enroute",
-                requested_by_user_id=technician_discord_user_id,
+                requested_by_user_id=actor_user_id,
+                requested_by_label=actor_label,
                 bluefolder_user_id=technician_bluefolder_user_id,
             )
         elif normalized == "arrive":
             result = await self.bluefolder_service.log_field_event(
                 sr_id,
                 event_type="arrive",
-                requested_by_user_id=technician_discord_user_id,
+                requested_by_user_id=actor_user_id,
+                requested_by_label=actor_label,
                 bluefolder_user_id=technician_bluefolder_user_id,
             )
         elif normalized == "start":
             result = await self.bluefolder_service.log_field_event(
                 sr_id,
                 event_type="start",
-                requested_by_user_id=technician_discord_user_id,
+                requested_by_user_id=actor_user_id,
+                requested_by_label=actor_label,
                 bluefolder_user_id=technician_bluefolder_user_id,
                 notify_dispatch=True,
             )
@@ -93,7 +115,8 @@ class TechnicianApiService:
             result = await self.bluefolder_service.log_field_event(
                 sr_id,
                 event_type="complete",
-                requested_by_user_id=technician_discord_user_id,
+                requested_by_user_id=actor_user_id,
+                requested_by_label=actor_label,
                 bluefolder_user_id=technician_bluefolder_user_id,
             )
         else:
@@ -105,8 +128,9 @@ class TechnicianApiService:
         *,
         sr_id: int,
         note: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Submit a field note to BlueFolder."""
         cleaned = " ".join((note or "").split()).strip()
@@ -115,7 +139,15 @@ class TechnicianApiService:
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="note",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=cleaned,
         )
@@ -126,7 +158,7 @@ class TechnicianApiService:
         *,
         sr_id: int,
         details: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
     ) -> dict[str, object]:
         """Create a tracked parts request for a technician."""
@@ -137,7 +169,10 @@ class TechnicianApiService:
             PartRequestCreate(
                 reference=f"SR-{sr_id}",
                 description=cleaned,
-                requested_by_user_id=technician_discord_user_id,
+                requested_by_user_id=self._actor_user_id(
+                    technician_discord_user_id=technician_discord_user_id,
+                    technician_bluefolder_user_id=technician_bluefolder_user_id,
+                ),
                 technician_bluefolder_user_id=technician_bluefolder_user_id,
                 requester_is_admin=False,
             )
@@ -168,7 +203,9 @@ class TechnicianApiService:
         filename: str,
         content_type: str | None,
         data_base64: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None = None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Attach one app-captured photo directly to the service request."""
         cleaned_label = " ".join((label or "").split()).strip() or "job photo"
@@ -187,8 +224,15 @@ class TechnicianApiService:
                 content_type=cleaned_content_type,
                 data=photo_bytes,
             ),
-            requested_by_user_id=technician_discord_user_id,
-            requested_by_label=f"Tech {technician_discord_user_id}",
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             label=cleaned_label.upper(),
         )
         return {"success": True, "message": result.message}
@@ -197,16 +241,25 @@ class TechnicianApiService:
         self,
         *,
         sr_id: int,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
         minutes: int | None = None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a customer call-ahead as an ETA-driven field update."""
         eta_minutes = minutes if minutes is not None and minutes > 0 else 30
         result = await self.bluefolder_service.log_route_update(
             sr_id,
             update_type="eta",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             minutes=eta_minutes,
             notify_dispatch=True,
@@ -221,15 +274,24 @@ class TechnicianApiService:
         self,
         *,
         sr_id: int,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
         details: str | None = None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a structured work-start event."""
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="start",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=" ".join((details or "").split()).strip() or None,
             notify_dispatch=True,
@@ -241,14 +303,23 @@ class TechnicianApiService:
         *,
         sr_id: int,
         details: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a no-answer field exception for dispatch follow-up."""
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="no_answer",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=" ".join((details or "").split()).strip() or None,
             notify_dispatch=True,
@@ -260,14 +331,23 @@ class TechnicianApiService:
         *,
         sr_id: int,
         details: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a not-home field exception for dispatch follow-up."""
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="not_home",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=" ".join((details or "").split()).strip() or None,
             notify_dispatch=True,
@@ -279,9 +359,10 @@ class TechnicianApiService:
         *,
         sr_id: int,
         details: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
         subtype: str | None = None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a structured quote-needed handoff for office follow-up."""
         cleaned = " ".join((details or "").split()).strip()
@@ -294,17 +375,29 @@ class TechnicianApiService:
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="note",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=" ".join(note_bits),
             notify_dispatch=True,
+        )
+        actor_user_id = self._actor_user_id(
+            technician_discord_user_id=technician_discord_user_id,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
         )
         self.workflow_state_service.record_event(
             event_type="quote_needed_reported",
             source="ops_hub.field",
             sr_id=sr_id,
             summary=f"Technician reported quote-needed follow-up for SR-{sr_id}.",
-            actor_user_id=technician_discord_user_id,
+            actor_user_id=actor_user_id,
             details=cleaned or None,
             metadata={"quote_subtype": quote_subtype},
         )
@@ -319,8 +412,9 @@ class TechnicianApiService:
         *,
         sr_id: int,
         reason: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a reschedule-needed handoff for dispatch."""
         cleaned = " ".join((reason or "").split()).strip()
@@ -329,7 +423,15 @@ class TechnicianApiService:
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="reschedule_needed",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=cleaned,
             notify_dispatch=True,
@@ -341,8 +443,9 @@ class TechnicianApiService:
         *,
         sr_id: int,
         reason: str,
-        technician_discord_user_id: int,
+        technician_discord_user_id: int | None,
         technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None = None,
     ) -> dict[str, object]:
         """Record a structured unable-to-complete handoff."""
         cleaned = " ".join((reason or "").split()).strip()
@@ -351,17 +454,29 @@ class TechnicianApiService:
         result = await self.bluefolder_service.log_field_event(
             sr_id,
             event_type="unable_to_complete",
-            requested_by_user_id=technician_discord_user_id,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
             bluefolder_user_id=technician_bluefolder_user_id,
             details=cleaned,
             notify_dispatch=True,
+        )
+        actor_user_id = self._actor_user_id(
+            technician_discord_user_id=technician_discord_user_id,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
         )
         self.workflow_state_service.record_event(
             event_type="unable_to_complete_reported",
             source="ops_hub.field",
             sr_id=sr_id,
             summary=f"Technician reported unable-to-complete for SR-{sr_id}.",
-            actor_user_id=technician_discord_user_id,
+            actor_user_id=actor_user_id,
             details=cleaned,
         )
         return {"success": True, "message": result.message}
@@ -428,21 +543,18 @@ class TechnicianApiService:
             "noticeRequested": send_notice,
         }
 
-    def resolve_technician(self, *, token_subject: str | None = None, technician_id: str | None = None) -> tuple[int, int] | None:
-        """Resolve Discord and BlueFolder IDs from the caller context."""
-        resolved_discord = None
-        if technician_id and technician_id.isdigit():
-            resolved_discord = int(technician_id)
-        elif token_subject and token_subject.isdigit():
-            resolved_discord = int(token_subject)
-        if resolved_discord is None:
-            return None
-
-        mappings = self.technician_directory_service.mappings()
-        bluefolder_user_id = mappings.get(resolved_discord)
-        if bluefolder_user_id is None:
-            return None
-        return resolved_discord, bluefolder_user_id
+    def resolve_technician(
+        self,
+        *,
+        token_subject: str | None = None,
+        technician_id: str | None = None,
+    ) -> ResolvedTechnicianContext | None:
+        """Resolve a technician from either a Discord-linked subject or a BlueFolder user id."""
+        for candidate in (technician_id, token_subject):
+            resolved = self._resolve_technician_subject(candidate)
+            if resolved is not None:
+                return resolved
+        return None
 
     async def get_job(self, *, sr_id: int) -> dict[str, object]:
         """Return a single job summary in the app shape."""
@@ -535,6 +647,85 @@ class TechnicianApiService:
         if normalized in {"prepayment", "prepay", "cod"}:
             return "prepayment"
         return "customer"
+
+    def _resolve_technician_subject(self, value: str | None) -> ResolvedTechnicianContext | None:
+        """Resolve one caller-provided technician token."""
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        normalized = text.casefold()
+        if normalized.startswith("bf:") or normalized.startswith("bluefolder:"):
+            raw_id = text.split(":", 1)[1].strip()
+            if not raw_id.isdigit():
+                return None
+            bluefolder_user_id = int(raw_id)
+            return ResolvedTechnicianContext(
+                bluefolder_user_id=bluefolder_user_id,
+                actor_label=self.technician_directory_service.technician_display_label(
+                    bluefolder_user_id=bluefolder_user_id
+                )
+                or f"Tech {bluefolder_user_id}",
+            )
+
+        if not text.isdigit():
+            return None
+
+        numeric_id = int(text)
+        mappings = self.technician_directory_service.mappings()
+        bluefolder_user_id = mappings.get(numeric_id)
+        if bluefolder_user_id is not None:
+            return ResolvedTechnicianContext(
+                discord_user_id=numeric_id,
+                bluefolder_user_id=bluefolder_user_id,
+                actor_label=self.technician_directory_service.technician_display_label(
+                    discord_user_id=numeric_id,
+                    bluefolder_user_id=bluefolder_user_id,
+                )
+                or f"Tech {bluefolder_user_id}",
+            )
+
+        return ResolvedTechnicianContext(
+            bluefolder_user_id=numeric_id,
+            actor_label=self.technician_directory_service.technician_display_label(
+                bluefolder_user_id=numeric_id
+            )
+            or f"Tech {numeric_id}",
+        )
+
+    @staticmethod
+    def _actor_user_id(
+        *,
+        technician_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None,
+    ) -> int:
+        if technician_discord_user_id is not None:
+            return technician_discord_user_id
+        if technician_bluefolder_user_id is not None:
+            return technician_bluefolder_user_id
+        return 0
+
+    def _actor_label(
+        self,
+        *,
+        technician_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None,
+        actor_label: str | None = None,
+    ) -> str | None:
+        text = str(actor_label or "").strip()
+        if text:
+            return text
+        resolver = getattr(self.technician_directory_service, "technician_display_label", None)
+        if callable(resolver):
+            return resolver(
+                discord_user_id=technician_discord_user_id,
+                bluefolder_user_id=technician_bluefolder_user_id,
+            )
+        if technician_bluefolder_user_id is not None:
+            return f"Tech {technician_bluefolder_user_id}"
+        if technician_discord_user_id is not None:
+            return f"Tech {technician_discord_user_id}"
+        return None
 
     @staticmethod
     def _extract_photo_reminder_reason(message: str) -> str:

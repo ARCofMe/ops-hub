@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from ops_hub.core.config import Settings
@@ -42,3 +43,22 @@ def test_mapping_records_include_member_export_identity(tmp_path) -> None:
     assert records[0].role_names == ("Dispatch",)
     assert service.display_label(42) == "Dispatch Dave"
     assert service.technician_display_label(bluefolder_user_id=9001) == "Dispatch Dave"
+
+
+def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
+    settings = Settings(
+        discord_token="token",
+        technician_bluefolder_user_map={42: 9001},
+    )
+    service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
+
+    class _BlueFolderService:
+        async def get_active_user_directory(self) -> dict[int, str]:
+            return {9001: "Dispatch Dave", 9002: "Field Sam"}
+
+    records = asyncio.run(service.operator_records(bluefolder_service=_BlueFolderService()))
+
+    assert [(record.discord_user_id, record.bluefolder_user_id, record.bluefolder_name) for record in records] == [
+        (42, 9001, "Dispatch Dave"),
+        (None, 9002, "Field Sam"),
+    ]

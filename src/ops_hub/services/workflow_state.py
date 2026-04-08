@@ -198,7 +198,14 @@ class WorkflowStateService:
 
     async def run_policy_cycle(self, *, emit_notices: bool = True) -> dict[str, int]:
         """Refresh workflow state and optionally emit deduplicated urgent notices."""
-        mappings = self.technician_directory_service.mapping_records() if self.technician_directory_service is not None else []
+        if self.technician_directory_service is None:
+            mappings = []
+        else:
+            operator_records = getattr(self.technician_directory_service, "operator_records", None)
+            if callable(operator_records):
+                mappings = await operator_records(bluefolder_service=self.bluefolder_service)
+            else:
+                mappings = self.technician_directory_service.mapping_records()
         _, attention_items = await self.refresh_dispatch_attention(mappings)
         urgent_items = [item for item in attention_items if item.age_bucket == "urgent" and item.status == "open"]
         reopened_urgent_items = [item for item in urgent_items if self._was_reopened_recently(item=item, hours=24)]

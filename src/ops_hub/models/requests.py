@@ -129,10 +129,11 @@ class TechnicianIdentity:
 
 @dataclass(slots=True)
 class TechnicianMappingRecord:
-    """Persistent mapping record for a Discord technician."""
+    """Operator record keyed by BlueFolder technician id with optional Discord linkage."""
 
-    discord_user_id: int
+    discord_user_id: int | None
     bluefolder_user_id: int
+    bluefolder_name: str | None = None
     username: str | None = None
     display_name: str | None = None
     global_name: str | None = None

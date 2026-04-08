@@ -331,11 +331,12 @@ class DispatchCog(commands.Cog):
         self,
         interaction: discord.Interaction,
     ) -> list[TechnicianMappingRecord]:
-        """Return technician mappings scoped to actual Discord technician members when possible."""
+        """Return BlueFolder-first operator records, filtered by technician members when linked to Discord."""
         directory = self.bot.container.technician_directory_service
+        records = await directory.operator_records(bluefolder_service=self.bot.container.bluefolder_service)
         guild = interaction.guild
         if guild is None:
-            return directory.mapping_records()
+            return records
 
         members = list(getattr(guild, "members", []) or [])
         if not members and hasattr(guild, "fetch_members"):
@@ -345,11 +346,10 @@ class DispatchCog(commands.Cog):
             members = fetched_members
 
         if not members:
-            return directory.mapping_records()
+            return records
 
         technician_role_ids = set(self.bot.settings.technician_role_ids)
         technician_user_ids = set(self.bot.settings.technician_user_ids)
-        mappings = directory.mappings()
         technician_member_ids: set[int] = set()
         for member in members:
             role_ids = {
@@ -362,25 +362,11 @@ class DispatchCog(commands.Cog):
                 continue
             technician_member_ids.add(member.id)
 
-        bluefolder_to_discord: dict[int, list[int]] = {}
-        for discord_user_id, bluefolder_user_id in mappings.items():
-            bluefolder_to_discord.setdefault(bluefolder_user_id, []).append(discord_user_id)
-
-        records: list[TechnicianMappingRecord] = []
-        for bluefolder_user_id, discord_user_ids in sorted(bluefolder_to_discord.items()):
-            chosen_discord_user_id = next(
-                (discord_user_id for discord_user_id in sorted(discord_user_ids) if discord_user_id in technician_member_ids),
-                None,
-            )
-            if chosen_discord_user_id is None:
-                continue
-            records.append(
-                TechnicianMappingRecord(
-                    discord_user_id=chosen_discord_user_id,
-                    bluefolder_user_id=bluefolder_user_id,
-                )
-            )
-        return records
+        return [
+            record
+            for record in records
+            if record.discord_user_id is None or record.discord_user_id in technician_member_ids
+        ]
 
 
 async def setup(bot: OpsHubBot) -> None:
