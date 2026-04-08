@@ -37,6 +37,7 @@ class SmsAuditStore:
 
     file_path: Path | None = None
     records: list[SmsSendRecord] = field(default_factory=list)
+    max_records: int = 500
 
     def load(self) -> list[SmsSendRecord]:
         """Load persisted SMS records if configured."""
@@ -55,6 +56,8 @@ class SmsAuditStore:
     def append(self, record: SmsSendRecord) -> Path | None:
         """Append and persist one SMS audit record."""
         self.records.append(record)
+        if self.max_records > 0 and len(self.records) > self.max_records:
+            self.records = self.records[-self.max_records :]
         if self.file_path is None:
             return None
         atomic_write_text(

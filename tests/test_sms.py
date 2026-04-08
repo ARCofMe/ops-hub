@@ -1,4 +1,4 @@
-from ops_hub.services.sms import DispatchSmsService, SmsAuditStore, TwilioSmsAdapter
+from ops_hub.services.sms import DispatchSmsService, SmsAuditStore, SmsSendRecord, TwilioSmsAdapter
 
 
 def test_sms_capabilities_normalize_phone_and_disable_unwired_twilio() -> None:
@@ -49,3 +49,43 @@ def test_sms_preview_uses_template_for_blank_custom_message_and_rejects_overlong
         assert False, "expected overlong custom message to fail"
     except ValueError as exc:
         assert "too long" in str(exc)
+
+
+def test_sms_audit_store_caps_retained_records() -> None:
+    store = SmsAuditStore(max_records=2)
+    store.append(
+        SmsSendRecord(
+            sr_id=1,
+            reference="SR-1",
+            intent="dispatch_follow_up",
+            provider="dry_run",
+            status="dry_run",
+            to_number="+12075550100",
+            message="one",
+        )
+    )
+
+    store.append(
+        SmsSendRecord(
+            sr_id=1,
+            reference="SR-1",
+            intent="dispatch_follow_up",
+            provider="dry_run",
+            status="dry_run",
+            to_number="+12075550100",
+            message="two",
+        )
+    )
+    store.append(
+        SmsSendRecord(
+            sr_id=1,
+            reference="SR-1",
+            intent="dispatch_follow_up",
+            provider="dry_run",
+            status="dry_run",
+            to_number="+12075550100",
+            message="three",
+        )
+    )
+
+    assert [item.message for item in store.records] == ["two", "three"]
