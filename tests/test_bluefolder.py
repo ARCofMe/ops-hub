@@ -2258,6 +2258,62 @@ def test_dispatch_service_attention_uses_snapshot_without_blocking_refresh() -> 
     assert elapsed < 0.15
 
 
+def test_dispatch_attention_owner_options_prefer_bluefolder_names() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[],
+            parts_cases=[],
+            events=[],
+            updated_at="2026-04-01T10:00:00Z",
+        ),
+        refresh_dispatch_attention=lambda mappings, **kwargs: asyncio.sleep(0, result=(0, [])),
+    )
+    directory = SimpleNamespace(
+        reverse_mappings=lambda: {},
+        display_label=lambda user_id: "discord_danny",
+        discord_mention=lambda user_id: f"<@{user_id}>",
+        operator_records=lambda **kwargs: asyncio.sleep(
+            0,
+            result=[
+                TechnicianMappingRecord(
+                    discord_user_id=42,
+                    bluefolder_user_id=2001,
+                    bluefolder_name="Danny Marquez",
+                    bluefolder_role="dispatch",
+                    bluefolder_roles=("Lead Technician", "Service Manager"),
+                    username="discord_danny",
+                )
+            ],
+        ),
+        dispatch_owner_records=lambda **kwargs: asyncio.sleep(
+            0,
+            result=[
+                TechnicianMappingRecord(
+                    discord_user_id=42,
+                    bluefolder_user_id=2001,
+                    bluefolder_name="Danny Marquez",
+                    bluefolder_role="dispatch",
+                    bluefolder_roles=("Lead Technician", "Service Manager"),
+                    username="discord_danny",
+                )
+            ],
+        ),
+    )
+    bluefolder_service = SimpleNamespace(
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Danny Marquez"),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    payload = asyncio.run(service.get_dispatch_attention_payload())
+
+    assert payload["ownerOptions"][0]["label"] == "Danny Marquez"
+
+
 def test_dispatch_service_attention_cold_start_refreshes_before_returning() -> None:
     workflow_state = SimpleNamespace(
         current_snapshot=lambda: WorkflowStateSnapshot(

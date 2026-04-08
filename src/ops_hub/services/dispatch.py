@@ -1636,7 +1636,7 @@ class DispatchService:
         return {
             "bluefolderUserId": record.bluefolder_user_id,
             "discordUserId": record.discord_user_id,
-            "label": record.display_name or record.global_name or record.username or record.bluefolder_name or f"Tech {record.bluefolder_user_id}",
+            "label": record.bluefolder_name or record.display_name or record.global_name or record.username or f"Tech {record.bluefolder_user_id}",
             "role": record.bluefolder_role,
             "roles": list(record.bluefolder_roles),
         }
