@@ -2258,7 +2258,7 @@ def test_dispatch_service_attention_uses_snapshot_without_blocking_refresh() -> 
     assert elapsed < 0.15
 
 
-def test_dispatch_service_attention_cold_start_does_not_block_on_refresh() -> None:
+def test_dispatch_service_attention_cold_start_refreshes_before_returning() -> None:
     workflow_state = SimpleNamespace(
         current_snapshot=lambda: WorkflowStateSnapshot(
             attention_items=[],
@@ -2266,7 +2266,24 @@ def test_dispatch_service_attention_cold_start_does_not_block_on_refresh() -> No
             events=[],
             updated_at=None,
         ),
-        refresh_dispatch_attention=lambda mappings, **kwargs: asyncio.sleep(0.2, result=(1, [])),
+        refresh_dispatch_attention=lambda mappings, **kwargs: asyncio.sleep(
+            0,
+            result=(
+                1,
+                [
+                    AttentionItemRecord(
+                        item_id="dispatch:SR-100:quote_needed",
+                        sr_id=100,
+                        reference="SR-100",
+                        category="dispatch",
+                        status="open",
+                        stage="quote_needed",
+                        stage_label="Quote Needed",
+                        summary="Dryer repair",
+                    )
+                ],
+            ),
+        ),
     )
     directory = SimpleNamespace(
         mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
@@ -2291,8 +2308,9 @@ def test_dispatch_service_attention_cold_start_does_not_block_on_refresh() -> No
     payload = asyncio.run(service.get_dispatch_attention_payload())
     elapsed = perf_counter() - started_at
 
-    assert payload["items"] == []
-    assert payload["scannedJobs"] == 0
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["itemId"] == "dispatch:SR-100:quote_needed"
+    assert payload["scannedJobs"] == 1
     assert elapsed < 0.15
 
 

@@ -848,9 +848,7 @@ class DispatchService:
             items = list(getattr(snapshot, "attention_items", []))
             self._ensure_board_refresh(routeable_mappings)
         else:
-            scanned_jobs = 0
-            items = []
-            self._ensure_board_refresh(routeable_mappings)
+            scanned_jobs, items = await self.workflow_state_service.refresh_dispatch_attention(routeable_mappings)
         normalized_status = None if status is None else status.strip().lower()
         normalized_reference = None if reference is None else reference.strip().upper()
         if stage is not None:
