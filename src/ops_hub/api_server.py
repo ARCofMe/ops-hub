@@ -921,6 +921,7 @@ class TechnicianApiServer:
             def _dispatch(self, method: str) -> None:
                 started_at = time.perf_counter()
                 status: HTTPStatus | None = None
+                completed_status = int(HTTPStatus.INTERNAL_SERVER_ERROR)
                 try:
                     status, payload = asyncio.run(
                         dispatch_technician_api_request(
@@ -933,14 +934,23 @@ class TechnicianApiServer:
                         )
                     )
                     self._json(status, payload)
+                    completed_status = int(status)
+                except (BrokenPipeError, ConnectionResetError):
+                    completed_status = 499
+                    logger.info("Technician API client disconnected before response completed")
                 except Exception as exc:
                     logger.exception("Technician API request failed")
-                    self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"success": False, "message": str(exc)})
+                    try:
+                        self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"success": False, "message": str(exc)})
+                        completed_status = int(HTTPStatus.INTERNAL_SERVER_ERROR)
+                    except (BrokenPipeError, ConnectionResetError):
+                        completed_status = 499
+                        logger.info("Technician API client disconnected while sending error response")
                 finally:
                     logger.info(
                         "Technician API request completed",
                         extra={
-                            "status": int(status or HTTPStatus.INTERNAL_SERVER_ERROR),
+                            "status": completed_status,
                             "duration_ms": int((time.perf_counter() - started_at) * 1000),
                             "cmd": f"{method} {self.path}",
                         },

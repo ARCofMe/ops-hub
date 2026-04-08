@@ -90,8 +90,14 @@ class TechnicianDirectoryService:
         bluefolder_service: "BlueFolderService | None" = None,
     ) -> list[TechnicianMappingRecord]:
         """Return BlueFolder-first operator records with optional Discord linkage."""
-        bluefolder_directory = await bluefolder_service.get_operator_directory() if bluefolder_service is not None else {}
-        return self._operator_records_from_directory(bluefolder_directory)
+        bluefolder_profiles = await bluefolder_service.get_operator_profiles() if bluefolder_service is not None else {}
+        if not bluefolder_profiles and bluefolder_service is not None:
+            bluefolder_directory = await bluefolder_service.get_operator_directory()
+            bluefolder_profiles = {
+                user_id: {"name": name, "user_type": None, "role": None}
+                for user_id, name in bluefolder_directory.items()
+            }
+        return self._operator_records_from_directory(bluefolder_profiles)
 
     def reverse_mappings(self) -> dict[int, int]:
         """Return BlueFolder-to-Discord technician mappings."""
@@ -183,27 +189,33 @@ class TechnicianDirectoryService:
             return str(resolved_discord_user_id)
         return None
 
-    def _operator_records_from_directory(self, bluefolder_directory: dict[int, str]) -> list[TechnicianMappingRecord]:
+    def _operator_records_from_directory(
+        self,
+        bluefolder_profiles: dict[int, dict[str, str | None]],
+    ) -> list[TechnicianMappingRecord]:
         """Merge active BlueFolder users with optional Discord-linked metadata."""
         bluefolder_to_discord_ids: dict[int, list[int]] = {}
         for discord_user_id, bluefolder_user_id in self.mappings().items():
             bluefolder_to_discord_ids.setdefault(bluefolder_user_id, []).append(discord_user_id)
         member_directory = self.member_directory()
         known_bluefolder_ids = set(bluefolder_to_discord_ids)
-        known_bluefolder_ids.update(int(user_id) for user_id in bluefolder_directory)
+        known_bluefolder_ids.update(int(user_id) for user_id in bluefolder_profiles)
 
         records: list[TechnicianMappingRecord] = []
         for bluefolder_user_id in sorted(
             known_bluefolder_ids,
-            key=lambda user_id: (str(bluefolder_directory.get(user_id) or "").casefold(), user_id),
+            key=lambda user_id: (str((bluefolder_profiles.get(user_id) or {}).get("name") or "").casefold(), user_id),
         ):
             discord_user_id = next(iter(sorted(bluefolder_to_discord_ids.get(bluefolder_user_id, []))), None)
             member = member_directory.get(discord_user_id) if discord_user_id is not None else None
+            bluefolder_profile = bluefolder_profiles.get(bluefolder_user_id) or {}
             records.append(
                 TechnicianMappingRecord(
                     discord_user_id=discord_user_id,
                     bluefolder_user_id=bluefolder_user_id,
-                    bluefolder_name=bluefolder_directory.get(bluefolder_user_id),
+                    bluefolder_name=str(bluefolder_profile.get("name") or "").strip() or None,
+                    bluefolder_user_type=str(bluefolder_profile.get("user_type") or "").strip() or None,
+                    bluefolder_role=str(bluefolder_profile.get("role") or "").strip() or None,
                     username=member.username if member is not None else None,
                     display_name=member.display_name if member is not None else None,
                     global_name=member.global_name if member is not None else None,

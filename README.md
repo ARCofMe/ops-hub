@@ -44,6 +44,8 @@ Current app-facing backend surfaces now cover:
 Operational note:
 
 - dispatch technician visibility now uses the best available BlueFolder operator roster, including recent assigned technicians when the tenant active-user directory is incomplete
+- dispatch board rows now carry BlueFolder `userType` role hints so explicit dispatch/admin users can be flagged and excluded from routeable technician counts
+- dispatch board requests now render from the latest available workflow snapshot and refresh in the background, which keeps the board responsive instead of blocking on long workflow refreshes
 - parts cases now supplement assignment-derived workflow state with tenant-wide SRs whose current BlueFolder status still maps to active parts-needed work
 
 ## Start Here

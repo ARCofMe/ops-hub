@@ -2024,6 +2024,60 @@ def test_dispatch_service_board_prefers_bluefolder_user_name_for_technician_labe
     assert payload["technicianLoad"][0]["technicianLabel"] == "Pat Tech"
 
 
+def test_dispatch_service_board_filters_dispatch_only_bluefolder_users() -> None:
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        _ = (user_id, day, include_subjects)
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    class _Directory:
+        async def operator_records(self, *, bluefolder_service=None):
+            _ = bluefolder_service
+            return [
+                TechnicianMappingRecord(
+                    discord_user_id=None,
+                    bluefolder_user_id=9001,
+                    bluefolder_name="Dispatch Dana",
+                    bluefolder_user_type="Dispatch",
+                    bluefolder_role="dispatch",
+                ),
+                TechnicianMappingRecord(
+                    discord_user_id=None,
+                    bluefolder_user_id=9002,
+                    bluefolder_name="Field Sam",
+                    bluefolder_user_type="Technician",
+                    bluefolder_role="technician",
+                ),
+            ]
+
+        def reverse_mappings(self):
+            return {}
+
+        def display_label(self, user_id):
+            _ = user_id
+            return None
+
+        def discord_mention(self, user_id):
+            return f"<@{user_id}>"
+
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Field Sam" if user_id == 9002 else "Dispatch Dana"),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=_Directory(),
+        workflow_state_service=None,
+    )
+
+    payload = asyncio.run(service.get_dispatch_board_payload())
+
+    assert payload["visibleOperators"] == 2
+    assert payload["mappedTechs"] == 1
+    assert [entry["technicianLabel"] for entry in payload["technicianLoad"]] == ["Field Sam"]
+    assert payload["technicianLoad"][0]["bluefolderRole"] == "technician"
+
+
 def test_dispatch_service_board_loads_technicians_concurrently() -> None:
     mappings = [
         TechnicianMappingRecord(discord_user_id=41, bluefolder_user_id=13051),
@@ -2065,6 +2119,94 @@ def test_dispatch_service_board_loads_technicians_concurrently() -> None:
     assert payload["mappedTechs"] == 3
     assert len(payload["technicianLoad"]) == 3
     assert elapsed < 0.18
+
+
+def test_dispatch_service_board_uses_stale_snapshot_without_blocking_refresh() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[
+                AttentionItemRecord(
+                    item_id="dispatch:SR-100:part_ready",
+                    sr_id=100,
+                    reference="SR-100",
+                    category="dispatch",
+                    status="open",
+                    stage="part_ready",
+                    stage_label="Ready for Scheduling",
+                    summary="Dryer repair",
+                )
+            ],
+            parts_cases=[],
+            events=[],
+            updated_at="2026-04-01T10:00:00Z",
+        ),
+        attention_metrics=lambda snapshot: {"queueCounts": {"part_ready": 1}},
+        refresh_dispatch_attention=lambda mappings: asyncio.sleep(0.2, result=(1, [])),
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=lambda user_id, day, include_subjects=True: asyncio.sleep(
+            0, result=[{"serviceRequestId": "100", "subject": "Dryer repair"}]
+        ),
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    started_at = perf_counter()
+    payload = asyncio.run(service.get_dispatch_board_payload())
+    elapsed = perf_counter() - started_at
+
+    assert payload["attentionJobs"] == 1
+    assert elapsed < 0.15
+
+
+def test_dispatch_service_board_cold_start_does_not_block_on_refresh() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[],
+            parts_cases=[],
+            events=[],
+            updated_at=None,
+        ),
+        attention_metrics=lambda snapshot: {"queueCounts": {}},
+        refresh_dispatch_attention=lambda mappings: asyncio.sleep(0.2, result=(1, [])),
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+    )
+    bluefolder_service = SimpleNamespace(
+        get_assignments_for_user_on_date=lambda user_id, day, include_subjects=True: asyncio.sleep(
+            0, result=[{"serviceRequestId": "100", "subject": "Dryer repair"}]
+        ),
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    started_at = perf_counter()
+    payload = asyncio.run(service.get_dispatch_board_payload())
+    elapsed = perf_counter() - started_at
+
+    assert payload["attentionJobs"] == 0
+    assert payload["scannedJobs"] == 0
+    assert elapsed < 0.15
 
 
 def test_dispatch_service_board_uses_recent_snapshot_without_blocking_refresh() -> None:

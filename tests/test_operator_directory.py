@@ -53,8 +53,11 @@ def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
     service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
 
     class _BlueFolderService:
-        async def get_operator_directory(self) -> dict[int, str]:
-            return {9001: "Dispatch Dave", 9002: "Field Sam"}
+        async def get_operator_profiles(self) -> dict[int, dict[str, str | None]]:
+            return {
+                9001: {"name": "Dispatch Dave", "user_type": "Dispatch", "role": "dispatch"},
+                9002: {"name": "Field Sam", "user_type": "Technician", "role": "technician"},
+            }
 
     records = asyncio.run(service.operator_records(bluefolder_service=_BlueFolderService()))
 
@@ -62,6 +65,8 @@ def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
         (42, 9001, "Dispatch Dave"),
         (None, 9002, "Field Sam"),
     ]
+    assert records[0].bluefolder_role == "dispatch"
+    assert records[1].bluefolder_role == "technician"
 
 
 def test_operator_records_merge_recent_assigned_directory(tmp_path) -> None:
@@ -69,8 +74,11 @@ def test_operator_records_merge_recent_assigned_directory(tmp_path) -> None:
     service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
 
     class _BlueFolderService:
-        async def get_operator_directory(self) -> dict[int, str]:
-            return {9003: "Route Pat", 9004: "Field Sam"}
+        async def get_operator_profiles(self) -> dict[int, dict[str, str | None]]:
+            return {
+                9003: {"name": "Route Pat", "user_type": "Technician", "role": "technician"},
+                9004: {"name": "Field Sam", "user_type": "Technician", "role": "technician"},
+            }
 
     records = asyncio.run(service.operator_records(bluefolder_service=_BlueFolderService()))
 

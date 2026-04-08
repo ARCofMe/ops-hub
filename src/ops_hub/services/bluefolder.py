@@ -43,17 +43,33 @@ class BlueFolderService:
         """Return active BlueFolder users keyed by user id."""
         return await self.adapter.get_active_user_directory()
 
+    async def get_active_user_profiles(self) -> dict[int, dict[str, str | None]]:
+        """Return active BlueFolder user profiles keyed by user id."""
+        return await self.adapter.get_active_user_profiles()
+
+    async def get_operator_profiles(self) -> dict[int, dict[str, str | None]]:
+        """Return the best available BlueFolder operator profiles."""
+        profiles = await self.adapter.get_active_user_profiles()
+        recent_assigned = await self.adapter.get_recent_assigned_user_profiles()
+        merged = dict(recent_assigned)
+        merged.update(profiles)
+        return merged
+
     async def get_operator_directory(self) -> dict[int, str]:
         """Return the best available BlueFolder technician/operator directory."""
-        directory = await self.adapter.get_active_user_directory()
-        recent_assigned = await self.adapter.get_recent_assigned_user_directory()
-        merged = dict(recent_assigned)
-        merged.update(directory)
-        return merged
+        profiles = await self.get_operator_profiles()
+        return {
+            user_id: str(profile.get("name") or f"Tech {user_id}")
+            for user_id, profile in profiles.items()
+        }
 
     async def get_user_name(self, user_id: int) -> str | None:
         """Return a readable BlueFolder user name when available."""
         return await self.adapter.get_user_name(user_id)
+
+    async def get_user_profile(self, user_id: int) -> dict[str, str | None] | None:
+        """Return a BlueFolder user profile when available."""
+        return await self.adapter.get_user_profile(user_id)
 
     async def get_service_requests_for_statuses(
         self,

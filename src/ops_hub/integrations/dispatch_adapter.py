@@ -23,6 +23,12 @@ def _is_known_origin_lookup_miss(exc: Exception) -> bool:
     text = str(exc)
     return "users/list.aspx" in text or "Site Not Found" in text
 
+
+def _is_wrapper_import_unavailable(exc: Exception) -> bool:
+    """Return True when the optional routing wrapper cannot be imported."""
+    text = str(exc)
+    return isinstance(exc, (ImportError, ModuleNotFoundError)) and "optimized_routing" in text
+
 @dataclass(slots=True)
 class DispatchAdapter:
     """Adapter boundary for dispatch-facing operations."""
@@ -36,6 +42,7 @@ class DispatchAdapter:
     bluefolder_verify_ssl: bool | None = None
     bluefolder_timeout_seconds: float | None = None
     _origin_lookup_unavailable: bool = False
+    _routing_wrapper_unavailable: bool = False
     _geocode_cache: dict[str, tuple[float, float] | None] | None = None
 
     async def get_job(
@@ -65,6 +72,15 @@ class DispatchAdapter:
             )
 
         module_name = "optimized_routing.routing"
+        if self._routing_wrapper_unavailable:
+            return DispatchJobSummary(
+                reference=reference,
+                available=False,
+                integration_status="import_error",
+                message="Dispatch routing wrapper is not installed in the configured project path.",
+                source_path=resolved_path,
+                module_name=module_name,
+            )
         env_values = self._load_dispatch_project_env(resolved_path)
         default_origin_address = env_values.get("DEFAULT_ORIGIN") or None
         geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
@@ -77,6 +93,8 @@ class DispatchAdapter:
                 )
                 preview_builder = getattr(module, "bluefolder_to_routestops")
         except (ImportError, AttributeError, ModuleNotFoundError) as exc:
+            if _is_wrapper_import_unavailable(exc):
+                self._routing_wrapper_unavailable = True
             logger.exception("Failed to load dispatch wrapper from %s", resolved_path)
             return DispatchJobSummary(
                 reference=reference,
@@ -203,7 +221,7 @@ class DispatchAdapter:
     async def get_assignments_for_user(self, technician_bluefolder_user_id: int) -> list[dict[str, str | bool | None]]:
         """Return today's assignments for a mapped BlueFolder user via the existing routing wrapper."""
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
-        if resolved_path is None or not resolved_path.exists():
+        if self._routing_wrapper_unavailable or resolved_path is None or not resolved_path.exists():
             return []
 
         try:
@@ -217,6 +235,10 @@ class DispatchAdapter:
                 integration = integration_class()
                 assignments = integration.get_user_assignments_today(technician_bluefolder_user_id) or []
         except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            if _is_wrapper_import_unavailable(exc):
+                self._routing_wrapper_unavailable = True
+                logger.info("Dispatch wrapper assignments disabled; optimized_routing is unavailable")
+                return []
             logger.warning(
                 "Dispatch wrapper assignments unavailable for mapped BlueFolder user %s: %s",
                 technician_bluefolder_user_id,
@@ -228,7 +250,7 @@ class DispatchAdapter:
 
     async def get_origin_for_user(self, technician_bluefolder_user_id: int) -> str | None:
         """Return the mapped user's origin address when available from the routing wrapper."""
-        if self._origin_lookup_unavailable:
+        if self._origin_lookup_unavailable or self._routing_wrapper_unavailable:
             return None
         resolved_path = Path(self.base_path).expanduser() if self.base_path else None
         if resolved_path is None or not resolved_path.exists():
@@ -245,6 +267,10 @@ class DispatchAdapter:
                 integration = integration_class()
                 return integration.get_user_origin_address(technician_bluefolder_user_id)
         except (AttributeError, ImportError, ModuleNotFoundError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            if _is_wrapper_import_unavailable(exc):
+                self._routing_wrapper_unavailable = True
+                logger.info("Dispatch wrapper origin lookup disabled; optimized_routing is unavailable")
+                return None
             self._origin_lookup_unavailable = True
             if _is_known_origin_lookup_miss(exc):
                 logger.info(

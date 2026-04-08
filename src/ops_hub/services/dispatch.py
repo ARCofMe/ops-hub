@@ -583,10 +583,27 @@ class DispatchService:
     async def get_dispatch_board_payload(self) -> dict[str, object]:
         """Return a structured dispatch board payload for frontend clients."""
         started_at = time.perf_counter()
-        mappings = await self._dispatch_operator_records()
+        all_records = await self._dispatch_operator_records()
+        mappings = [record for record in all_records if self._is_dispatch_board_candidate(record)]
+        if not all_records:
+            return {
+                "mappedTechs": 0,
+                "visibleOperators": 0,
+                "discordLinkedTechs": 0,
+                "activeTechs": 0,
+                "totalVisibleAssignments": 0,
+                "scannedJobs": 0,
+                "attentionJobs": 0,
+                "openPartsCases": 0,
+                "attentionMetrics": {},
+                "topAttention": [],
+                "openPartsCaseItems": [],
+                "technicianLoad": [],
+            }
         if not mappings:
             return {
                 "mappedTechs": 0,
+                "visibleOperators": len(all_records),
                 "discordLinkedTechs": 0,
                 "activeTechs": 0,
                 "totalVisibleAssignments": 0,
@@ -615,15 +632,14 @@ class DispatchService:
         payload_shape_duration_ms = 0
         if self.workflow_state_service is not None:
             snapshot = self.workflow_state_service.current_snapshot()
-            if self._board_snapshot_is_usable(snapshot):
+            if self._board_snapshot_exists(snapshot):
                 current_attention_items = list(snapshot.attention_items)
                 scanned_jobs = self._estimate_scanned_jobs(snapshot)
                 self._ensure_board_refresh(mappings)
             else:
-                workflow_refresh_started_at = time.perf_counter()
-                scanned_jobs, current_attention_items = await self.workflow_state_service.refresh_dispatch_attention(mappings)
-                workflow_refresh_duration_ms = int((time.perf_counter() - workflow_refresh_started_at) * 1000)
-                snapshot = self.workflow_state_service.current_snapshot()
+                current_attention_items = []
+                scanned_jobs = 0
+                self._ensure_board_refresh(mappings)
             payload_shape_started_at = time.perf_counter()
             attention_items = list(await asyncio.gather(*(self._attention_item_payload(item) for item in current_attention_items)))
             open_parts_cases = list(
@@ -639,6 +655,7 @@ class DispatchService:
             "Dispatch board payload built",
             extra={
                 "mapped_techs": len(mappings),
+                "visible_operators": len(all_records),
                 "visible_assignments": total_assignments,
                 "scanned_jobs": scanned_jobs,
                 "attention_jobs": len(attention_items),
@@ -651,6 +668,7 @@ class DispatchService:
 
         return {
             "mappedTechs": len(mappings),
+            "visibleOperators": len(all_records),
             "discordLinkedTechs": sum(1 for record in mappings if record.discord_user_id is not None),
             "activeTechs": active_techs,
             "totalVisibleAssignments": total_assignments,
@@ -662,6 +680,10 @@ class DispatchService:
             "openPartsCaseItems": open_parts_cases[:8],
             "technicianLoad": technician_load,
         }
+
+    def _board_snapshot_exists(self, snapshot) -> bool:
+        """Return whether any persisted workflow snapshot is available for board rendering."""
+        return bool(getattr(snapshot, "updated_at", None))
 
     def _board_snapshot_is_usable(self, snapshot) -> bool:
         """Return whether the board can render from the persisted workflow snapshot."""
@@ -742,6 +764,8 @@ class DispatchService:
             "discordUserId": record.discord_user_id,
             "bluefolderUserId": record.bluefolder_user_id,
             "technicianLabel": technician_label,
+            "bluefolderUserType": record.bluefolder_user_type,
+            "bluefolderRole": record.bluefolder_role,
             "assignmentCount": assignment_count,
             "hasAssignments": assignment_count > 0,
             "originAddress": origin_address,
@@ -1535,6 +1559,11 @@ class DispatchService:
         if callable(operator_records):
             return await operator_records(bluefolder_service=self.bluefolder_service)
         return self.technician_directory_service.mapping_records()
+
+    @staticmethod
+    def _is_dispatch_board_candidate(record: TechnicianMappingRecord) -> bool:
+        """Return whether a BlueFolder operator should appear as a routeable technician."""
+        return record.bluefolder_role not in {"admin", "dispatch"}
 
     def _get_attention_item_for_action(self, *, item_id: str):
         """Resolve one attention item before mutating it."""

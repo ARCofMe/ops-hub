@@ -134,6 +134,8 @@ class TechnicianMappingRecord:
     discord_user_id: int | None
     bluefolder_user_id: int
     bluefolder_name: str | None = None
+    bluefolder_user_type: str | None = None
+    bluefolder_role: str | None = None
     username: str | None = None
     display_name: str | None = None
     global_name: str | None = None
