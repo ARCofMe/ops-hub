@@ -141,3 +141,63 @@ def test_dispatch_owner_records_include_dispatch_admin_and_parts_roles(tmp_path)
         (1001, "dispatch"),
         (33491758, "parts"),
     ]
+
+
+def test_routeable_technician_records_keep_mixed_technician_dispatch_users() -> None:
+    service = TechnicianDirectoryService(settings=Settings(discord_token="token"), store=OperatorMappingStore())
+
+    routeable = service.is_routeable_technician_record(
+        type(
+            "Record",
+            (),
+            {
+                "bluefolder_role": "dispatch",
+                "bluefolder_roles": ("Lead Technician", "Service Manager"),
+            },
+        )()
+    )
+    non_routeable_parts = service.is_routeable_technician_record(
+        type(
+            "Record",
+            (),
+            {
+                "bluefolder_role": "parts",
+                "bluefolder_roles": ("Lead Technician", "Scheduler"),
+            },
+        )()
+    )
+
+    assert routeable is True
+    assert non_routeable_parts is False
+
+
+def test_dispatch_owner_records_keep_mixed_dispatch_technician_users(tmp_path) -> None:
+    settings = Settings(discord_token="token")
+    service = TechnicianDirectoryService(
+        settings=settings,
+        store=OperatorMappingStore(),
+        role_store=OperatorRoleStore(file_path=tmp_path / "operator_roles.json"),
+    )
+
+    class _BlueFolderService:
+        async def get_operator_profiles(self) -> dict[int, dict[str, object]]:
+            return {
+                2001: {
+                    "name": "Danny Marquez",
+                    "user_type": "Technician",
+                    "role": "dispatch",
+                    "roles": ("Lead Technician", "Service Manager"),
+                },
+                2002: {
+                    "name": "Field Only",
+                    "user_type": "Technician",
+                    "role": "technician",
+                    "roles": ("Lead Technician",),
+                },
+            }
+
+    records = asyncio.run(service.dispatch_owner_records(bluefolder_service=_BlueFolderService()))
+
+    assert [(record.bluefolder_user_id, record.bluefolder_role) for record in records] == [
+        (2001, "dispatch"),
+    ]

@@ -1611,7 +1611,9 @@ class DispatchService:
     @staticmethod
     def _is_dispatch_board_candidate(record: TechnicianMappingRecord) -> bool:
         """Return whether a BlueFolder operator should appear as a routeable technician."""
-        return record.bluefolder_role not in {"admin", "dispatch", "parts"}
+        from ops_hub.services.operator_directory import TechnicianDirectoryService
+
+        return TechnicianDirectoryService.is_routeable_technician_record(record)
 
     def _get_attention_item_for_action(self, *, item_id: str):
         """Resolve one attention item before mutating it."""

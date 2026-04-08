@@ -108,7 +108,35 @@ class TechnicianDirectoryService:
     ) -> list[TechnicianMappingRecord]:
         """Return BlueFolder-backed operators who can own dispatch follow-up work."""
         records = await self.operator_records(bluefolder_service=bluefolder_service)
-        return [record for record in records if record.bluefolder_role in {"dispatch", "admin", "parts"}]
+        return [record for record in records if self.is_dispatch_owner_record(record)]
+
+    @staticmethod
+    def is_routeable_technician_record(record: TechnicianMappingRecord) -> bool:
+        """Return whether a record should appear as a routeable field technician."""
+        if record.bluefolder_role is None and not record.bluefolder_roles:
+            return True
+        if record.bluefolder_role in {"parts", "admin"}:
+            return False
+        normalized_roles = {
+            str(role or "").strip().casefold()
+            for role in record.bluefolder_roles
+            if str(role or "").strip()
+        }
+        if normalized_roles & {"lead technician", "technician", "subcontractor"}:
+            return True
+        return record.bluefolder_role == "technician"
+
+    @staticmethod
+    def is_dispatch_owner_record(record: TechnicianMappingRecord) -> bool:
+        """Return whether a record can own dispatch follow-up work."""
+        if record.bluefolder_role in {"dispatch", "admin", "parts"}:
+            return True
+        normalized_roles = {
+            str(role or "").strip().casefold()
+            for role in record.bluefolder_roles
+            if str(role or "").strip()
+        }
+        return bool(normalized_roles & {"administrator", "bookkeeper", "scheduler", "service manager", "sales"})
 
     def reverse_mappings(self) -> dict[int, int]:
         """Return BlueFolder-to-Discord technician mappings."""
