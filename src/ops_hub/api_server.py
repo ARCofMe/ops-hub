@@ -671,6 +671,7 @@ async def dispatch_technician_api_request(
             if isinstance(payload_body.get("durationMinutes"), int)
             else None,
             signed_by=str(payload_body.get("signedBy") or "") or None,
+            signature_png_base64=str(payload_body.get("signatureDataBase64") or "") or None,
             customer_approved=bool(payload_body.get("customerApproved")),
             final_outcome=str(payload_body.get("finalOutcome") or "completed"),
             outcome_note=str(payload_body.get("outcomeNote") or "") or None,
@@ -698,6 +699,7 @@ async def dispatch_technician_api_request(
             if isinstance(payload_body.get("durationMinutes"), int)
             else None,
             signed_by=str(payload_body.get("signedBy") or "") or None,
+            signature_png_base64=str(payload_body.get("signatureDataBase64") or "") or None,
             customer_approved=bool(payload_body.get("customerApproved")),
             final_outcome=str(payload_body.get("finalOutcome") or "completed"),
             outcome_note=str(payload_body.get("outcomeNote") or "") or None,

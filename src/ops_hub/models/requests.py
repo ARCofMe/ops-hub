@@ -525,6 +525,7 @@ class TechnicianCloseoutDraft:
     ended_at_epoch_ms: int | None = None
     duration_minutes: int | None = None
     signed_by: str | None = None
+    signature_png_base64: str | None = None
     customer_approved: bool = False
     final_outcome: str = "completed"
     outcome_note: str | None = None

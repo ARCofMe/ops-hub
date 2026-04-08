@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 import html
 import json
@@ -668,6 +669,8 @@ class BlueFolderAdapter:
                 return {"ok": False, "error": "Customer signoff acknowledgement is required before closeout."}
             if not (draft.signed_by or "").strip():
                 return {"ok": False, "error": "Signer name is required before closeout."}
+            if not (draft.signature_png_base64 or "").strip():
+                return {"ok": False, "error": "A signature image is required before closeout."}
 
         preview = await self.preview_technician_closeout(draft)
         comment_text = self._build_closeout_comment_text(draft, preview)
@@ -716,6 +719,15 @@ class BlueFolderAdapter:
                 self._build_closeout_receipt_bytes(draft, preview),
                 description="FieldDesk closeout receipt",
                 content_type="text/plain",
+                is_public=False,
+            )
+            signature_name = f"sr-{draft.sr_id}-customer-signature.png"
+            client.attachments.add_bytes_to_service_request(
+                draft.sr_id,
+                signature_name,
+                self._decode_signature_bytes(draft.signature_png_base64),
+                description=f"Customer signature captured in FieldDesk by {(draft.signed_by or '').strip() or 'unknown signer'}",
+                content_type="image/png",
                 is_public=False,
             )
         except Exception as exc:
@@ -1311,6 +1323,14 @@ class BlueFolderAdapter:
                 matrix[key.strip().casefold()] = dict(value)
         self._closeout_matrix_cache = matrix
         return self._closeout_matrix_cache
+
+    @staticmethod
+    def _decode_signature_bytes(signature_png_base64: str | None) -> bytes:
+        """Decode one captured signature PNG payload."""
+        text = str(signature_png_base64 or "").strip()
+        if not text:
+            raise ValueError("Missing signature image payload.")
+        return base64.b64decode(text.encode("ascii"), validate=True)
 
     def _resolve_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

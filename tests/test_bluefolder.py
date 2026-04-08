@@ -2714,6 +2714,7 @@ def test_bluefolder_adapter_uses_closeout_matrix_for_preview(tmp_path: Path, mon
                 started_at_epoch_ms=1_000,
                 ended_at_epoch_ms=5_401_000,
                 signed_by="Pat Customer",
+                signature_png_base64="c2lnbmF0dXJl",
                 customer_approved=True,
             )
         )
@@ -2776,6 +2777,7 @@ def test_bluefolder_adapter_submit_closeout_attaches_receipt(tmp_path: Path, mon
                 started_at_epoch_ms=1_000,
                 ended_at_epoch_ms=3_601_000,
                 signed_by="Pat Customer",
+                signature_png_base64="c2lnbmF0dXJl",
                 customer_approved=True,
                 final_outcome="completed",
             ),
@@ -2789,3 +2791,5 @@ def test_bluefolder_adapter_submit_closeout_attaches_receipt(tmp_path: Path, mon
     assert module.LABOR_CALLS[0][3]["billingStatus"] == "nonbillable"
     assert module.ATTACHMENT_CALLS[0][1] == "sr-100-fielddesk-closeout.txt"
     assert b"FieldDesk Closeout Receipt" in module.ATTACHMENT_CALLS[0][2]
+    assert module.ATTACHMENT_CALLS[1][1] == "sr-100-customer-signature.png"
+    assert module.ATTACHMENT_CALLS[1][2] == b"signature"

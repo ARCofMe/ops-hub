@@ -303,6 +303,7 @@ def test_preview_closeout_returns_labor_preview() -> None:
             ended_at_epoch_ms=2,
             duration_minutes=90,
             signed_by="Pat Customer",
+            signature_png_base64="c2lnbmF0dXJl",
             customer_approved=True,
             final_outcome="completed",
         )
@@ -351,6 +352,7 @@ def test_submit_closeout_logs_complete_after_labor_submission() -> None:
             ended_at_epoch_ms=2,
             duration_minutes=90,
             signed_by="Pat Customer",
+            signature_png_base64="c2lnbmF0dXJl",
             customer_approved=True,
             final_outcome="completed",
             outcome_note="Unit tested good after repair.",
