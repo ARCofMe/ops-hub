@@ -448,6 +448,9 @@ class TechnicianApiService:
         """Return a single job summary in the app shape."""
         summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
         parts_case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
+        status_meta = self.bluefolder_service.describe_service_request_status(
+            summary.service_request_status if summary.available else summary.integration_status
+        )
         if not summary.available:
             return {
                 "id": str(sr_id),
@@ -456,6 +459,7 @@ class TechnicianApiService:
                 "customerName": "Unknown customer",
                 "customerPhone": "",
                 "status": summary.integration_status,
+                "statusMeta": status_meta,
                 "partsStage": parts_case.stage_label,
                 "nextAction": parts_case.next_action or "",
                 "equipment": None,
@@ -468,6 +472,7 @@ class TechnicianApiService:
             "customerName": summary.customer_name or "Unknown customer",
             "customerPhone": summary.customer_phone or "",
             "status": summary.service_request_status or "Unknown",
+            "statusMeta": status_meta,
             "partsStage": parts_case.stage_label,
             "nextAction": parts_case.next_action or "",
             "equipment": None,
@@ -481,6 +486,8 @@ class TechnicianApiService:
             "stage": case.stage,
             "stageLabel": case.stage_label,
             "status": case.status,
+            "serviceRequestStatus": case.service_request_status,
+            "serviceRequestStatusMeta": self.bluefolder_service.describe_service_request_status(case.service_request_status),
             "openRequestIds": case.open_request_ids,
             "assignedPartsUserId": case.assigned_parts_user_id,
             "blocker": case.blocker,
@@ -515,6 +522,7 @@ class TechnicianApiService:
             "customerName": str(item.get("customerName") or item.get("subject") or "Unknown customer"),
             "customerPhone": str(item.get("customerPhone") or ""),
             "status": str(item.get("status") or "Pending"),
+            "statusMeta": item.get("statusMeta"),
             "distanceMiles": item.get("distanceMiles"),
             "equipment": item.get("equipment"),
         }

@@ -47,6 +47,7 @@ def test_get_today_normalizes_assignment_shape() -> None:
             "customerName": "Washer",
             "customerPhone": "",
             "status": "Pending",
+            "statusMeta": None,
             "distanceMiles": None,
             "equipment": None,
         }
@@ -76,6 +77,7 @@ def test_submit_note_requires_text() -> None:
 
 def test_get_job_includes_parts_case_fields() -> None:
     bluefolder = SimpleNamespace(
+        describe_service_request_status=lambda status: {"raw": status, "categoryLabel": "Scheduling", "isScheduling": True},
         get_job_summary=lambda reference: asyncio.sleep(
             0,
             result=SimpleNamespace(
@@ -94,7 +96,11 @@ def test_get_job_includes_parts_case_fields() -> None:
     workflow_state = SimpleNamespace(
         get_parts_case=lambda sr_id: asyncio.sleep(
             0,
-            result=SimpleNamespace(stage_label="Ready for Scheduling", next_action="Call customer to schedule."),
+            result=SimpleNamespace(
+                stage_label="Ready for Scheduling",
+                next_action="Call customer to schedule.",
+                service_request_status="Scheduled",
+            ),
         )
     )
     service = TechnicianApiService(
@@ -109,6 +115,7 @@ def test_get_job_includes_parts_case_fields() -> None:
 
     assert payload["partsStage"] == "Ready for Scheduling"
     assert payload["nextAction"] == "Call customer to schedule."
+    assert payload["statusMeta"]["categoryLabel"] == "Scheduling"
 
 
 def test_upload_job_photo_attaches_photo_payload() -> None:
