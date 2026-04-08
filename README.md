@@ -55,6 +55,7 @@ If you are using the bot day to day:
 - `docs/user-guide.md`
 - `docs/technician-guide.md`
 - `docs/dispatch-guide.md`
+- `docs/dispatch-sms-adapters.md`
 - `docs/parts-guide.md`
 - `docs/admin-guide.md`
 - `docs/workflow-guide.md`
@@ -445,6 +446,7 @@ User and operator docs live in `docs/`:
 - `docs/technician-guide.md`
 - `docs/dispatch-guide.md`
 - `docs/parts-guide.md`
+- `docs/dispatch-sms-adapters.md`
 - `docs/admin-guide.md`
 - `docs/troubleshooting.md`
 
