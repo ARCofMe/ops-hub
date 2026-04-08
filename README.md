@@ -41,6 +41,11 @@ Current app-facing backend surfaces now cover:
 - parts board, parts case, tracked request, and BlueFolder-native parts update routes
 - BlueFolder tenant status catalog and normalized SR status semantics for frontend clients
 
+Operational note:
+
+- dispatch technician visibility now uses the best available BlueFolder operator roster, including recent assigned technicians when the tenant active-user directory is incomplete
+- parts cases now supplement assignment-derived workflow state with tenant-wide SRs whose current BlueFolder status still maps to active parts-needed work
+
 ## Start Here
 
 If you are using the bot day to day:

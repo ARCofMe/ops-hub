@@ -43,9 +43,26 @@ class BlueFolderService:
         """Return active BlueFolder users keyed by user id."""
         return await self.adapter.get_active_user_directory()
 
+    async def get_operator_directory(self) -> dict[int, str]:
+        """Return the best available BlueFolder technician/operator directory."""
+        directory = await self.adapter.get_active_user_directory()
+        recent_assigned = await self.adapter.get_recent_assigned_user_directory()
+        merged = dict(recent_assigned)
+        merged.update(directory)
+        return merged
+
     async def get_user_name(self, user_id: int) -> str | None:
         """Return a readable BlueFolder user name when available."""
         return await self.adapter.get_user_name(user_id)
+
+    async def get_service_requests_for_statuses(
+        self,
+        statuses: list[str],
+        *,
+        lookback_days: int = 365,
+    ) -> list[dict[str, object]]:
+        """Return recent service requests whose current status matches one of the requested values."""
+        return await self.adapter.get_service_requests_for_statuses(statuses, lookback_days=lookback_days)
 
     async def get_assignments_for_user_today(
         self,

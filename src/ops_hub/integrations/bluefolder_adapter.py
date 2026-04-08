@@ -11,7 +11,7 @@ import re
 from xml.etree.ElementTree import Element
 from types import TracebackType
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
 from ops_hub.models.requests import BlueFolderJobSummary, CustomerContactSummary, PartsCommentRecord
@@ -44,6 +44,8 @@ class BlueFolderAdapter:
     _active_user_directory_cache: dict[int, str] = field(default_factory=dict)
     _active_user_directory_unavailable: bool = False
     _customer_contacts_endpoint_unavailable: bool = False
+    _recent_assigned_user_directory_cache: dict[int, str] = field(default_factory=dict)
+    _recent_assigned_user_directory_unavailable: bool = False
 
     async def get_job_summary(
         self,
@@ -752,6 +754,88 @@ class BlueFolderAdapter:
         parsed_user_id, name = parsed
         self._active_user_directory_cache[parsed_user_id] = name
         return name
+
+    async def get_recent_assigned_user_directory(self, *, lookback_days: int = 180) -> dict[int, str]:
+        """Return BlueFolder users seen on recent SR assignments when the user directory is incomplete."""
+        if self._recent_assigned_user_directory_cache:
+            return dict(self._recent_assigned_user_directory_cache)
+        if self._recent_assigned_user_directory_unavailable:
+            return {}
+
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {}
+
+        end = date.today()
+        start = end - timedelta(days=max(lookback_days, 1))
+        try:
+            service_requests = client.service_requests.list_for_range(
+                f"{start:%Y.%m.%d} 12:00 AM",
+                f"{end:%Y.%m.%d} 11:59 PM",
+            )
+        except Exception as exc:
+            self._recent_assigned_user_directory_unavailable = True
+            logger.warning("BlueFolder recent assigned-user lookup unavailable: %s", exc)
+            return {}
+
+        discovered: dict[int, str] = {}
+        for row in service_requests or []:
+            if not isinstance(row, dict):
+                continue
+            for raw_user_id in row.get("userIds") or []:
+                try:
+                    user_id = int(str(raw_user_id))
+                except (TypeError, ValueError):
+                    continue
+                if user_id in discovered:
+                    continue
+                user_name = await self.get_user_name(user_id)
+                if user_name:
+                    discovered[user_id] = user_name
+
+        self._recent_assigned_user_directory_cache = dict(discovered)
+        return discovered
+
+    async def get_service_requests_for_statuses(
+        self,
+        statuses: list[str],
+        *,
+        lookback_days: int = 365,
+    ) -> list[dict[str, object]]:
+        """Return recent service requests whose current status matches one of the requested values."""
+        normalized_statuses = {str(status).strip().casefold() for status in statuses if str(status).strip()}
+        if not normalized_statuses:
+            return []
+
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return []
+
+        end = date.today()
+        start = end - timedelta(days=max(lookback_days, 1))
+        try:
+            service_requests = client.service_requests.list_for_range(
+                f"{start:%Y.%m.%d} 12:00 AM",
+                f"{end:%Y.%m.%d} 11:59 PM",
+            )
+        except Exception as exc:
+            logger.warning("BlueFolder service request status lookup unavailable: %s", exc)
+            return []
+
+        filtered: list[dict[str, object]] = []
+        seen_ids: set[str] = set()
+        for row in service_requests or []:
+            if not isinstance(row, dict):
+                continue
+            status_text = str(row.get("status") or row.get("statusName") or "").strip()
+            sr_id = str(row.get("id") or "").strip()
+            if not sr_id or sr_id in seen_ids:
+                continue
+            if status_text.casefold() not in normalized_statuses:
+                continue
+            filtered.append(dict(row))
+            seen_ids.add(sr_id)
+        return filtered
 
     def _build_parts_update_detail_text(
         self,

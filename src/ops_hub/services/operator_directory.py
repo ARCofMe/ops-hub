@@ -90,7 +90,7 @@ class TechnicianDirectoryService:
         bluefolder_service: "BlueFolderService | None" = None,
     ) -> list[TechnicianMappingRecord]:
         """Return BlueFolder-first operator records with optional Discord linkage."""
-        bluefolder_directory = await bluefolder_service.get_active_user_directory() if bluefolder_service is not None else {}
+        bluefolder_directory = await bluefolder_service.get_operator_directory() if bluefolder_service is not None else {}
         return self._operator_records_from_directory(bluefolder_directory)
 
     def reverse_mappings(self) -> dict[int, int]:

@@ -3,6 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from ops_hub.integrations.parts_cannon_adapter import PartsCannonAdapter
 from ops_hub.models.requests import PartLookupRequest, PartRequestCreate, PartRequestUpdate
@@ -199,3 +200,65 @@ def test_parts_adapter_reconcile_reports_missing_receipt_file(tmp_path: Path) ->
     result = asyncio.run(service.reconcile_requests_from_parts_system())
 
     assert "Status: `no_receipts`" in result.message
+
+
+def test_parts_cases_include_tenant_active_parts_statuses_without_tracked_requests(tmp_path: Path) -> None:
+    (tmp_path / "bluefolder_status_inventory.json").write_text(
+        json.dumps(
+            {
+                "service_request": {
+                    "tenant_ui_status_options": ["NEED PARTS/SCHEDULE", "Completed"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=str(tmp_path)),
+        notifications=NotificationService(),
+        request_store=PartsRequestStore(file_path=None),
+        workflow_state_service=SimpleNamespace(
+            bluefolder_service=SimpleNamespace(
+                adapter=SimpleNamespace(base_path=str(tmp_path)),
+                get_service_requests_for_statuses=lambda statuses: asyncio.sleep(
+                    0,
+                    result=[{"id": "100", "status": "NEED PARTS/SCHEDULE"}] if "NEED PARTS/SCHEDULE" in statuses else [],
+                ),
+                get_parts_snapshot=lambda sr_id: asyncio.sleep(0, result=None),
+                get_job_summary=lambda reference, include_customer_contacts=False: asyncio.sleep(
+                    0,
+                    result=SimpleNamespace(service_request_status="NEED PARTS/SCHEDULE"),
+                ),
+            ),
+            get_parts_case=lambda reference: asyncio.sleep(
+                0,
+                result=SimpleNamespace(
+                    case_id=reference,
+                    reference=reference,
+                    sr_id=100,
+                    stage="no_recent_parts_context",
+                    stage_label="No Recent Parts Context",
+                    status="open",
+                    open_request_ids=[],
+                    assigned_parts_user_id=None,
+                    requested_by_user_id=None,
+                    technician_bluefolder_user_id=None,
+                    service_request_status="NEED PARTS/SCHEDULE",
+                    latest_status_text=None,
+                    latest_issue_text=None,
+                    blocker=None,
+                    next_action="Review parts status.",
+                    updated_at=None,
+                    age_hours=None,
+                    age_bucket=None,
+                ),
+            ),
+            refresh_dispatch_attention=lambda mappings: asyncio.sleep(0, result=(0, [])),
+            current_snapshot=lambda: SimpleNamespace(parts_cases=[]),
+        ),
+    )
+
+    payload = asyncio.run(service.get_parts_cases_payload(status="open"))
+
+    assert [item["reference"] for item in payload["items"]] == ["SR-100"]
+    assert payload["items"][0]["serviceRequestStatus"] == "NEED PARTS/SCHEDULE"

@@ -53,7 +53,7 @@ def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
     service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
 
     class _BlueFolderService:
-        async def get_active_user_directory(self) -> dict[int, str]:
+        async def get_operator_directory(self) -> dict[int, str]:
             return {9001: "Dispatch Dave", 9002: "Field Sam"}
 
     records = asyncio.run(service.operator_records(bluefolder_service=_BlueFolderService()))
@@ -61,4 +61,20 @@ def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
     assert [(record.discord_user_id, record.bluefolder_user_id, record.bluefolder_name) for record in records] == [
         (42, 9001, "Dispatch Dave"),
         (None, 9002, "Field Sam"),
+    ]
+
+
+def test_operator_records_merge_recent_assigned_directory(tmp_path) -> None:
+    settings = Settings(discord_token="token")
+    service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
+
+    class _BlueFolderService:
+        async def get_operator_directory(self) -> dict[int, str]:
+            return {9003: "Route Pat", 9004: "Field Sam"}
+
+    records = asyncio.run(service.operator_records(bluefolder_service=_BlueFolderService()))
+
+    assert [(record.discord_user_id, record.bluefolder_user_id, record.bluefolder_name) for record in records] == [
+        (None, 9004, "Field Sam"),
+        (None, 9003, "Route Pat"),
     ]

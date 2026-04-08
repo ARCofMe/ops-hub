@@ -770,20 +770,58 @@ class PartsHandoffService:
 
     async def _current_parts_cases(self):
         """Return the current derived parts-case list, refreshing shared workflow state when available."""
+        supplemented_cases: dict[str, object] = {}
         if self.workflow_state_service is not None:
+            bluefolder_service = getattr(self.workflow_state_service, "bluefolder_service", None)
             if self.technician_directory_service is None:
                 mappings = []
             else:
                 operator_records = getattr(self.technician_directory_service, "operator_records", None)
                 if callable(operator_records):
-                    mappings = await operator_records(bluefolder_service=self.bluefolder_service)
+                    mappings = await operator_records(bluefolder_service=bluefolder_service)
                 else:
                     mappings = self.technician_directory_service.mapping_records()
             await self.workflow_state_service.refresh_dispatch_attention(mappings)
-            return list(self.workflow_state_service.current_snapshot().parts_cases)
+            for case in self.workflow_state_service.current_snapshot().parts_cases:
+                supplemented_cases[case.reference.strip().upper()] = case
+        else:
+            references = {record.reference for record in self.request_store.load()}
+            for reference in sorted(references):
+                case = await self._parts_case_for_reference(reference)
+                supplemented_cases[case.reference.strip().upper()] = case
 
-        references = {record.reference for record in self.request_store.load()}
-        return [await self._parts_case_for_reference(reference) for reference in sorted(references)]
+        tenant_active_cases = await self._tenant_active_parts_cases()
+        for case in tenant_active_cases:
+            supplemented_cases.setdefault(case.reference.strip().upper(), case)
+        return list(supplemented_cases.values())
+
+    async def _tenant_active_parts_cases(self) -> list[object]:
+        """Return tenant-wide active-parts SR cases from BlueFolder status signals."""
+        bluefolder_service = getattr(self.workflow_state_service, "bluefolder_service", None)
+        if bluefolder_service is None:
+            return []
+        catalog = status_catalog_payload(base_path=self._bluefolder_base_path())
+        active_statuses = [
+            str(item.get("raw") or "").strip()
+            for item in catalog.get("statusMeta", [])
+            if isinstance(item, dict) and item.get("isActiveParts")
+        ]
+        if not active_statuses:
+            return []
+
+        service_requests = await bluefolder_service.get_service_requests_for_statuses(active_statuses)
+        cases: list[object] = []
+        seen_references: set[str] = set()
+        for row in service_requests:
+            sr_id = self._safe_int(row.get("id"))
+            if sr_id is None:
+                continue
+            reference = f"SR-{sr_id}"
+            if reference in seen_references:
+                continue
+            seen_references.add(reference)
+            cases.append(await self._parts_case_for_reference(reference))
+        return cases
 
     def _queue_summary_payload(self, summary: PartsRequestQueueSummary) -> dict[str, int]:
         """Serialize queue-summary counts for API responses."""
@@ -903,6 +941,13 @@ class PartsHandoffService:
             return None
         value = candidate[3:]
         return int(value) if value.isdigit() else None
+
+    @staticmethod
+    def _safe_int(value: object) -> int | None:
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return None
 
     def _bluefolder_base_path(self) -> str | None:
         """Return the configured BlueFolder library path when available through workflow services."""
