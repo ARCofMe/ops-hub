@@ -42,7 +42,11 @@ class SmsAuditStore:
         """Load persisted SMS records if configured."""
         if self.file_path is None or not self.file_path.exists():
             return list(self.records)
-        raw = json.loads(self.file_path.read_text(encoding="utf-8"))
+        try:
+            raw = json.loads(self.file_path.read_text(encoding="utf-8"))
+        except Exception:
+            self.records = []
+            return []
         if not isinstance(raw, list):
             raise RuntimeError(f"SMS audit file must contain a JSON array: {self.file_path}")
         self.records = [SmsSendRecord(**item) for item in raw if isinstance(item, dict)]
@@ -84,6 +88,10 @@ class SmsAdapter:
 
     provider_name = "unknown"
 
+    def delivery_status(self) -> tuple[bool, str | None]:
+        """Return whether this adapter can actually send messages right now."""
+        return True, None
+
     async def send_message(self, *, to_number: str, message: str) -> SmsSendResult:
         raise NotImplementedError
 
@@ -120,21 +128,26 @@ class TwilioSmsAdapter(SmsAdapter):
         self.from_number = (from_number or "").strip()
         self.messaging_service_sid = (messaging_service_sid or "").strip()
 
-    async def send_message(self, *, to_number: str, message: str) -> SmsSendResult:
+    def delivery_status(self) -> tuple[bool, str | None]:
         if not (self.account_sid and self.auth_token and (self.from_number or self.messaging_service_sid)):
+            return False, "Twilio credentials are not configured yet."
+        return False, "Twilio adapter wiring is not complete yet."
+
+    async def send_message(self, *, to_number: str, message: str) -> SmsSendResult:
+        enabled, reason = self.delivery_status()
+        if not enabled:
             return SmsSendResult(
                 provider=self.provider_name,
-                status="unconfigured",
+                status="unconfigured" if reason == "Twilio credentials are not configured yet." else "pending_provider_wiring",
                 to_number=to_number,
                 message=message,
-                error="Twilio credentials are not configured yet.",
+                error=reason,
             )
         return SmsSendResult(
             provider=self.provider_name,
-            status="pending_provider_wiring",
+            status="queued",
             to_number=to_number,
             message=message,
-            error="Twilio adapter groundwork is configured, but outbound delivery is not wired yet.",
         )
 
 
@@ -159,15 +172,16 @@ class DispatchSmsService:
     ) -> dict[str, object]:
         """Return current SMS availability and supported intents for one SR."""
         to_number = self._resolve_phone_number(customer)
+        adapter_enabled, adapter_reason = self.adapter.delivery_status()
         intents = self._intents(reference=reference, work=work)
         return {
             "srId": sr_id,
             "reference": reference,
             "provider": self.adapter.provider_name,
-            "enabled": bool(to_number),
+            "enabled": bool(to_number) and adapter_enabled,
             "toNumber": to_number,
             "fromLabel": self.from_label,
-            "reason": None if to_number else "No customer phone number is available for this SR.",
+            "reason": self._capability_reason(to_number=to_number, adapter_reason=adapter_reason),
             "intents": intents,
         }
 
@@ -270,10 +284,27 @@ class DispatchSmsService:
             ],
         }
 
+    @staticmethod
+    def _normalize_phone_number(value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if len(digits) == 11 and digits.startswith("1"):
+            return f"+{digits}"
+        if len(digits) == 10:
+            return f"+1{digits}"
+        return raw
+
+    def _capability_reason(self, *, to_number: str | None, adapter_reason: str | None) -> str | None:
+        if not to_number:
+            return "No customer phone number is available for this SR."
+        return adapter_reason
+
     def _resolve_phone_number(self, customer: dict[str, object] | None) -> str | None:
         if not isinstance(customer, dict):
             return None
-        direct = str(customer.get("customerPhone") or "").strip()
+        direct = self._normalize_phone_number(customer.get("customerPhone"))
         if direct:
             return direct
         contacts = customer.get("contacts")
@@ -282,7 +313,7 @@ class DispatchSmsService:
         for contact in contacts:
             if not isinstance(contact, dict):
                 continue
-            phone = str(contact.get("phone") or "").strip()
+            phone = self._normalize_phone_number(contact.get("phone"))
             if phone:
                 return phone
         return None
@@ -323,7 +354,7 @@ class DispatchSmsService:
     ) -> str:
         custom = str(custom_message or "").strip()
         if custom:
-            return custom
+            return self._bounded_message(custom)
 
         customer_name = str((customer or {}).get("customerName") or "").strip() or "there"
         subject = str((customer or {}).get("subject") or "").strip() or "your service request"
@@ -356,8 +387,17 @@ class DispatchSmsService:
             raise ValueError(f"Unsupported SMS intent: {intent}")
         if status:
             message = f"{message} Current status: {status}."
-        return " ".join(message.split())
+        return self._bounded_message(" ".join(message.split()))
 
     @staticmethod
     def _segment_count(message: str) -> int:
         return max(1, (len(message) + 159) // 160)
+
+    @staticmethod
+    def _bounded_message(message: str) -> str:
+        normalized = " ".join(str(message or "").split())
+        if not normalized:
+            raise ValueError("SMS message cannot be blank.")
+        if len(normalized) > 480:
+            raise ValueError("SMS message is too long. Keep it under 480 characters.")
+        return normalized
