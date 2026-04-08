@@ -1800,6 +1800,10 @@ class DispatchService:
                 discord_user_id=item.owner_discord_user_id,
                 bluefolder_user_id=item.owner_bluefolder_user_id,
             ),
+            "technicianLabel": await self._technician_label_payload(
+                discord_user_id=item.owner_discord_user_id,
+                bluefolder_user_id=item.owner_bluefolder_user_id,
+            ),
             "assignedOwnerBluefolderUserId": item.assigned_owner_bluefolder_user_id,
             "assignedOwnerDiscordUserId": item.assigned_owner_discord_user_id,
             "assignedOwnerLabel": await self._technician_label_payload(

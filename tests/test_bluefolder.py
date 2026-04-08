@@ -2536,6 +2536,8 @@ def test_dispatch_service_returns_attention_item_detail_payload() -> None:
     payload = asyncio.run(service.get_dispatch_attention_item_payload(item_id=attention_item.item_id))
 
     assert payload["item"]["itemId"] == attention_item.item_id
+    assert payload["item"]["ownerLabel"] == "BlueFolder user `13051`"
+    assert payload["item"]["technicianLabel"] == payload["item"]["ownerLabel"]
     assert payload["history"][0]["eventType"] == "attention_owner_assigned"
 
 
