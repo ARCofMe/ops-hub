@@ -14,7 +14,13 @@ from types import TracebackType
 from datetime import date, datetime, timedelta
 
 from ops_hub.integrations.import_context import TemporarySysPath, import_module_from_path
-from ops_hub.models.requests import BlueFolderJobSummary, CustomerContactSummary, PartsCommentRecord
+from ops_hub.models.requests import (
+    BlueFolderJobSummary,
+    CustomerContactSummary,
+    PartsCommentRecord,
+    TechnicianCloseoutDraft,
+    TechnicianCloseoutPreview,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -605,6 +611,92 @@ class BlueFolderAdapter:
             details=details,
             minutes=minutes,
         )
+
+    async def preview_technician_closeout(
+        self,
+        draft: TechnicianCloseoutDraft,
+    ) -> TechnicianCloseoutPreview:
+        """Normalize a technician closeout draft into a BlueFolder labor preview."""
+        ended_at = self._closeout_datetime(draft.ended_at_epoch_ms) or datetime.now()
+        started_at = self._closeout_datetime(draft.started_at_epoch_ms) or ended_at
+        duration_minutes = self._resolve_closeout_duration_minutes(
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_minutes=draft.duration_minutes,
+        )
+        labor_label, billable = self._closeout_labor_profile(draft.labor_code)
+        signoff_label = (
+            f"Customer approved and signed by {draft.signed_by.strip()}."
+            if draft.customer_approved and (draft.signed_by or "").strip()
+            else "Customer signoff is still required."
+        )
+        return TechnicianCloseoutPreview(
+            labor_code=draft.labor_code,
+            labor_label=labor_label,
+            billable=billable,
+            date_worked=ended_at.strftime("%Y.%m.%d"),
+            start_time=started_at.strftime("%I:%M %p").lstrip("0"),
+            end_time=ended_at.strftime("%I:%M %p").lstrip("0"),
+            duration_minutes=duration_minutes,
+            duration_label=self._format_duration_label(duration_minutes),
+            work_performed=" ".join((draft.work_performed or "").split()).strip(),
+            signoff_label=signoff_label,
+        )
+
+    async def submit_technician_closeout(
+        self,
+        draft: TechnicianCloseoutDraft,
+        *,
+        bluefolder_user_id: int | None,
+    ) -> dict[str, object]:
+        """Create a BlueFolder labor entry and closeout note for technician completion."""
+        client, _resolved_path = self._build_client()
+        if client is None:
+            return {"ok": False, "error": "BlueFolder client is not configured for write actions."}
+        if bluefolder_user_id is None:
+            return {"ok": False, "error": "A BlueFolder technician id is required for closeout labor."}
+
+        cleaned_summary = " ".join((draft.work_performed or "").split()).strip()
+        if not cleaned_summary:
+            return {"ok": False, "error": "Work performed summary is required."}
+        if draft.final_outcome.strip().casefold() == "completed":
+            if not draft.customer_approved:
+                return {"ok": False, "error": "Customer signoff acknowledgement is required before closeout."}
+            if not (draft.signed_by or "").strip():
+                return {"ok": False, "error": "Signer name is required before closeout."}
+
+        preview = await self.preview_technician_closeout(draft)
+        comment_text = self._build_closeout_comment_text(draft, preview)
+
+        try:
+            client.service_requests.add_labor(
+                draft.sr_id,
+                bluefolder_user_id,
+                preview.duration_label,
+                dateWorked=preview.date_worked,
+                startTime=preview.start_time,
+                itemDescription=preview.labor_label,
+                comment=comment_text,
+                commentIsPublic="false",
+            )
+            client.service_requests.add_comment(
+                draft.sr_id,
+                f"FieldDesk closeout submitted. {preview.signoff_label}",
+                user_id=bluefolder_user_id,
+                comment_is_public=False,
+            )
+        except Exception as exc:
+            logger.exception("BlueFolder closeout labor write failed for SR %s", draft.sr_id)
+            return {"ok": False, "error": str(exc)}
+
+        return {
+            "ok": True,
+            "laborLabel": preview.labor_label,
+            "dateWorked": preview.date_worked,
+            "startTime": preview.start_time,
+            "durationLabel": preview.duration_label,
+            "signoffLabel": preview.signoff_label,
+        }
         if comment_text is None:
             if event_type == "eta":
                 return {"ok": False, "error": "ETA minutes must be greater than 0."}
@@ -1073,6 +1165,64 @@ class BlueFolderAdapter:
             return None
         text = str(value).strip()
         return text or None
+
+    @staticmethod
+    def _closeout_datetime(value: int | None) -> datetime | None:
+        """Convert epoch milliseconds into a local datetime when provided."""
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(value / 1000)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _resolve_closeout_duration_minutes(
+        *,
+        started_at: datetime,
+        ended_at: datetime,
+        duration_minutes: int | None,
+    ) -> int:
+        """Choose a bounded duration for labor submission."""
+        if duration_minutes is not None and duration_minutes > 0:
+            return duration_minutes
+        derived = int(max(15, round((ended_at - started_at).total_seconds() / 60)))
+        return min(derived, 12 * 60)
+
+    @staticmethod
+    def _closeout_labor_profile(labor_code: str) -> tuple[str, bool]:
+        """Map FieldDesk closeout codes into BlueFolder labor labels."""
+        normalized = labor_code.strip().casefold()
+        profiles = {
+            "warranty": ("Warranty Labor", False),
+            "oow_hourly": ("OOW Hourly Labor", True),
+            "diagnostic_fee": ("Diagnostic / No Defect Found", True),
+            "declined_repair": ("Declined Repair / Diagnostic", True),
+        }
+        return profiles.get(normalized, ("Field Service Labor", True))
+
+    @staticmethod
+    def _format_duration_label(duration_minutes: int) -> str:
+        """Format duration in BlueFolder-style H:MM text."""
+        hours, minutes = divmod(max(duration_minutes, 0), 60)
+        return f"{hours}:{minutes:02d}"
+
+    @staticmethod
+    def _build_closeout_comment_text(
+        draft: TechnicianCloseoutDraft,
+        preview: TechnicianCloseoutPreview,
+    ) -> str:
+        """Build a human-readable closeout comment for the labor line."""
+        lines = [
+            f"Labor type: {preview.labor_label}",
+            f"Work performed: {preview.work_performed}",
+            f"Elapsed onsite time: {preview.start_time} - {preview.end_time} ({preview.duration_label} hours)",
+            f"Final outcome: {draft.final_outcome.replace('_', ' ')}",
+            preview.signoff_label,
+        ]
+        if (draft.outcome_note or "").strip():
+            lines.append(f"Outcome note: {' '.join((draft.outcome_note or '').split()).strip()}")
+        return "\n".join(lines)
 
     def _resolve_path(self) -> Path | None:
         """Resolve the configured BlueFolder library path."""

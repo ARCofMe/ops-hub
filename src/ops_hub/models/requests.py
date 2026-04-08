@@ -512,3 +512,35 @@ class WorkflowStateSnapshot:
     photo_compliance_records: list[PhotoComplianceRecord] = field(default_factory=list)
     parts_cases: list[PartsCaseRecord] = field(default_factory=list)
     events: list[WorkflowEventRecord] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class TechnicianCloseoutDraft:
+    """Structured technician closeout payload before BlueFolder submission."""
+
+    sr_id: int
+    labor_code: str
+    work_performed: str
+    started_at_epoch_ms: int | None = None
+    ended_at_epoch_ms: int | None = None
+    duration_minutes: int | None = None
+    signed_by: str | None = None
+    customer_approved: bool = False
+    final_outcome: str = "completed"
+    outcome_note: str | None = None
+
+
+@dataclass(slots=True)
+class TechnicianCloseoutPreview:
+    """Normalized closeout preview presented to the technician client."""
+
+    labor_code: str
+    labor_label: str
+    billable: bool
+    date_worked: str
+    start_time: str
+    end_time: str
+    duration_minutes: int
+    duration_label: str
+    work_performed: str
+    signoff_label: str

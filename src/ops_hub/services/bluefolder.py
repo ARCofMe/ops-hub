@@ -13,6 +13,7 @@ from ops_hub.models.requests import (
     CustomerContactSummary,
     PartsCommentRecord,
     PartsLifecycleSnapshot,
+    TechnicianCloseoutDraft,
 )
 from ops_hub.services.bluefolder_status_catalog import describe_service_request_status, status_catalog_payload
 from ops_hub.services.notifications import NotificationService
@@ -262,6 +263,62 @@ class BlueFolderService:
         lines.append("")
         lines.append(f"Recommended next action: {self.recommend_next_action(snapshot)}")
         return CommandResult(message="\n".join(lines))
+
+    async def preview_technician_closeout(
+        self,
+        draft: TechnicianCloseoutDraft,
+    ) -> dict[str, object]:
+        """Return a normalized labor closeout preview for the mobile app."""
+        preview = await self.adapter.preview_technician_closeout(draft)
+        return {
+            "laborCode": preview.labor_code,
+            "laborLabel": preview.labor_label,
+            "billable": preview.billable,
+            "dateWorked": preview.date_worked,
+            "startTime": preview.start_time,
+            "endTime": preview.end_time,
+            "durationMinutes": preview.duration_minutes,
+            "durationLabel": preview.duration_label,
+            "workPerformed": preview.work_performed,
+            "signoffLabel": preview.signoff_label,
+        }
+
+    async def submit_technician_closeout(
+        self,
+        draft: TechnicianCloseoutDraft,
+        *,
+        requested_by_user_id: int,
+        requested_by_label: str | None = None,
+        bluefolder_user_id: int | None = None,
+    ) -> CommandResult:
+        """Persist a technician closeout labor entry into BlueFolder."""
+        result = await self.adapter.submit_technician_closeout(
+            draft,
+            bluefolder_user_id=bluefolder_user_id,
+        )
+        if not result.get("ok"):
+            return CommandResult(
+                message=(
+                    f"Could not submit closeout labor for `{draft.sr_id}`: "
+                    f"{result.get('error') or 'unknown error'}"
+                )
+            )
+        if self.workflow_state_service is not None:
+            self.workflow_state_service.record_event(
+                event_type="closeout_submitted",
+                source="bluefolder.labor",
+                sr_id=draft.sr_id,
+                summary=f"Submitted closeout labor for SR-{draft.sr_id}.",
+                actor_user_id=requested_by_user_id,
+                actor_label=requested_by_label,
+                details=str(result.get("laborLabel") or ""),
+            )
+        return CommandResult(
+            message=(
+                f"Closeout submitted with `{result.get('laborLabel') or 'labor'}` "
+                f"for `{result.get('durationLabel') or '0:00'}`."
+            )
+        )
 
     async def log_parts_issue(
         self,

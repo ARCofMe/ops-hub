@@ -7,7 +7,7 @@ import binascii
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ops_hub.models.requests import PartRequestCreate, PhotoAttachmentPayload
+from ops_hub.models.requests import PartRequestCreate, PhotoAttachmentPayload, TechnicianCloseoutDraft
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.parts_cannon import PartsHandoffService
@@ -542,6 +542,102 @@ class TechnicianApiService:
             "reason": self._extract_photo_reminder_reason(result.message),
             "noticeRequested": send_notice,
         }
+
+    async def preview_closeout(
+        self,
+        *,
+        sr_id: int,
+        technician_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None,
+        labor_code: str,
+        work_performed: str,
+        started_at_epoch_ms: int | None,
+        ended_at_epoch_ms: int | None,
+        duration_minutes: int | None,
+        signed_by: str | None,
+        customer_approved: bool,
+        final_outcome: str,
+        outcome_note: str | None = None,
+    ) -> dict[str, object]:
+        """Return a technician closeout preview for labor submission."""
+        draft = TechnicianCloseoutDraft(
+            sr_id=sr_id,
+            labor_code=labor_code,
+            work_performed=work_performed,
+            started_at_epoch_ms=started_at_epoch_ms,
+            ended_at_epoch_ms=ended_at_epoch_ms,
+            duration_minutes=duration_minutes,
+            signed_by=signed_by,
+            customer_approved=customer_approved,
+            final_outcome=final_outcome,
+            outcome_note=outcome_note,
+        )
+        preview = await self.bluefolder_service.preview_technician_closeout(draft)
+        preview["success"] = True
+        return preview
+
+    async def submit_closeout(
+        self,
+        *,
+        sr_id: int,
+        technician_discord_user_id: int | None,
+        technician_bluefolder_user_id: int | None,
+        technician_actor_label: str | None,
+        labor_code: str,
+        work_performed: str,
+        started_at_epoch_ms: int | None,
+        ended_at_epoch_ms: int | None,
+        duration_minutes: int | None,
+        signed_by: str | None,
+        customer_approved: bool,
+        final_outcome: str,
+        outcome_note: str | None = None,
+    ) -> dict[str, object]:
+        """Submit a completed technician closeout as BlueFolder labor."""
+        draft = TechnicianCloseoutDraft(
+            sr_id=sr_id,
+            labor_code=labor_code,
+            work_performed=work_performed,
+            started_at_epoch_ms=started_at_epoch_ms,
+            ended_at_epoch_ms=ended_at_epoch_ms,
+            duration_minutes=duration_minutes,
+            signed_by=signed_by,
+            customer_approved=customer_approved,
+            final_outcome=final_outcome,
+            outcome_note=outcome_note,
+        )
+        result = await self.bluefolder_service.submit_technician_closeout(
+            draft,
+            requested_by_user_id=self._actor_user_id(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+            ),
+            requested_by_label=self._actor_label(
+                technician_discord_user_id=technician_discord_user_id,
+                technician_bluefolder_user_id=technician_bluefolder_user_id,
+                actor_label=technician_actor_label,
+            ),
+            bluefolder_user_id=technician_bluefolder_user_id,
+        )
+        if result.message.startswith("Could not submit closeout labor"):
+            return {"success": False, "message": result.message}
+        if final_outcome.strip().casefold() == "completed":
+            await self.bluefolder_service.log_field_event(
+                sr_id,
+                event_type="complete",
+                requested_by_user_id=self._actor_user_id(
+                    technician_discord_user_id=technician_discord_user_id,
+                    technician_bluefolder_user_id=technician_bluefolder_user_id,
+                ),
+                requested_by_label=self._actor_label(
+                    technician_discord_user_id=technician_discord_user_id,
+                    technician_bluefolder_user_id=technician_bluefolder_user_id,
+                    actor_label=technician_actor_label,
+                ),
+                bluefolder_user_id=technician_bluefolder_user_id,
+                details=" ".join((outcome_note or "").split()).strip() or None,
+            )
+        return {"success": True, "message": result.message}
 
     def resolve_technician(
         self,

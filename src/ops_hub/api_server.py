@@ -651,6 +651,59 @@ async def dispatch_technician_api_request(
         return HTTPStatus.OK, await container.technician_api_service.get_job(sr_id=sr_id)
 
     payload_body = body or {}
+    if method == "POST" and route_path.endswith("/closeout/preview"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/closeout/preview")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.preview_closeout(
+            sr_id=sr_id,
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+            labor_code=str(payload_body.get("laborCode") or ""),
+            work_performed=str(payload_body.get("workPerformed") or ""),
+            started_at_epoch_ms=payload_body.get("startedAtEpochMs")
+            if isinstance(payload_body.get("startedAtEpochMs"), int)
+            else None,
+            ended_at_epoch_ms=payload_body.get("endedAtEpochMs")
+            if isinstance(payload_body.get("endedAtEpochMs"), int)
+            else None,
+            duration_minutes=payload_body.get("durationMinutes")
+            if isinstance(payload_body.get("durationMinutes"), int)
+            else None,
+            signed_by=str(payload_body.get("signedBy") or "") or None,
+            customer_approved=bool(payload_body.get("customerApproved")),
+            final_outcome=str(payload_body.get("finalOutcome") or "completed"),
+            outcome_note=str(payload_body.get("outcomeNote") or "") or None,
+        )
+        return HTTPStatus.OK, payload
+
+    if method == "POST" and route_path.endswith("/closeout/submit"):
+        sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/closeout/submit")
+        if sr_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+        payload = await container.technician_api_service.submit_closeout(
+            sr_id=sr_id,
+            technician_discord_user_id=discord_user_id,
+            technician_bluefolder_user_id=bluefolder_user_id,
+            technician_actor_label=actor_label,
+            labor_code=str(payload_body.get("laborCode") or ""),
+            work_performed=str(payload_body.get("workPerformed") or ""),
+            started_at_epoch_ms=payload_body.get("startedAtEpochMs")
+            if isinstance(payload_body.get("startedAtEpochMs"), int)
+            else None,
+            ended_at_epoch_ms=payload_body.get("endedAtEpochMs")
+            if isinstance(payload_body.get("endedAtEpochMs"), int)
+            else None,
+            duration_minutes=payload_body.get("durationMinutes")
+            if isinstance(payload_body.get("durationMinutes"), int)
+            else None,
+            signed_by=str(payload_body.get("signedBy") or "") or None,
+            customer_approved=bool(payload_body.get("customerApproved")),
+            final_outcome=str(payload_body.get("finalOutcome") or "completed"),
+            outcome_note=str(payload_body.get("outcomeNote") or "") or None,
+        )
+        return HTTPStatus.OK, payload
+
     if method == "POST" and route_path.endswith("/status"):
         sr_id = _path_int(route_path, prefix="/tech/jobs/", suffix="/status")
         if sr_id is None:

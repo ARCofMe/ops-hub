@@ -268,6 +268,101 @@ def test_log_work_start_includes_optional_details() -> None:
     assert calls[0]["details"] == "Verified unit power and started diagnostic."
 
 
+def test_preview_closeout_returns_labor_preview() -> None:
+    async def preview_technician_closeout(draft):
+        assert draft.labor_code == "oow_hourly"
+        return {
+            "laborCode": draft.labor_code,
+            "laborLabel": "OOW Hourly Labor",
+            "billable": True,
+            "dateWorked": "2026.04.08",
+            "startTime": "8:00 AM",
+            "endTime": "9:30 AM",
+            "durationMinutes": 90,
+            "durationLabel": "1:30",
+            "workPerformed": "Replaced failed inlet valve and verified fill.",
+            "signoffLabel": "Customer approved and signed by Pat Customer.",
+        }
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(preview_technician_closeout=preview_technician_closeout),
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    payload = asyncio.run(
+        service.preview_closeout(
+            sr_id=100,
+            technician_discord_user_id=None,
+            technician_bluefolder_user_id=9001,
+            labor_code="oow_hourly",
+            work_performed="Replaced failed inlet valve and verified fill.",
+            started_at_epoch_ms=1,
+            ended_at_epoch_ms=2,
+            duration_minutes=90,
+            signed_by="Pat Customer",
+            customer_approved=True,
+            final_outcome="completed",
+        )
+    )
+
+    assert payload["success"] is True
+    assert payload["laborLabel"] == "OOW Hourly Labor"
+    assert payload["durationLabel"] == "1:30"
+
+
+def test_submit_closeout_logs_complete_after_labor_submission() -> None:
+    labor_calls: list[dict[str, object]] = []
+    complete_calls: list[dict[str, object]] = []
+
+    async def submit_technician_closeout(draft, **kwargs):
+        labor_calls.append({"draft": draft, **kwargs})
+        return SimpleNamespace(message="Closeout submitted with `OOW Hourly Labor` for `1:30`.")
+
+    async def log_field_event(sr_id: int, **kwargs):
+        complete_calls.append({"sr_id": sr_id, **kwargs})
+        return SimpleNamespace(message="Complete logged")
+
+    service = TechnicianApiService(
+        bluefolder_service=SimpleNamespace(
+            submit_technician_closeout=submit_technician_closeout,
+            log_field_event=log_field_event,
+        ),
+        technician_directory_service=SimpleNamespace(
+            mappings=lambda: {},
+            technician_display_label=lambda **kwargs: "Field Sam",
+        ),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    payload = asyncio.run(
+        service.submit_closeout(
+            sr_id=100,
+            technician_discord_user_id=None,
+            technician_bluefolder_user_id=9001,
+            technician_actor_label="Field Sam",
+            labor_code="oow_hourly",
+            work_performed="Replaced failed inlet valve and verified fill.",
+            started_at_epoch_ms=1,
+            ended_at_epoch_ms=2,
+            duration_minutes=90,
+            signed_by="Pat Customer",
+            customer_approved=True,
+            final_outcome="completed",
+            outcome_note="Unit tested good after repair.",
+        )
+    )
+
+    assert payload["success"] is True
+    assert "Closeout submitted" in payload["message"]
+    assert labor_calls[0]["bluefolder_user_id"] == 9001
+    assert complete_calls[0]["event_type"] == "complete"
+
+
 def test_report_no_answer_logs_field_event() -> None:
     calls: list[dict[str, object]] = []
 

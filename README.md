@@ -18,6 +18,7 @@ queueing, next-action logic, cross-role views, and API surfaces for the apps.
 - dispatch board, triage, attention, SR detail, routing, and intake APIs
 - parts board, case, request, and BlueFolder-native parts update APIs
 - technician mobile APIs for job, workflow, and photo flows
+- technician closeout preview/submission APIs for BlueFolder labor-backed field completion
 - workflow-state ownership for attention queues, parts cases, policy events, and history
 - normalized BlueFolder status semantics for frontend clients
 - optional Discord commands and notifications
@@ -112,6 +113,8 @@ Current app-facing routes include:
 - `POST /parts/sr/<sr_id>/tracking`
 - `POST /parts/sr/<sr_id>/received`
 - `POST /parts/sr/<sr_id>/ready`
+- `POST /tech/jobs/<sr_id>/closeout/preview`
+- `POST /tech/jobs/<sr_id>/closeout/submit`
 
 ## Configuration
 
@@ -150,3 +153,4 @@ PYTHONPATH=src python -m ops_hub
 - Parts cases are no longer limited only to the currently scanned assignment set; tenant-wide parts-active SRs can surface as cases too.
 - Dispatch attention ownership is BlueFolder-first. Discord owner ids remain compatibility input, not the preferred model.
 - The default SMS provider mode is `dry_run`, which records preview and send attempts without sending real texts.
+- Technician completed-closeout flows can now compile work summary, elapsed time, labor type, and customer signoff acknowledgement into a BlueFolder labor submission path.
