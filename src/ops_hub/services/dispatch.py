@@ -815,6 +815,7 @@ class DispatchService:
     ) -> dict[str, object]:
         """Return structured attention queue payload for frontend clients."""
         mappings = await self._dispatch_operator_records()
+        routeable_mappings = [record for record in mappings if self._is_dispatch_board_candidate(record)]
         if self.workflow_state_service is None:
             return {
                 "scannedJobs": 0,
@@ -828,15 +829,27 @@ class DispatchService:
                 },
                 "items": [],
             }
-        scanned_jobs, items = await self.workflow_state_service.refresh_dispatch_attention(
-            mappings,
-            stage_filter=stage,
-            technician_bluefolder_user_id=technician_bluefolder_user_id,
-            age_bucket=age,
-            owner_discord_user_id=owner_discord_user_id,
-        )
+        snapshot = self.workflow_state_service.current_snapshot()
+        if self._board_snapshot_exists(snapshot):
+            scanned_jobs = self._estimate_scanned_jobs(snapshot)
+            items = list(getattr(snapshot, "attention_items", []))
+            self._ensure_board_refresh(routeable_mappings)
+        else:
+            scanned_jobs = 0
+            items = []
+            self._ensure_board_refresh(routeable_mappings)
         normalized_status = None if status is None else status.strip().lower()
         normalized_reference = None if reference is None else reference.strip().upper()
+        if stage is not None:
+            normalized_stage = stage.strip().lower().replace(" ", "_")
+            items = [item for item in items if item.stage == normalized_stage]
+        if age is not None:
+            normalized_age = age.strip().lower().replace(" ", "_")
+            items = [item for item in items if item.age_bucket == normalized_age]
+        if technician_bluefolder_user_id is not None:
+            items = [item for item in items if item.owner_bluefolder_user_id == technician_bluefolder_user_id]
+        if owner_discord_user_id is not None:
+            items = [item for item in items if item.assigned_owner_discord_user_id == owner_discord_user_id]
         if normalized_status is not None:
             items = [item for item in items if item.status == normalized_status]
         if normalized_reference is not None:
