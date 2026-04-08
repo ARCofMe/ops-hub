@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from ops_hub.core.config import Settings
 from ops_hub.core.container import ServiceContainer
@@ -824,7 +824,7 @@ def _path_tail(path: str, *, prefix: str) -> str | None:
     """Parse a trailing path segment as a raw string value."""
     if not path.startswith(prefix):
         return None
-    value = path[len(prefix):].strip("/")
+    value = unquote(path[len(prefix):].strip("/"))
     return value or None
 
 
@@ -832,7 +832,7 @@ def _path_action(path: str, *, prefix: str) -> tuple[str, str] | None:
     """Parse /prefix/<item_id>/<action> paths."""
     if not path.startswith(prefix):
         return None
-    remainder = path[len(prefix):].strip("/")
+    remainder = unquote(path[len(prefix):].strip("/"))
     if "/" not in remainder:
         return None
     item_id, action = remainder.rsplit("/", 1)
