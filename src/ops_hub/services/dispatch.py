@@ -22,6 +22,7 @@ from ops_hub.models.requests import (
 from ops_hub.services.bluefolder_status_catalog import describe_service_request_status
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
+from ops_hub.services.sms import DispatchSmsService
 from ops_hub.services.text_blocks import section, status_section
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ class DispatchService:
     bluefolder_service: BlueFolderService
     technician_directory_service: TechnicianDirectoryService | None = None
     workflow_state_service: "WorkflowStateService | None" = None
+    sms_service: DispatchSmsService | None = None
     board_snapshot_ttl_seconds: float = 30.0
     _board_refresh_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _board_refresh_running: bool = field(default=False, init=False, repr=False)
@@ -999,6 +1001,81 @@ class DispatchService:
         assert payload is not None
         payload["srId"] = sr_id
         return payload
+
+    async def get_dispatch_sr_sms_capabilities_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return SMS capability metadata for one SR."""
+        customer = await self.get_dispatch_sr_customer_payload(sr_id=sr_id)
+        work = await self.get_dispatch_sr_work_payload(sr_id=sr_id)
+        reference = str(customer.get("reference") or f"SR-{sr_id}")
+        if self.sms_service is None:
+            return {
+                "srId": sr_id,
+                "reference": reference,
+                "provider": "disabled",
+                "enabled": False,
+                "toNumber": None,
+                "fromLabel": "ARCoM Ops",
+                "reason": "SMS is not configured in Ops Hub yet.",
+                "intents": [],
+            }
+        return self.sms_service.capabilities_payload(
+            sr_id=sr_id,
+            reference=reference,
+            customer=customer,
+            work=work,
+        )
+
+    async def get_dispatch_sr_sms_history_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return recent SMS attempts for one SR."""
+        if self.sms_service is None:
+            return {"srId": sr_id, "items": []}
+        return self.sms_service.history_payload(sr_id=sr_id)
+
+    async def preview_dispatch_sr_sms_payload(
+        self,
+        *,
+        sr_id: int,
+        intent: str,
+        custom_message: str | None = None,
+    ) -> dict[str, object]:
+        """Build one dispatch SR SMS preview."""
+        if self.sms_service is None:
+            raise ValueError("SMS is not configured in Ops Hub yet.")
+        customer = await self.get_dispatch_sr_customer_payload(sr_id=sr_id)
+        work = await self.get_dispatch_sr_work_payload(sr_id=sr_id)
+        reference = str(customer.get("reference") or f"SR-{sr_id}")
+        return self.sms_service.preview_payload(
+            sr_id=sr_id,
+            reference=reference,
+            customer=customer,
+            work=work,
+            intent=intent,
+            custom_message=custom_message,
+        )
+
+    async def send_dispatch_sr_sms(
+        self,
+        *,
+        sr_id: int,
+        intent: str,
+        actor_user_id: int | None,
+        custom_message: str | None = None,
+    ) -> dict[str, object]:
+        """Send one dispatch SR SMS through the configured provider seam."""
+        if self.sms_service is None:
+            raise ValueError("SMS is not configured in Ops Hub yet.")
+        customer = await self.get_dispatch_sr_customer_payload(sr_id=sr_id)
+        work = await self.get_dispatch_sr_work_payload(sr_id=sr_id)
+        reference = str(customer.get("reference") or f"SR-{sr_id}")
+        return await self.sms_service.send_payload(
+            sr_id=sr_id,
+            reference=reference,
+            customer=customer,
+            work=work,
+            intent=intent,
+            actor_user_id=actor_user_id,
+            custom_message=custom_message,
+        )
 
     async def get_dispatch_route_payload(
         self,

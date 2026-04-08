@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     workflow_policy_interval_seconds: int = 900
     notification_channel_id: int | None = None
     notification_channel_map: dict[str, int] = {}
+    sms_provider: str = "dry_run"
+    sms_from_number: str | None = None
+    sms_audit_file: str | None = None
+    sms_twilio_account_sid: str | None = None
+    sms_twilio_auth_token: str | None = None
+    sms_twilio_messaging_service_sid: str | None = None
     enable_message_content_intent: bool = True
     log_level: str = "INFO"
     environment: str = "dev"
@@ -140,6 +146,11 @@ class Settings(BaseSettings):
             "enable_workflow_policy_runner",
             "workflow_policy_interval_seconds",
             "notification_channel_id",
+            "sms_from_number",
+            "sms_audit_file",
+            "sms_twilio_account_sid",
+            "sms_twilio_auth_token",
+            "sms_twilio_messaging_service_sid",
             "photo_ingest_channel_id",
             "photo_compress_max_dimension",
             "photo_compress_jpeg_quality",

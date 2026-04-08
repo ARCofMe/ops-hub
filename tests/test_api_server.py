@@ -824,6 +824,65 @@ def test_dispatch_returns_sr_timeline_payload() -> None:
     assert payload == {"reference": "SR-100", "entries": []}
 
 
+def test_dispatch_returns_sr_sms_capabilities_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            get_dispatch_sr_sms_capabilities_payload=lambda **_: asyncio.sleep(
+                0,
+                result={"provider": "dry_run", "enabled": True, "toNumber": "555-0100"},
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/sr/100/sms_capabilities",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["enabled"] is True
+
+
+def test_dispatch_previews_sr_sms() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=99, is_dispatcher=True, is_admin=False)
+        ),
+        dispatch_service=SimpleNamespace(
+            preview_dispatch_sr_sms_payload=lambda **_: asyncio.sleep(
+                0,
+                result={"provider": "dry_run", "message": "ARCoM Ops: Test"},
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/sr/100/sms/preview",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "99"},
+            body={"intent": "dispatch_follow_up"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["provider"] == "dry_run"
+
+
 def test_parts_returns_board_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

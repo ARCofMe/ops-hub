@@ -2604,3 +2604,91 @@ def test_dispatch_service_returns_structured_sr_timeline_payload() -> None:
 
     assert payload["reference"] == "SR-100"
     assert payload["entries"][0]["eventType"] == "attention_acknowledged"
+
+
+def test_dispatch_service_returns_sms_capabilities_payload() -> None:
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        _ = reference, include_customer_contacts
+        return SimpleNamespace(
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Pat",
+            customer_phone="555-0100",
+            service_request_status="Quote Needed",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+            customer_id="77",
+            customer_location_id="88",
+            customer_contacts=(),
+        )
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_job_summary=get_job_summary),
+        sms_service=SimpleNamespace(
+            capabilities_payload=lambda **_: {
+                "provider": "dry_run",
+                "enabled": True,
+                "toNumber": "555-0100",
+                "intents": [{"key": "dispatch_quote_follow_up", "label": "Quote follow-up", "recommended": "true"}],
+            }
+        ),
+    )
+
+    payload = asyncio.run(service.get_dispatch_sr_sms_capabilities_payload(sr_id=100))
+
+    assert payload["enabled"] is True
+    assert payload["toNumber"] == "555-0100"
+
+
+def test_dispatch_service_sends_sr_sms_payload() -> None:
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        _ = reference, include_customer_contacts
+        return SimpleNamespace(
+            available=True,
+            integration_status="live_read",
+            message="ok",
+            service_request_id="100",
+            subject="Dryer repair",
+            customer_name="Pat",
+            customer_phone="555-0100",
+            service_request_status="Scheduled",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+            customer_id="77",
+            customer_location_id="88",
+            customer_contacts=(),
+        )
+
+    async def send_payload(**kwargs):
+        return {
+            "success": True,
+            "provider": "dry_run",
+            "status": "dry_run",
+            "toNumber": kwargs["customer"]["customerPhone"],
+            "message": "ARCoM Ops: Test",
+        }
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_job_summary=get_job_summary),
+        sms_service=SimpleNamespace(send_payload=send_payload),
+    )
+
+    payload = asyncio.run(
+        service.send_dispatch_sr_sms(
+            sr_id=100,
+            intent="dispatch_follow_up",
+            actor_user_id=99,
+        )
+    )
+
+    assert payload["success"] is True
+    assert payload["status"] == "dry_run"

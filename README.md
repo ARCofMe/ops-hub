@@ -373,6 +373,10 @@ Current dispatch app routes:
 - `POST /dispatch/attention/<item_id>/clear_owner`
 - `GET /dispatch/sr/<sr_id>/customer`
 - `GET /dispatch/sr/<sr_id>/timeline`
+- `GET /dispatch/sr/<sr_id>/sms_capabilities`
+- `GET /dispatch/sr/<sr_id>/sms/history`
+- `POST /dispatch/sr/<sr_id>/sms/preview`
+- `POST /dispatch/sr/<sr_id>/sms/send`
 - `GET /dispatch/routes/preview`
 - `GET /dispatch/routes/heatmap`
 - `GET /dispatch/intake/formats`
@@ -383,6 +387,8 @@ Current dispatch app routes:
 Dispatch and parts payloads now include normalized BlueFolder SR `statusMeta` fields when an SR status is present. Those fields are derived from the tenant status catalog when available and include flags such as `isClosed`, `isQuoteNeeded`, `isActiveParts`, `isWaitingCustomer`, `isScheduling`, and `isReview`.
 
 Dispatch attention owner assignment is now BlueFolder-first. `GET /dispatch/attention` returns `ownerOptions` built from dispatch-capable BlueFolder users, and `POST /dispatch/attention/<item_id>/assign` accepts `assignedOwnerBluefolderUserId`. Legacy `assignedOwnerDiscordUserId` input is still accepted for compatibility, but Discord linkage is treated as optional enrichment rather than the core owner identity.
+
+Dispatch SMS groundwork is now live behind a provider seam. The default `dry_run` provider records preview/send attempts without sending real messages, while the config surface is ready for a Twilio-class adapter later. Set `OPS_HUB_SMS_PROVIDER`, `OPS_HUB_SMS_FROM_NUMBER`, and `OPS_HUB_SMS_AUDIT_FILE` to turn on the SR-level SMS capability and audit trail.
 
 Dispatch requests use the same bearer token and resolve the caller from either:
 

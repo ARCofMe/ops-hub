@@ -128,12 +128,60 @@ async def dispatch_technician_api_request(
                     return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_work_payload(sr_id=sr_id)
                 except ValueError as exc:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            if route_path.endswith("/sms_capabilities"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms_capabilities")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_sms_capabilities_payload(sr_id=sr_id)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            if route_path.endswith("/sms/history"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms/history")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_sms_history_payload(sr_id=sr_id)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             if route_path.endswith("/photo_compliance"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/photo_compliance")
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
                 try:
                     return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_photo_compliance_payload(sr_id=sr_id)
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+        if method == "POST" and route_path.startswith("/dispatch/sr/"):
+            if route_path.endswith("/sms/preview"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms/preview")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                intent = str((body or {}).get("intent") or "")
+                if not intent:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "intent is required."}
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.preview_dispatch_sr_sms_payload(
+                        sr_id=sr_id,
+                        intent=intent,
+                        custom_message=str((body or {}).get("customMessage") or "") or None,
+                    )
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            if route_path.endswith("/sms/send"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms/send")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                intent = str((body or {}).get("intent") or "")
+                if not intent:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "intent is required."}
+                try:
+                    return HTTPStatus.OK, await container.dispatch_service.send_dispatch_sr_sms(
+                        sr_id=sr_id,
+                        intent=intent,
+                        actor_user_id=dispatcher_user_id,
+                        custom_message=str((body or {}).get("customMessage") or "") or None,
+                    )
                 except ValueError as exc:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 

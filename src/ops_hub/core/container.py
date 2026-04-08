@@ -23,6 +23,7 @@ from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.photo_ingest import PhotoIngestService
 from ops_hub.services.service_smith import ServiceSmithService
 from ops_hub.services.service_smith_profile_store import ServiceSmithProfileStore
+from ops_hub.services.sms import DispatchSmsService, DryRunSmsAdapter, SmsAuditStore, TwilioSmsAdapter
 from ops_hub.services.technician_api import TechnicianApiService
 from ops_hub.services.workflow_state import WorkflowStateService
 from ops_hub.services.workflow_state_store import WorkflowStateStore
@@ -43,6 +44,7 @@ class ServiceContainer:
     technician_api_service: TechnicianApiService
     workflow_state_service: WorkflowStateService
     service_smith_service: ServiceSmithService
+    sms_service: DispatchSmsService
 
     @property
     def parts_cannon_service(self) -> PartsHandoffService:
@@ -101,6 +103,9 @@ def build_container(settings: Settings) -> ServiceContainer:
         if settings.service_smith_profile_file
         else None,
     )
+    sms_audit_store = SmsAuditStore(
+        file_path=Path(settings.sms_audit_file).expanduser() if settings.sms_audit_file else None,
+    )
     photo_adapter = PhotoIngestAdapter(
         base_path=settings.photo_ingest_project_path,
         bluefolder_api_path=settings.bluefolder_api_path,
@@ -138,6 +143,21 @@ def build_container(settings: Settings) -> ServiceContainer:
         bluefolder_host_header=settings.bluefolder_host_header,
         bluefolder_verify_ssl=settings.bluefolder_verify_ssl,
         bluefolder_timeout_seconds=settings.bluefolder_timeout_seconds,
+    )
+    sms_provider = (settings.sms_provider or "dry_run").strip().lower()
+    if sms_provider == "twilio":
+        sms_adapter = TwilioSmsAdapter(
+            account_sid=settings.sms_twilio_account_sid,
+            auth_token=settings.sms_twilio_auth_token,
+            from_number=settings.sms_from_number,
+            messaging_service_sid=settings.sms_twilio_messaging_service_sid,
+        )
+    else:
+        sms_adapter = DryRunSmsAdapter()
+    sms_service = DispatchSmsService(
+        adapter=sms_adapter,
+        store=sms_audit_store,
+        from_label=(settings.sms_from_number or "ARCoM Ops"),
     )
 
     bluefolder_service = BlueFolderService(
@@ -182,6 +202,7 @@ def build_container(settings: Settings) -> ServiceContainer:
             bluefolder_service=BlueFolderService(adapter=bluefolder_adapter),
             technician_directory_service=technician_directory_service,
             workflow_state_service=workflow_state_service,
+            sms_service=sms_service,
         ),
         technician_api_service=TechnicianApiService(
             bluefolder_service=bluefolder_service,
@@ -195,4 +216,5 @@ def build_container(settings: Settings) -> ServiceContainer:
             settings=settings,
             profile_store=service_smith_profile_store,
         ),
+        sms_service=sms_service,
     )
