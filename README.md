@@ -37,6 +37,7 @@ Current app-facing backend surfaces now cover:
 - technician mobile workflow routes
 - dispatch board, queue, SR detail, route preview, optimized route preview, heatmap, bulk attention, and intake-profile routes
 - parts board, parts case, tracked request, and BlueFolder-native parts update routes
+- BlueFolder tenant status catalog and normalized SR status semantics for frontend clients
 
 ## Start Here
 
@@ -349,6 +350,7 @@ Requests use `Authorization: Bearer <token>` and resolve the technician from eit
 
 Current dispatch app routes:
 
+- `GET /bluefolder/status_catalog`
 - `GET /dispatch/board`
 - `GET /dispatch/attention`
 - `GET /dispatch/attention/<item_id>`
@@ -366,6 +368,8 @@ Current dispatch app routes:
 - `POST /dispatch/intake/analyze`
 - `POST /dispatch/intake/preview`
 - `POST /dispatch/intake/import`
+
+Dispatch and parts payloads now include normalized BlueFolder SR `statusMeta` fields when an SR status is present. Those fields are derived from the tenant status catalog when available and include flags such as `isClosed`, `isQuoteNeeded`, `isActiveParts`, `isWaitingCustomer`, `isScheduling`, and `isReview`.
 
 Dispatch requests use the same bearer token and resolve the caller from either:
 

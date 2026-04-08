@@ -19,6 +19,7 @@ from ops_hub.models.requests import (
 )
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
+from ops_hub.services.bluefolder_status_catalog import describe_service_request_status, status_catalog_payload
 from ops_hub.services.parts_request_store import PartsRequestStore
 from ops_hub.services.text_blocks import section, status_section
 
@@ -505,6 +506,7 @@ class PartsHandoffService:
             "openCases": [await self._parts_case_payload(case) for case in open_cases[:20]],
             "openTrackedRequests": open_requests[:20],
             "supportedRequestStatuses": list(PARTS_REQUEST_STATUSES),
+            "serviceRequestStatusCatalog": status_catalog_payload(base_path=self._bluefolder_base_path()),
         }
 
     async def get_parts_cases_payload(
@@ -840,6 +842,11 @@ class PartsHandoffService:
                 if case.technician_bluefolder_user_id is not None
                 else None
             ),
+            "serviceRequestStatus": case.service_request_status,
+            "serviceRequestStatusMeta": describe_service_request_status(
+                case.service_request_status,
+                base_path=self._bluefolder_base_path(),
+            ),
             "latestStatusText": case.latest_status_text,
             "latestIssueText": case.latest_issue_text,
             "blocker": case.blocker,
@@ -889,6 +896,12 @@ class PartsHandoffService:
             return None
         value = candidate[3:]
         return int(value) if value.isdigit() else None
+
+    def _bluefolder_base_path(self) -> str | None:
+        """Return the configured BlueFolder library path when available through workflow services."""
+        service = getattr(self.workflow_state_service, "bluefolder_service", None)
+        adapter = getattr(service, "adapter", None)
+        return getattr(adapter, "base_path", None)
 
     def _build_lookup_result(
         self,

@@ -19,6 +19,7 @@ from ops_hub.models.requests import (
     RouteMapResult,
     TechnicianMappingRecord,
 )
+from ops_hub.services.bluefolder_status_catalog import describe_service_request_status
 from ops_hub.services.bluefolder import BlueFolderService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
 from ops_hub.services.text_blocks import section, status_section
@@ -335,7 +336,7 @@ class DispatchService:
                     item_lines = [
                         f"`SR-{sr_id}` {subject}",
                         f"Stage: `{snapshot.stage_label}`",
-                        f"Technician: {await self._technician_label_for_record(record)}",
+                        f"Technician: {await self._technician_label(bluefolder_user_id=record.bluefolder_user_id)}",
                     ]
                     if location:
                         item_lines.append(f"Location: {location}")
@@ -852,6 +853,7 @@ class DispatchService:
             "customerName": summary.customer_name,
             "customerPhone": summary.customer_phone,
             "status": summary.service_request_status,
+            "statusMeta": self._status_meta(summary.service_request_status),
             "address": address,
             "customerId": summary.customer_id,
             "customerLocationId": summary.customer_location_id,
@@ -891,6 +893,7 @@ class DispatchService:
     async def get_dispatch_sr_work_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return dispatch work context for one SR."""
         reference = f"SR-{sr_id}"
+        summary = await self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False)
         attention = await self.get_dispatch_attention_payload(reference=reference)
         parts_case = None
         photo_compliance = None
@@ -918,6 +921,8 @@ class DispatchService:
         return {
             "srId": sr_id,
             "reference": reference,
+            "serviceRequestStatus": summary.service_request_status,
+            "statusMeta": self._status_meta(summary.service_request_status),
             "attentionItems": attention.get("items", []),
             "partsCase": parts_case,
             "photoCompliance": photo_compliance,
@@ -1651,10 +1656,9 @@ class DispatchService:
         record: TechnicianMappingRecord,
     ) -> str:
         """Render a technician label from a mapping record."""
-        return await self._technician_label(
-            discord_user_id=record.discord_user_id,
-            bluefolder_user_id=record.bluefolder_user_id,
-        )
+        if record.discord_user_id is not None:
+            return await self._technician_label(discord_user_id=record.discord_user_id)
+        return await self._technician_label(bluefolder_user_id=record.bluefolder_user_id)
 
     async def _board_technician_label_for_record(
         self,
@@ -1748,6 +1752,8 @@ class DispatchService:
             "requestedByLabel": await self._technician_label_payload(discord_user_id=case.requested_by_user_id),
             "technicianBluefolderUserId": case.technician_bluefolder_user_id,
             "technicianLabel": await self._technician_label_payload(bluefolder_user_id=case.technician_bluefolder_user_id),
+            "serviceRequestStatus": case.service_request_status,
+            "serviceRequestStatusMeta": self._status_meta(case.service_request_status),
             "latestStatusText": case.latest_status_text,
             "latestIssueText": case.latest_issue_text,
             "blocker": case.blocker,
@@ -1962,6 +1968,14 @@ class DispatchService:
             except ValueError:
                 continue
         return None
+
+    def _status_meta(self, service_request_status: str | None) -> dict[str, object]:
+        """Return status metadata even when the bluefolder service is a light stub in tests."""
+        describe = getattr(self.bluefolder_service, "describe_service_request_status", None)
+        if callable(describe):
+            return describe(service_request_status)
+        adapter = getattr(self.bluefolder_service, "adapter", None)
+        return describe_service_request_status(service_request_status, base_path=getattr(adapter, "base_path", None))
 
     @staticmethod
     def _safe_float(value: object) -> float | None:

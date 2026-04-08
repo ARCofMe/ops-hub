@@ -14,6 +14,7 @@ from ops_hub.models.requests import (
     PartsCommentRecord,
     PartsLifecycleSnapshot,
 )
+from ops_hub.services.bluefolder_status_catalog import describe_service_request_status, status_catalog_payload
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.text_blocks import section, status_section
 
@@ -64,6 +65,14 @@ class BlueFolderService:
     ) -> list[dict[str, str | bool | None]]:
         """Return scheduled assignments for a specific day directly from BlueFolder."""
         return await self.adapter.get_assignments_for_user_on_date(user_id, day, include_subjects=include_subjects)
+
+    def describe_service_request_status(self, service_request_status: str | None) -> dict[str, object]:
+        """Return normalized metadata for one BlueFolder SR status."""
+        return describe_service_request_status(service_request_status, base_path=self.adapter.base_path)
+
+    def get_status_catalog_payload(self) -> dict[str, object]:
+        """Return the tenant status catalog when available."""
+        return status_catalog_payload(base_path=self.adapter.base_path)
 
     async def get_parts_brief(self, sr_id: int) -> CommandResult:
         """Return a BlueFolder-native parts summary for a service request."""

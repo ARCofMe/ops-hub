@@ -459,6 +459,7 @@ class PartsCaseRecord:
     assigned_parts_user_id: int | None = None
     requested_by_user_id: int | None = None
     technician_bluefolder_user_id: int | None = None
+    service_request_status: str | None = None
     latest_status_text: str | None = None
     latest_issue_text: str | None = None
     blocker: str | None = None

@@ -43,6 +43,9 @@ async def dispatch_technician_api_request(
     if method == "GET" and route_path == "/health":
         return HTTPStatus.OK, await container.technician_api_service.health()
 
+    if method == "GET" and route_path == "/bluefolder/status_catalog":
+        return HTTPStatus.OK, container.bluefolder_service.get_status_catalog_payload()
+
     if route_path.startswith("/dispatch"):
         dispatcher = _resolve_dispatcher_identity(
             container=container,

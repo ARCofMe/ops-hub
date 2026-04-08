@@ -23,6 +23,7 @@ from ops_hub.models.requests import (
     WorkflowEventRecord,
     WorkflowStateSnapshot,
 )
+from ops_hub.services.bluefolder_status_catalog import describe_service_request_status
 from ops_hub.services.workflow_state_store import WorkflowStateStore
 
 if TYPE_CHECKING:
@@ -1287,6 +1288,7 @@ class WorkflowStateService:
             assigned_parts_user_id=latest_request.assigned_parts_user_id if latest_request is not None else None,
             requested_by_user_id=latest_request.requested_by_user_id if latest_request is not None else None,
             technician_bluefolder_user_id=latest_request.technician_bluefolder_user_id if latest_request is not None else None,
+            service_request_status=service_request_status,
             latest_status_text=latest_status_text,
             latest_issue_text=latest_issue_text,
             blocker=blocker,
@@ -1313,44 +1315,12 @@ class WorkflowStateService:
     @staticmethod
     def _is_active_parts_needed_status(service_request_status: str | None) -> bool:
         """Return whether the current SR status still reflects active parts-needed work."""
-        normalized = str(service_request_status or "").strip().casefold()
-        if not normalized:
-            return False
-        return any(
-            phrase in normalized
-            for phrase in {
-                "need parts",
-                "needs parts",
-                "parts/schedule",
-                "waiting parts",
-                "awaiting parts",
-                "part ordered",
-                "parts ordered",
-                "part eta",
-                "tracking",
-                "part received",
-                "ready to schedule",
-            }
-        )
+        return bool(describe_service_request_status(service_request_status, base_path=None).get("isActiveParts"))
 
     @staticmethod
     def _is_closed_service_request_status(service_request_status: str | None) -> bool:
         """Return whether the current SR status should suppress open parts-case presentation."""
-        normalized = str(service_request_status or "").strip().casefold()
-        if not normalized:
-            return False
-        return any(
-            phrase in normalized
-            for phrase in {
-                "complete",
-                "completed",
-                "closed",
-                "cancelled",
-                "canceled",
-                "resolved",
-                "done",
-            }
-        )
+        return bool(describe_service_request_status(service_request_status, base_path=None).get("isClosed"))
 
     @staticmethod
     def _apply_photo_compliance_to_attention_item(
@@ -1698,19 +1668,12 @@ class WorkflowStateService:
 
     @staticmethod
     def _is_quote_needed_status(service_request_status: str | None) -> bool:
-        normalized = str(service_request_status or "").strip().casefold()
-        if not normalized:
-            return False
-        return "quote needed" in normalized or normalized in {"needs quote", "quote"}
+        return bool(describe_service_request_status(service_request_status, base_path=None).get("isQuoteNeeded"))
 
     @staticmethod
     def _quote_needed_subtype(service_request_status: str | None) -> str:
-        normalized = str(service_request_status or "").strip().casefold()
-        if any(token in normalized for token in ("landlord", "tenant")):
-            return "landlord"
-        if any(token in normalized for token in ("prepay", "pre-payment", "pre payment", "cod")):
-            return "prepayment"
-        return "customer"
+        subtype = describe_service_request_status(service_request_status, base_path=None).get("quoteSubtype")
+        return str(subtype or "customer")
 
     @staticmethod
     def _quote_needed_subtype_from_item(item: AttentionItemRecord) -> str:
