@@ -60,14 +60,18 @@ On the tablet, open `Settings` and confirm:
 Then open `Today` and confirm:
 
 - jobs load
-- the `Next stop` card matches the expected stop
+- the summary strip shows `Queue`, `Done`, and `Pending` counts cleanly
+- the active card shows `Stop X of Y`
+- the active card matches the earliest incomplete stop in service-window order
 - service-window order is correct
 - the active stop is not jumping to a PM stop before AM work
+- `Refresh queue` reloads the list without leaving `Today`
 
 Then open `Queue` and confirm:
 
 - stop order matches service windows
 - route launch opens cleanly
+- Google Maps receives the listed stop order without re-optimizing it into the wrong sequence
 
 Then verify workflow:
 
@@ -92,6 +96,7 @@ Pause the demo or release cut if any of these are true:
 - a sibling launcher points to the wrong environment
 - FieldDesk queue order is wrong
 - the expected stop does not appear first
+- `Today` highlights a completed job while an incomplete stop remains
 - a workflow screen opens without a selected job
 - photo attach messaging does not match the active backend
 - a web app title or branding label is inconsistent
