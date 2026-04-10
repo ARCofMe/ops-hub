@@ -850,7 +850,10 @@ class BlueFolderAdapter:
             return {}
 
         try:
-            users = client.users.list_active(list_type="full")
+            try:
+                users = client.users.list_active(list_type="full")
+            except TypeError:
+                users = client.users.list_active()
         except Exception as exc:
             self._active_user_directory_unavailable = True
             logger.warning("BlueFolder active-user lookup unavailable: %s", exc)

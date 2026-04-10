@@ -162,22 +162,30 @@ class DispatchCog(commands.Cog):
     @app_commands.describe(
         sr_id="Service request id to assign.",
         owner_bluefolder_user_id="BlueFolder user id that should own the follow-up.",
+        owner_discord_user_id="Discord user id that should own the follow-up.",
         stage="Optional stage when an SR has more than one attention item.",
     )
     async def attention_assign(
         self,
         interaction: discord.Interaction,
         sr_id: int,
-        owner_bluefolder_user_id: int,
+        owner_bluefolder_user_id: int | None = None,
+        owner_discord_user_id: int | None = None,
         stage: str | None = None,
     ) -> None:
         """Assign a follow-up owner on one dispatch attention item."""
-        result = await self.bot.container.dispatch_service.assign_dispatch_attention_owner(
-            sr_id=sr_id,
-            stage=stage,
-            assigned_owner_bluefolder_user_id=owner_bluefolder_user_id,
-            actor_user_id=interaction.user.id,
-        )
+        if owner_bluefolder_user_id is None and owner_discord_user_id is None:
+            await self._send_deferred_result(interaction, "Provide a BlueFolder or Discord owner id.")
+            return
+        assign_kwargs = {
+            "sr_id": sr_id,
+            "stage": stage,
+            "assigned_owner_discord_user_id": owner_discord_user_id,
+            "actor_user_id": interaction.user.id,
+        }
+        if owner_bluefolder_user_id is not None:
+            assign_kwargs["assigned_owner_bluefolder_user_id"] = owner_bluefolder_user_id
+        result = await self.bot.container.dispatch_service.assign_dispatch_attention_owner(**assign_kwargs)
         await self._send_deferred_result(interaction, result.message)
 
     @app_commands.command(name="attention_clear_owner", description="Clear the explicit follow-up owner on one workflow attention item.")

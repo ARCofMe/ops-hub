@@ -299,8 +299,10 @@ class DispatchService:
                         *([f"Age: `{item.age_bucket}` ({item.age_hours}h)"] if item.age_bucket and item.age_hours is not None else []),
                         f"Technician: {await self._technician_label(bluefolder_user_id=item.owner_bluefolder_user_id)}",
                         *(
-                            [f"Follow-up owner: {await self._technician_label(bluefolder_user_id=item.assigned_owner_bluefolder_user_id)}"]
-                            if item.assigned_owner_bluefolder_user_id is not None
+                            [
+                                f"Follow-up owner: {await self._technician_label(discord_user_id=item.assigned_owner_discord_user_id, bluefolder_user_id=item.assigned_owner_bluefolder_user_id)}"
+                            ]
+                            if item.assigned_owner_bluefolder_user_id is not None or item.assigned_owner_discord_user_id is not None
                             else []
                         ),
                         *([f"Status: `{item.status}`"] if item.status != "open" else []),

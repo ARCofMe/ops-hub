@@ -182,7 +182,11 @@ class WorkflowStateService:
         status_counts = self._count_by(items, key=lambda item: item.status)
         stage_counts = self._count_by(items, key=lambda item: item.stage_label)
         age_counts = self._count_by(items, key=lambda item: item.age_bucket or "unknown")
-        assigned_owner_items = sum(1 for item in items if item.assigned_owner_bluefolder_user_id is not None)
+        assigned_owner_items = sum(
+            1
+            for item in items
+            if item.assigned_owner_bluefolder_user_id is not None or item.assigned_owner_discord_user_id is not None
+        )
         urgent_open_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status == "open")
         urgent_suppressed_items = sum(1 for item in items if item.age_bucket == "urgent" and item.status != "open")
         return {
@@ -389,7 +393,7 @@ class WorkflowStateService:
 
         resolved_bluefolder_user_id = assigned_owner_bluefolder_user_id
         if resolved_bluefolder_user_id is None and assigned_owner_discord_user_id is not None:
-            mappings = self.technician_directory_service.mappings() if self.technician_directory_service is not None else {}
+            mappings = self._bluefolder_mappings()
             resolved_bluefolder_user_id = mappings.get(assigned_owner_discord_user_id) or assigned_owner_discord_user_id
         if resolved_bluefolder_user_id is None or resolved_bluefolder_user_id <= 0:
             raise ValueError("Dispatch attention owner assignment requires a positive BlueFolder user id.")
@@ -1513,7 +1517,30 @@ class WorkflowStateService:
         reverse_mappings = getattr(self.technician_directory_service, "reverse_mappings", None)
         if callable(reverse_mappings):
             return reverse_mappings().get(bluefolder_user_id)
+        for record in self._mapping_records():
+            if record.bluefolder_user_id == bluefolder_user_id:
+                return record.discord_user_id
         return None
+
+    def _bluefolder_mappings(self) -> dict[int, int]:
+        if self.technician_directory_service is None:
+            return {}
+        mappings = getattr(self.technician_directory_service, "mappings", None)
+        if callable(mappings):
+            return mappings()
+        return {
+            record.discord_user_id: record.bluefolder_user_id
+            for record in self._mapping_records()
+            if record.discord_user_id is not None
+        }
+
+    def _mapping_records(self) -> list[TechnicianMappingRecord]:
+        if self.technician_directory_service is None:
+            return []
+        mapping_records = getattr(self.technician_directory_service, "mapping_records", None)
+        if callable(mapping_records):
+            return list(mapping_records())
+        return []
 
     def _carry_attention_state(
         self,
@@ -1525,7 +1552,7 @@ class WorkflowStateService:
             return
         item.assigned_owner_bluefolder_user_id = previous.assigned_owner_bluefolder_user_id
         if item.assigned_owner_bluefolder_user_id is None and previous.assigned_owner_discord_user_id is not None:
-            mappings = self.technician_directory_service.mappings() if self.technician_directory_service is not None else {}
+            mappings = self._bluefolder_mappings()
             item.assigned_owner_bluefolder_user_id = mappings.get(previous.assigned_owner_discord_user_id)
         item.assigned_owner_discord_user_id = (
             previous.assigned_owner_discord_user_id

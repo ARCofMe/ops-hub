@@ -607,9 +607,14 @@ async def dispatch_technician_api_request(
     )
     if technician is None:
         return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Technician identity could not be resolved."}
-    discord_user_id = technician.discord_user_id
-    bluefolder_user_id = technician.bluefolder_user_id
-    actor_label = technician.actor_label
+    if isinstance(technician, tuple):
+        discord_user_id = technician[0]
+        bluefolder_user_id = technician[1]
+        actor_label = f"Discord user {discord_user_id}"
+    else:
+        discord_user_id = technician.discord_user_id
+        bluefolder_user_id = technician.bluefolder_user_id
+        actor_label = technician.actor_label
 
     if method == "GET" and route_path == "/tech/me/today":
         payload = await container.technician_api_service.get_today(
