@@ -56,6 +56,7 @@ Operator guides:
 Operational and architecture docs:
 
 - `docs/cutover-checklist.md`
+- `docs/release-prep.md`
 - `docs/troubleshooting.md`
 - `docs/frontend-architecture.md`
 - `docs/roadmap.md`
