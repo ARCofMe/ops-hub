@@ -14,6 +14,15 @@ Verify that the OpsHub ecosystem is presentation-safe:
 
 ## Web Preflight
 
+From `ops-hub`, run the local ecosystem preflight first:
+
+```bash
+.venv/bin/python -m ops_hub.ecosystem_preflight --root ..
+```
+
+Treat `FAIL` rows as release blockers and `MANUAL` rows as device checks to perform on the tablet.
+Use `--strict` when cutting a release candidate so warnings and manual rows fail the command until you clear or accept them.
+
 ### RouteDesk
 
 Open `Settings` and confirm:
