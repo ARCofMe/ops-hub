@@ -1,0 +1,79 @@
+name: opshub-ecosystem
+
+services:
+  ops-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      OPS_HUB_ENVIRONMENT: presentation
+      OPS_HUB_ENABLE_TECHNICIAN_API: "true"
+      OPS_HUB_TECHNICIAN_API_HOST: 0.0.0.0
+      OPS_HUB_TECHNICIAN_API_PORT: 8787
+      OPS_HUB_OPERATOR_ROLE_FILE: /app/config/operator_roles.json
+      OPS_HUB_TECHNICIAN_MAPPING_FILE: /data/technician_mapping.json
+      OPS_HUB_MEMBER_EXPORT_PATH: /data/exports/discord_members.json
+      OPS_HUB_PARTS_REQUEST_FILE: /data/parts_requests.json
+      OPS_HUB_WORKFLOW_STATE_FILE: /data/workflow_state.json
+      OPS_HUB_PHOTO_FEATURE_FLAGS_FILE: /data/photo_feature_flags.json
+      OPS_HUB_SMS_AUDIT_FILE: /data/sms_audit.jsonl
+      OPS_HUB_SERVICE_SMITH_PROFILE_FILE: /data/service_smith_profiles.json
+      OPS_HUB_BLUEFOLDER_API_PATH: /workspace/bluefolder-api
+    volumes:
+      - opshub-data:/data
+      - ../bluefolder-api:/workspace/bluefolder-api:ro
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+
+  routedesk:
+    build:
+      context: ../dispatch-app
+      dockerfile: Dockerfile
+      args:
+        VITE_OPS_HUB_API_BASE: https://ops-hub.org
+        VITE_OPS_HUB_API_TOKEN: ${OPS_HUB_TECHNICIAN_API_TOKEN}
+        VITE_DISPATCHER_ID: ${OPS_HUB_PRESENTATION_DISPATCHER_ID:-}
+        VITE_OPSHUB_URL: https://ops-hub.org
+        VITE_ROUTEDESK_URL: https://routedesk.ops-hub.org
+        VITE_PARTSAPP_URL: https://partsdesk.ops-hub.org
+        VITE_FIELDDESK_URL: ${OPS_HUB_PRESENTATION_FIELDDESK_URL:-}
+    ports:
+      - "4175:80"
+    depends_on:
+      - ops-hub
+    restart: unless-stopped
+
+  partsdesk:
+    build:
+      context: ../parts-app
+      dockerfile: Dockerfile
+      args:
+        VITE_OPS_HUB_API_BASE: https://ops-hub.org
+        VITE_OPS_HUB_API_TOKEN: ${OPS_HUB_TECHNICIAN_API_TOKEN}
+        VITE_PARTS_USER_ID: ${OPS_HUB_PRESENTATION_PARTS_USER_ID:-}
+        VITE_OPSHUB_URL: https://ops-hub.org
+        VITE_ROUTEDESK_URL: https://routedesk.ops-hub.org
+        VITE_PARTSAPP_URL: https://partsdesk.ops-hub.org
+        VITE_FIELDDESK_URL: ${OPS_HUB_PRESENTATION_FIELDDESK_URL:-}
+    ports:
+      - "4176:80"
+    depends_on:
+      - ops-hub
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN:-}
+    depends_on:
+      - ops-hub
+      - routedesk
+      - partsdesk
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
+volumes:
+  opshub-data:

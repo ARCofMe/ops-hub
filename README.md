@@ -153,6 +153,42 @@ cp .env.example .env
 PYTHONPATH=src python -m ops_hub
 ```
 
+## Presentation Docker Run
+
+Ops Hub can run with RouteDesk and PartsDesk through the presentation compose file:
+
+```bash
+docker compose -f docker-compose.presentation.yml up -d --build
+```
+
+This starts:
+
+- `ops-hub` on `http://localhost:8787`
+- `routedesk` on `http://localhost:4175`
+- `partsdesk` on `http://localhost:4176`
+
+The compose file keeps Ops Hub state in the `opshub-data` Docker volume and mounts `../bluefolder-api` into the container at `/workspace/bluefolder-api`.
+If you enable Cloudflare Tunnel inside the compose stack, set `CLOUDFLARED_TOKEN` in the local environment and run:
+
+```bash
+docker compose -f docker-compose.presentation.yml --profile tunnel up -d --build
+```
+
+In Cloudflare, point the public hostnames at the compose service names:
+
+- `ops-hub.org` -> `http://ops-hub:8787`
+- `routedesk.ops-hub.org` -> `http://routedesk:80`
+- `partsdesk.ops-hub.org` -> `http://partsdesk:80`
+
+Protect the frontend hostnames with Cloudflare Access or a similarly gated route before using them outside a controlled demo.
+The Vite frontend bundles include the presentation API token at build time, so that token must be treated as browser-visible and rotatable.
+
+If `cloudflared` is still installed directly on the host instead of inside compose, keep the Cloudflare services pointed at:
+
+- `http://localhost:8787`
+- `http://localhost:4175`
+- `http://localhost:4176`
+
 ## Notes
 
 - The dispatch board and attention queue now render from the latest workflow snapshot first, then refresh in the background.
