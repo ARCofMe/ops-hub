@@ -22,6 +22,334 @@ from ops_hub.core.container import ServiceContainer
 logger = logging.getLogger(__name__)
 
 
+def render_landing_page() -> str:
+    """Return the public OpsHub landing page HTML."""
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpsHub | Service Operations Command Center</title>
+  <meta name="description" content="OpsHub connects dispatch, parts, and field execution into one service operations brain.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f8fbff;
+      --muted: #a9b8c9;
+      --panel: rgba(8, 16, 25, 0.76);
+      --line: rgba(255, 255, 255, 0.14);
+      --gold: #f2c84b;
+      --green: #00a86b;
+      --blue: #5fd8ff;
+      --night: #03111d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Aptos Display", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 14% 18%, rgba(95, 216, 255, 0.25), transparent 28rem),
+        radial-gradient(circle at 84% 12%, rgba(242, 200, 75, 0.2), transparent 22rem),
+        linear-gradient(135deg, #02070d 0%, #062233 48%, #03111d 100%);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 88%);
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+      position: relative;
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 76px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: #04110c;
+      background: linear-gradient(135deg, var(--gold), var(--green));
+      box-shadow: 0 18px 46px rgba(0, 168, 107, 0.35);
+    }
+
+    .navlinks {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(12px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 42px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      color: var(--gold);
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin: 0 0 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(3.4rem, 8vw, 7.7rem);
+      line-height: 0.82;
+      letter-spacing: -0.08em;
+      max-width: 780px;
+    }
+
+    .copy {
+      margin: 28px 0 0;
+      max-width: 680px;
+      color: #d7e4ef;
+      font-size: clamp(1.1rem, 2vw, 1.35rem);
+      line-height: 1.58;
+    }
+
+    .cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .button {
+      border-radius: 18px;
+      padding: 15px 18px;
+      font-weight: 900;
+      border: 1px solid transparent;
+    }
+
+    .button.primary {
+      color: #06120c;
+      background: linear-gradient(135deg, var(--gold), #37df91);
+      box-shadow: 0 18px 44px rgba(55, 223, 145, 0.25);
+    }
+
+    .button.secondary {
+      color: var(--ink);
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .console {
+      min-height: 480px;
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      background: linear-gradient(160deg, rgba(8, 16, 25, 0.92), rgba(2, 7, 13, 0.7));
+      box-shadow: 0 32px 90px rgba(0, 0, 0, 0.42);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .console::after {
+      content: "";
+      position: absolute;
+      width: 210px;
+      height: 210px;
+      right: -62px;
+      bottom: -72px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(0, 168, 107, 0.5), transparent 68%);
+    }
+
+    .status {
+      display: grid;
+      gap: 14px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.055);
+    }
+
+    .card strong {
+      display: block;
+      font-size: 1.05rem;
+      margin-bottom: 8px;
+    }
+
+    .card span {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .metric {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .metric div {
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(95, 216, 255, 0.08);
+      border: 1px solid rgba(95, 216, 255, 0.16);
+    }
+
+    .metric b {
+      display: block;
+      font-size: 1.7rem;
+      color: var(--blue);
+    }
+
+    section {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 46px;
+    }
+
+    section .card {
+      min-height: 178px;
+    }
+
+    footer {
+      color: var(--muted);
+      margin-top: 48px;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 860px) {
+      main { padding-top: 24px; }
+      nav { align-items: flex-start; margin-bottom: 42px; }
+      .hero, section { grid-template-columns: 1fr; }
+      .console { min-height: auto; }
+      .metric { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a class="brand" href="/" aria-label="OpsHub home">
+        <span class="mark">OH</span>
+        <span>OpsHub</span>
+      </a>
+      <div class="navlinks" aria-label="Workspace links">
+        <a class="pill" href="https://routedesk.ops-hub.org">RouteDesk</a>
+        <a class="pill" href="https://partsdesk.ops-hub.org">PartsDesk</a>
+        <span class="pill">FieldDesk Ready</span>
+      </div>
+    </nav>
+
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Service operations brain</p>
+        <h1>Dispatch, parts, and field execution in one command layer.</h1>
+        <p class="copy">
+          OpsHub coordinates RouteDesk, PartsDesk, and FieldDesk so service teams can move from incoming work to
+          technician-ready execution without losing context between systems.
+        </p>
+        <div class="cta">
+          <a class="button primary" href="https://routedesk.ops-hub.org">Open RouteDesk</a>
+          <a class="button secondary" href="https://partsdesk.ops-hub.org">Open PartsDesk</a>
+        </div>
+      </div>
+
+      <aside class="console" aria-label="OpsHub platform overview">
+        <div class="status">
+          <div class="card">
+            <strong>RouteDesk</strong>
+            <span>Dispatch board, attention queue, SR context, route planning, and intake triage.</span>
+          </div>
+          <div class="card">
+            <strong>PartsDesk</strong>
+            <span>Parts cases, requests, readiness tracking, and dispatch handoff context.</span>
+          </div>
+          <div class="card">
+            <strong>FieldDesk</strong>
+            <span>Technician workflow, service-window order, notes, photos, closeout, and job execution assists.</span>
+          </div>
+          <div class="metric" aria-label="Platform pillars">
+            <div><b>1</b><span>brain</span></div>
+            <div><b>3</b><span>frontends</span></div>
+            <div><b>0</b><span>context gaps</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <section aria-label="OpsHub outcomes">
+      <div class="card">
+        <strong>Live operations visibility</strong>
+        <span>See work pressure, attention items, parts blockers, and technician-ready context in one ecosystem.</span>
+      </div>
+      <div class="card">
+        <strong>Cleaner handoffs</strong>
+        <span>Move from dispatch to parts to the field without retyping job context or guessing ownership.</span>
+      </div>
+      <div class="card">
+        <strong>Presentation-safe workflow</strong>
+        <span>Built for repeatable demos, release preflight checks, and field access through the production tunnel.</span>
+      </div>
+    </section>
+
+    <footer>
+      OpsHub API routes are authenticated. If you are configuring a tablet or workspace, use the technician API token from the OpsHub environment.
+    </footer>
+  </main>
+</body>
+</html>"""
+
+
 async def dispatch_technician_api_request(
     *,
     settings: Settings,
@@ -1013,6 +1341,9 @@ class TechnicianApiServer:
             def do_GET(self) -> None:  # noqa: N802
                 self._dispatch("GET")
 
+            def do_HEAD(self) -> None:  # noqa: N802
+                self._dispatch("HEAD")
+
             def do_POST(self) -> None:  # noqa: N802
                 self._dispatch("POST")
 
@@ -1033,6 +1364,10 @@ class TechnicianApiServer:
                 status: HTTPStatus | None = None
                 completed_status = int(HTTPStatus.INTERNAL_SERVER_ERROR)
                 try:
+                    if method in {"GET", "HEAD"} and self._is_landing_request():
+                        self._html(HTTPStatus.OK, render_landing_page(), include_body=method != "HEAD")
+                        completed_status = int(HTTPStatus.OK)
+                        return
                     status, payload = asyncio.run(
                         dispatch_technician_api_request(
                             settings=settings,
@@ -1081,6 +1416,20 @@ class TechnicianApiServer:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _html(self, status: HTTPStatus, payload: str, *, include_body: bool = True) -> None:
+                body = payload.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "public, max-age=60")
+                self.end_headers()
+                if include_body:
+                    self.wfile.write(body)
+
+            def _is_landing_request(self) -> bool:
+                route_path = urlparse(self.path).path.rstrip("/") or "/"
+                return route_path == "/"
 
             def _send_cors_headers(self) -> None:
                 origin = self.headers.get("Origin") or "*"

@@ -6,7 +6,7 @@ import asyncio
 from http import HTTPStatus
 from types import SimpleNamespace
 
-from ops_hub.api_server import dispatch_technician_api_request
+from ops_hub.api_server import dispatch_technician_api_request, render_landing_page
 
 
 async def _health() -> dict[str, bool]:
@@ -33,6 +33,16 @@ def test_dispatch_requires_authorization() -> None:
 
     assert status == HTTPStatus.UNAUTHORIZED
     assert payload == {"success": False, "message": "Unauthorized"}
+
+
+def test_landing_page_promotes_ops_hub_workspaces() -> None:
+    html = render_landing_page()
+
+    assert "<title>OpsHub | Service Operations Command Center</title>" in html
+    assert "Service operations brain" in html
+    assert "https://routedesk.ops-hub.org" in html
+    assert "https://partsdesk.ops-hub.org" in html
+    assert "technician API token" in html
 
 
 def test_dispatch_returns_today_jobs() -> None:
