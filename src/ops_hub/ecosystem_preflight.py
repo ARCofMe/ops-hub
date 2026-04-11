@@ -90,6 +90,17 @@ def _check_ops_hub(repo: Path) -> list[PreflightItem]:
             detail="required for FieldDesk live workflow APIs",
         )
     )
+    technician_api_host = values.get("OPS_HUB_TECHNICIAN_API_HOST", "")
+    items.append(
+        PreflightItem(
+            scope="OpsHub",
+            status="warn" if technician_api_host in {"127.0.0.1", "localhost", "::1"} else "ok",
+            label="Technician API host",
+            detail="loopback hosts are not tablet-reachable without adb reverse or a tunnel"
+            if technician_api_host in {"127.0.0.1", "localhost", "::1"}
+            else "host is not loopback",
+        )
+    )
     bluefolder_ready = not _is_placeholder(values.get("OPS_HUB_BLUEFOLDER_API_KEY")) and (
         not _is_placeholder(values.get("OPS_HUB_BLUEFOLDER_ACCOUNT_NAME"))
         or not _is_placeholder(values.get("OPS_HUB_BLUEFOLDER_BASE_URL"))

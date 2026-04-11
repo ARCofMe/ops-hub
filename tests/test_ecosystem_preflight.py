@@ -21,6 +21,7 @@ def test_preflight_reports_ready_local_web_and_backend_config(tmp_path: Path) ->
         OPS_HUB_BLUEFOLDER_API_KEY=key
         OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
         OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        OPS_HUB_TECHNICIAN_API_HOST=ops.example.com
         """,
     )
     _write(
@@ -60,6 +61,7 @@ def test_preflight_flags_template_values_as_blockers(tmp_path: Path) -> None:
         OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=
         OPS_HUB_BLUEFOLDER_BASE_URL=
         OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={}
+        OPS_HUB_TECHNICIAN_API_HOST=127.0.0.1
         """,
     )
     _write(
@@ -111,6 +113,7 @@ def test_cli_strict_mode_returns_failure_for_manual_checks(tmp_path: Path) -> No
         OPS_HUB_BLUEFOLDER_API_KEY=key
         OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
         OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        OPS_HUB_TECHNICIAN_API_HOST=ops.example.com
         """,
     )
     _write(
@@ -146,6 +149,7 @@ def test_preflight_validates_exported_fielddesk_preferences(tmp_path: Path) -> N
         OPS_HUB_BLUEFOLDER_API_KEY=key
         OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
         OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        OPS_HUB_TECHNICIAN_API_HOST=ops.example.com
         """,
     )
     _write(
@@ -197,6 +201,7 @@ def test_preflight_flags_direct_bluefolder_tablet_mode(tmp_path: Path) -> None:
         OPS_HUB_BLUEFOLDER_API_KEY=key
         OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
         OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        OPS_HUB_TECHNICIAN_API_HOST=ops.example.com
         """,
     )
     _write(tmp_path / "dispatch-app" / ".env.local", "VITE_OPS_HUB_API_BASE=x\nVITE_OPS_HUB_API_TOKEN=x\nVITE_DISPATCHER_ID=x\nVITE_PARTSAPP_URL=x\n")
