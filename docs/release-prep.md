@@ -32,7 +32,29 @@ adb shell run-as com.example.arcomtechapp cat shared_prefs/arcom_prefs.xml > /tm
 
 Do not commit the exported preferences file. It can contain API keys.
 
-For a local tablet rehearsal without starting the Discord bot, run the API-only entrypoint:
+For a field-ready presentation, publish OpsHub through Cloudflare Tunnel and use the production endpoint:
+
+```text
+https://ops-hub.org
+```
+
+The Cloudflare route should point at the OpsHub technician API service, usually `http://localhost:8787` on the host running OpsHub.
+Verify the tunnel before configuring the tablet:
+
+```bash
+curl https://ops-hub.org/health
+```
+
+An unauthenticated request should return `401`. An authenticated request should return:
+
+```json
+{"ok": true, "service": "ops-hub", "api": "technician"}
+```
+
+Then configure FieldDesk on the tablet for `Ops Hub` mode with base URL `https://ops-hub.org`.
+Use the same technician API token configured in `OPS_HUB_TECHNICIAN_API_TOKEN`.
+
+For a local tablet rehearsal without Cloudflare, run the API-only entrypoint:
 
 ```bash
 .venv/bin/python -m ops_hub.api_main
