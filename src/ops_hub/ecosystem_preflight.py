@@ -6,6 +6,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from xml.etree import ElementTree
 
 
 PLACEHOLDER_VALUES = {"", "replace-me", "changeme", "change-me", "todo", "none", "null"}
@@ -21,7 +22,7 @@ class PreflightItem:
     detail: str
 
 
-def build_preflight_report(root: Path) -> list[PreflightItem]:
+def build_preflight_report(root: Path, *, fielddesk_prefs: Path | None = None) -> list[PreflightItem]:
     """Return local ecosystem presentation checks without exposing secret values."""
     repo_root = root.resolve()
     items: list[PreflightItem] = []
@@ -44,14 +45,7 @@ def build_preflight_report(root: Path) -> list[PreflightItem]:
             optional_sibling_keys=("VITE_FIELDDESK_URL",),
         )
     )
-    items.append(
-        PreflightItem(
-            scope="FieldDesk",
-            status="manual",
-            label="Tablet runtime settings",
-            detail="Confirm backend mode, API key, technician ID, and workspace URLs on the tablet.",
-        )
-    )
+    items.extend(_check_fielddesk_prefs(fielddesk_prefs))
     return items
 
 
@@ -150,6 +144,61 @@ def _check_web_app(
     return items
 
 
+def _check_fielddesk_prefs(path: Path | None) -> list[PreflightItem]:
+    if path is None:
+        return [
+            PreflightItem(
+                scope="FieldDesk",
+                status="manual",
+                label="Tablet runtime settings",
+                detail="Confirm backend mode, API key, technician ID, and workspace URLs on the tablet.",
+            )
+        ]
+    if not path.exists():
+        return [
+            PreflightItem(
+                scope="FieldDesk",
+                status="fail",
+                label="Tablet preferences",
+                detail=f"{path} does not exist",
+            )
+        ]
+    values = _parse_android_preferences(path)
+    backend_mode = values.get("backend_mode")
+    return [
+        PreflightItem(
+            scope="FieldDesk",
+            status="ok" if backend_mode == "OPS_HUB" else "fail",
+            label="Backend mode",
+            detail="OPS_HUB is required for the full presentation workflow",
+        ),
+        PreflightItem(
+            scope="FieldDesk",
+            status="ok" if not _is_placeholder(values.get("ops_hub_base_url")) else "fail",
+            label="OpsHub base URL",
+            detail="ops_hub_base_url is set" if not _is_placeholder(values.get("ops_hub_base_url")) else "ops_hub_base_url is missing",
+        ),
+        PreflightItem(
+            scope="FieldDesk",
+            status="ok" if not _is_placeholder(values.get("ops_hub_api_key")) else "fail",
+            label="OpsHub API key",
+            detail="ops_hub_api_key is set" if not _is_placeholder(values.get("ops_hub_api_key")) else "ops_hub_api_key is missing",
+        ),
+        PreflightItem(
+            scope="FieldDesk",
+            status="ok" if not _is_placeholder(values.get("tech_id")) else "fail",
+            label="Technician ID",
+            detail="tech_id is set" if not _is_placeholder(values.get("tech_id")) else "tech_id is missing",
+        ),
+        PreflightItem(
+            scope="FieldDesk",
+            status="ok" if not _is_placeholder(values.get("route_desk_url")) and not _is_placeholder(values.get("parts_desk_url")) else "warn",
+            label="Workspace URLs",
+            detail="RouteDesk and PartsDesk URLs should be set for tablet handoff buttons",
+        ),
+    ]
+
+
 def _load_env(repo: Path, *, preferred: tuple[str, ...]) -> tuple[Path | None, dict[str, str]]:
     for name in preferred:
         path = repo / name
@@ -166,6 +215,20 @@ def _parse_env(path: Path) -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _parse_android_preferences(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    root = ElementTree.fromstring(path.read_text(encoding="utf-8"))
+    for child in root:
+        name = child.attrib.get("name")
+        if not name:
+            continue
+        if child.tag == "string":
+            values[name] = child.text or ""
+        elif "value" in child.attrib:
+            values[name] = child.attrib["value"]
     return values
 
 
@@ -196,9 +259,10 @@ def _is_placeholder(value: str | None) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check local OpsHub ecosystem presentation readiness.")
     parser.add_argument("--root", type=Path, default=Path.cwd().parent, help="ARCoM workspace root containing app repos.")
+    parser.add_argument("--fielddesk-prefs", type=Path, help="Optional exported FieldDesk arcom_prefs.xml from the tablet.")
     parser.add_argument("--strict", action="store_true", help="Treat warnings and manual checks as blockers.")
     args = parser.parse_args(argv)
-    items = build_preflight_report(args.root)
+    items = build_preflight_report(args.root, fielddesk_prefs=args.fielddesk_prefs)
     print(render_report(items))
     return 1 if has_blockers(items, strict=args.strict) else 0
 

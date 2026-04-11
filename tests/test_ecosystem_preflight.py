@@ -135,3 +135,84 @@ def test_cli_strict_mode_returns_failure_for_manual_checks(tmp_path: Path) -> No
     )
 
     assert main(["--root", str(tmp_path), "--strict"]) == 1
+
+
+def test_preflight_validates_exported_fielddesk_preferences(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "ops-hub" / ".env",
+        """
+        OPS_HUB_ENABLE_TECHNICIAN_API=true
+        OPS_HUB_TECHNICIAN_API_TOKEN=secret
+        OPS_HUB_BLUEFOLDER_API_KEY=key
+        OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
+        OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        """,
+    )
+    _write(
+        tmp_path / "dispatch-app" / ".env.local",
+        """
+        VITE_OPS_HUB_API_BASE=https://ops.example.com
+        VITE_OPS_HUB_API_TOKEN=secret
+        VITE_DISPATCHER_ID=42
+        VITE_PARTSAPP_URL=https://parts.example.com
+        VITE_FIELDDESK_URL=fielddesk://open
+        """,
+    )
+    _write(
+        tmp_path / "parts-app" / ".env.local",
+        """
+        VITE_OPS_HUB_API_BASE=https://ops.example.com
+        VITE_OPS_HUB_API_TOKEN=secret
+        VITE_PARTS_USER_ID=77
+        VITE_ROUTEDESK_URL=https://route.example.com
+        VITE_FIELDDESK_URL=fielddesk://open
+        """,
+    )
+    prefs = tmp_path / "fielddesk.xml"
+    _write(
+        prefs,
+        """
+        <map>
+            <string name="backend_mode">OPS_HUB</string>
+            <string name="ops_hub_base_url">https://ops.example.com</string>
+            <string name="ops_hub_api_key">secret</string>
+            <string name="tech_id">13051</string>
+            <string name="route_desk_url">https://route.example.com</string>
+            <string name="parts_desk_url">https://parts.example.com</string>
+        </map>
+        """,
+    )
+
+    report = build_preflight_report(tmp_path, fielddesk_prefs=prefs)
+
+    assert not has_blockers(report, strict=True)
+
+
+def test_preflight_flags_direct_bluefolder_tablet_mode(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "ops-hub" / ".env",
+        """
+        OPS_HUB_ENABLE_TECHNICIAN_API=true
+        OPS_HUB_TECHNICIAN_API_TOKEN=secret
+        OPS_HUB_BLUEFOLDER_API_KEY=key
+        OPS_HUB_BLUEFOLDER_ACCOUNT_NAME=acme
+        OPS_HUB_TECHNICIAN_BLUEFOLDER_USER_MAP={"42":13051}
+        """,
+    )
+    _write(tmp_path / "dispatch-app" / ".env.local", "VITE_OPS_HUB_API_BASE=x\nVITE_OPS_HUB_API_TOKEN=x\nVITE_DISPATCHER_ID=x\nVITE_PARTSAPP_URL=x\n")
+    _write(tmp_path / "parts-app" / ".env.local", "VITE_OPS_HUB_API_BASE=x\nVITE_OPS_HUB_API_TOKEN=x\nVITE_PARTS_USER_ID=x\nVITE_ROUTEDESK_URL=x\n")
+    prefs = tmp_path / "fielddesk.xml"
+    _write(
+        prefs,
+        """
+        <map>
+            <string name="backend_mode">BLUEFOLDER_DIRECT</string>
+            <string name="tech_id">13051</string>
+        </map>
+        """,
+    )
+
+    rendered = render_report(build_preflight_report(tmp_path, fielddesk_prefs=prefs))
+
+    assert "[FAIL] FieldDesk: Backend mode" in rendered
+    assert "[FAIL] FieldDesk: OpsHub base URL" in rendered

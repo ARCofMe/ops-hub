@@ -23,6 +23,15 @@ From `ops-hub`, run the local ecosystem preflight first:
 Treat `FAIL` rows as release blockers and `MANUAL` rows as device checks to perform on the tablet.
 Use `--strict` when cutting a release candidate so warnings and manual rows fail the command until you clear or accept them.
 
+To make the FieldDesk tablet check machine-readable, export the debug app preferences and pass them in:
+
+```bash
+adb shell run-as com.example.arcomtechapp cat shared_prefs/arcom_prefs.xml > /tmp/fielddesk-arcom-prefs.xml
+.venv/bin/python -m ops_hub.ecosystem_preflight --root .. --fielddesk-prefs /tmp/fielddesk-arcom-prefs.xml --strict
+```
+
+Do not commit the exported preferences file. It can contain API keys.
+
 ### RouteDesk
 
 Open `Settings` and confirm:
