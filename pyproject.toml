@@ -23,6 +23,7 @@ dev = [
 
 [project.scripts]
 ops-hub = "ops_hub.main:main"
+ops-hub-api = "ops_hub.api_main:main"
 ops-hub-ecosystem-preflight = "ops_hub.ecosystem_preflight:main"
 
 [tool.setuptools.packages.find]

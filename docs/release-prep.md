@@ -32,6 +32,15 @@ adb shell run-as com.example.arcomtechapp cat shared_prefs/arcom_prefs.xml > /tm
 
 Do not commit the exported preferences file. It can contain API keys.
 
+For a local tablet rehearsal without starting the Discord bot, run the API-only entrypoint:
+
+```bash
+.venv/bin/python -m ops_hub.api_main
+adb reverse tcp:8787 tcp:8787
+```
+
+Then configure FieldDesk on the tablet for `Ops Hub` mode with base URL `http://127.0.0.1:8787`.
+
 ### RouteDesk
 
 Open `Settings` and confirm:
