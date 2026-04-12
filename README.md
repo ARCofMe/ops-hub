@@ -182,6 +182,7 @@ In Cloudflare, point the public hostnames at the compose service names:
 
 Protect the frontend hostnames with Cloudflare Access or a similarly gated route before using them outside a controlled demo.
 The Vite frontend bundles include the presentation API token at build time, so that token must be treated as browser-visible and rotatable.
+RouteDesk dispatcher identity is not baked into the shared presentation bundle; each dispatcher sets their own ID in RouteDesk `Settings`, and the browser stores it locally.
 
 If `cloudflared` is still installed directly on the host instead of inside compose, keep the Cloudflare services pointed at:
 
