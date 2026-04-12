@@ -21,9 +21,17 @@ services:
       OPS_HUB_SMS_AUDIT_FILE: /data/sms_audit.jsonl
       OPS_HUB_SERVICE_SMITH_PROFILE_FILE: /data/service_smith_profiles.json
       OPS_HUB_BLUEFOLDER_API_PATH: /workspace/bluefolder-api
+      OPS_HUB_BLUEBOT_DISCORD_EXTENSION_PATH: /workspace/bluebot-discord-extension
+      OPS_HUB_PHOTO_INGEST_PROJECT_PATH: /workspace/photo_ingest/mdsn-photo-ingest
+      OPS_HUB_DISPATCH_PROJECT_PATH: /workspace/dispatcher-routing-app
+      OPS_HUB_PARTS_HANDOFF_PROJECT_PATH: ""
+      OPS_HUB_PARTS_CANNON_PROJECT_PATH: ""
     volumes:
       - opshub-data:/data
       - ../bluefolder-api:/workspace/bluefolder-api:ro
+      - ../bluebot-discord-extension:/workspace/bluebot-discord-extension:ro
+      - ../photo_ingest/mdsn-photo-ingest:/workspace/photo_ingest/mdsn-photo-ingest:ro
+      - ../dispatcher-routing-app:/workspace/dispatcher-routing-app:ro
     ports:
       - "8787:8787"
     restart: unless-stopped
