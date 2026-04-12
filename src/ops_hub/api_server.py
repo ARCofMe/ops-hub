@@ -382,7 +382,7 @@ async def dispatch_technician_api_request(
         )
         if dispatcher is None:
             return HTTPStatus.FORBIDDEN, {"success": False, "message": "Dispatcher or admin identity could not be resolved."}
-        dispatcher_user_id = dispatcher.discord_user_id
+        dispatcher_user_id = _identity_actor_user_id(dispatcher)
 
         if method == "GET" and route_path == "/dispatch/board":
             return HTTPStatus.OK, await container.dispatch_service.get_dispatch_board_payload()
@@ -754,7 +754,8 @@ async def dispatch_technician_api_request(
         )
         if parts_user is None:
             return HTTPStatus.FORBIDDEN, {"success": False, "message": "Parts or admin identity could not be resolved."}
-        parts_user_id = parts_user.discord_user_id
+        parts_user_id = _identity_actor_user_id(parts_user)
+        parts_user_label = _identity_operator_label(identity=parts_user, directory=container.technician_directory_service)
 
         if method == "GET" and route_path == "/parts/board":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_board_payload()
@@ -919,7 +920,7 @@ async def dispatch_technician_api_request(
                 update_type=update_type,
                 details=details,
                 requested_by_user_id=parts_user_id,
-                requested_by_label=container.technician_directory_service.discord_mention(parts_user_id),
+                requested_by_label=parts_user_label,
                 metadata=metadata,
             )
             return HTTPStatus.OK, {
@@ -1210,33 +1211,54 @@ async def dispatch_technician_api_request(
 
 
 def _resolve_dispatcher_identity(*, container: ServiceContainer, dispatcher_subject: str | None, dispatcher_id: str | None):
-    """Resolve a dispatch or admin caller from header/query context."""
-    raw_user_id = None
-    if dispatcher_id and dispatcher_id.isdigit():
-        raw_user_id = int(dispatcher_id)
-    elif dispatcher_subject and dispatcher_subject.isdigit():
-        raw_user_id = int(dispatcher_subject)
-    if raw_user_id is None:
+    """Resolve a dispatch or admin caller from web operator or legacy Discord context."""
+    identity = _resolve_operator_identity(container=container, subject=dispatcher_id or dispatcher_subject)
+    if identity is None:
         return None
-    identity = container.technician_directory_service.resolve_identity(user_id=raw_user_id, role_ids=set())
     if not (identity.is_dispatcher or identity.is_admin):
         return None
     return identity
 
 
 def _resolve_parts_identity(*, container: ServiceContainer, parts_subject: str | None, parts_id: str | None):
-    """Resolve a parts or admin caller from header/query context."""
-    raw_user_id = None
-    if parts_id and parts_id.isdigit():
-        raw_user_id = int(parts_id)
-    elif parts_subject and parts_subject.isdigit():
-        raw_user_id = int(parts_subject)
-    if raw_user_id is None:
+    """Resolve a parts or admin caller from web operator or legacy Discord context."""
+    identity = _resolve_operator_identity(container=container, subject=parts_id or parts_subject)
+    if identity is None:
         return None
-    identity = container.technician_directory_service.resolve_identity(user_id=raw_user_id, role_ids=set())
     if not (identity.is_parts or identity.is_admin):
         return None
     return identity
+
+
+def _resolve_operator_identity(*, container: ServiceContainer, subject: str | None):
+    """Resolve a local operator id while preserving old numeric Discord-only test doubles."""
+    directory = container.technician_directory_service
+    if hasattr(directory, "resolve_operator_identity"):
+        return directory.resolve_operator_identity(subject=subject)
+    if not subject or not subject.isdigit():
+        return None
+    return directory.resolve_identity(user_id=int(subject), role_ids=set())
+
+
+def _identity_actor_user_id(identity) -> int:
+    """Return the integer actor id used by legacy audit fields."""
+    return getattr(identity, "actor_user_id", None) or identity.discord_user_id
+
+
+def _identity_operator_id(identity) -> str | None:
+    """Return a local operator id when available."""
+    return getattr(identity, "operator_id", None)
+
+
+def _identity_operator_label(*, identity, directory) -> str:
+    """Return a human-readable label for API-originated operator actions."""
+    operator_id = _identity_operator_id(identity)
+    if operator_id and operator_id != str(identity.discord_user_id or ""):
+        return operator_id
+    actor_user_id = _identity_actor_user_id(identity)
+    if hasattr(directory, "discord_mention"):
+        return directory.discord_mention(actor_user_id)
+    return str(actor_user_id)
 
 
 def _query_int(query: dict[str, list[str]], key: str) -> int | None:

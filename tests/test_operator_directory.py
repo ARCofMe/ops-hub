@@ -46,6 +46,39 @@ def test_mapping_records_include_member_export_identity(tmp_path) -> None:
     assert service.technician_display_label(bluefolder_user_id=9001) == "Dispatch Dave"
 
 
+def test_resolve_operator_identity_accepts_local_dispatcher_id() -> None:
+    settings = Settings(
+        discord_token="token",
+        dispatcher_operator_ids=["route-desk"],
+    )
+    service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
+
+    identity = service.resolve_operator_identity(subject="route-desk")
+
+    assert identity is not None
+    assert identity.operator_id == "route-desk"
+    assert identity.discord_user_id is None
+    assert identity.actor_user_id is not None
+    assert identity.is_dispatcher is True
+    assert identity.is_admin is False
+
+
+def test_resolve_operator_identity_keeps_legacy_discord_ids() -> None:
+    settings = Settings(
+        discord_token="token",
+        dispatcher_user_ids=[42],
+    )
+    service = TechnicianDirectoryService(settings=settings, store=OperatorMappingStore())
+
+    identity = service.resolve_operator_identity(subject="42")
+
+    assert identity is not None
+    assert identity.operator_id == "42"
+    assert identity.discord_user_id == 42
+    assert identity.actor_user_id == 42
+    assert identity.is_dispatcher is True
+
+
 def test_operator_records_include_unmapped_bluefolder_users(tmp_path) -> None:
     settings = Settings(
         discord_token="token",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -61,6 +62,37 @@ class TechnicianDirectoryService:
             is_parts=is_parts,
             is_dispatcher=is_dispatcher,
             bluefolder_user_id=self.mappings().get(user_id),
+            operator_id=str(user_id),
+            actor_user_id=user_id,
+        )
+
+    def resolve_operator_identity(self, *, subject: str | None) -> TechnicianIdentity | None:
+        """Resolve a web/API operator id without requiring a Discord account."""
+        operator_id = (subject or "").strip()
+        if not operator_id:
+            return None
+        if operator_id.isdigit():
+            return self.resolve_identity(user_id=int(operator_id), role_ids=set())
+
+        normalized_operator_id = operator_id.casefold()
+        admin_operator_ids = self._normalized_operator_ids(self.settings.admin_operator_ids)
+        parts_operator_ids = self._normalized_operator_ids(self.settings.parts_operator_ids)
+        dispatcher_operator_ids = self._normalized_operator_ids(self.settings.dispatcher_operator_ids)
+        technician_operator_ids = self._normalized_operator_ids(self.settings.technician_operator_ids)
+        is_admin = normalized_operator_id in admin_operator_ids
+        is_parts = is_admin or normalized_operator_id in parts_operator_ids
+        is_dispatcher = is_admin or normalized_operator_id in dispatcher_operator_ids
+        is_technician = is_admin or normalized_operator_id in technician_operator_ids
+        if not (is_admin or is_parts or is_dispatcher or is_technician):
+            return None
+        return TechnicianIdentity(
+            discord_user_id=None,
+            is_admin=is_admin,
+            is_technician=is_technician,
+            is_parts=is_parts,
+            is_dispatcher=is_dispatcher,
+            operator_id=operator_id,
+            actor_user_id=self._synthetic_actor_user_id(operator_id),
         )
 
     def mappings(self) -> dict[int, int]:
@@ -188,6 +220,16 @@ class TechnicianDirectoryService:
                 if value:
                     return value
         return str(discord_user_id)
+
+    @staticmethod
+    def _normalized_operator_ids(operator_ids: list[str]) -> set[str]:
+        """Return case-insensitive local OpsHub operator ids."""
+        return {operator_id.strip().casefold() for operator_id in operator_ids if operator_id.strip()}
+
+    @staticmethod
+    def _synthetic_actor_user_id(operator_id: str) -> int:
+        """Return a stable audit id for local operators in legacy integer audit fields."""
+        return 2_000_000_000 + zlib.crc32(operator_id.strip().casefold().encode("utf-8"))
 
     def technician_label(
         self,

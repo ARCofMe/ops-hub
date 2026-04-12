@@ -112,14 +112,16 @@ class PartsRequestQueueSummary:
 
 @dataclass(slots=True)
 class TechnicianIdentity:
-    """Resolved technician/admin identity for a Discord user."""
+    """Resolved OpsHub identity for a local operator or linked Discord user."""
 
-    discord_user_id: int
+    discord_user_id: int | None
     is_admin: bool
     is_technician: bool
     is_parts: bool
     is_dispatcher: bool
     bluefolder_user_id: int | None = None
+    operator_id: str | None = None
+    actor_user_id: int | None = None
 
     @property
     def is_operator(self) -> bool:

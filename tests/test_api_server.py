@@ -96,6 +96,36 @@ def test_dispatch_returns_intake_formats() -> None:
     assert payload == {"items": [{"name": "default"}]}
 
 
+def test_dispatch_accepts_local_operator_id() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(get_dispatch_board_payload=lambda: asyncio.sleep(0, result={"ok": True})),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_operator_identity=lambda **_: SimpleNamespace(
+                operator_id="route-desk",
+                actor_user_id=2001,
+                discord_user_id=None,
+                is_dispatcher=True,
+                is_admin=False,
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/board",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "route-desk"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {"ok": True}
+
+
 def test_dispatch_returns_intake_profiles() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

@@ -15,12 +15,16 @@ class Settings(BaseSettings):
     discord_token: str = ""
     guild_id: int | None = None
     admin_user_ids: list[int] = []
+    admin_operator_ids: list[str] = []
     admin_role_ids: list[int] = []
     technician_user_ids: list[int] = []
+    technician_operator_ids: list[str] = []
     technician_role_ids: list[int] = []
     parts_user_ids: list[int] = []
+    parts_operator_ids: list[str] = []
     parts_role_ids: list[int] = []
     dispatcher_user_ids: list[int] = []
+    dispatcher_operator_ids: list[str] = []
     dispatcher_role_ids: list[int] = []
     technician_bluefolder_user_map: dict[int, int] = {}
     technician_mapping_file: str | None = None
@@ -113,12 +117,16 @@ class Settings(BaseSettings):
         normalized = dict(data)
         list_fields = {
             "admin_user_ids",
+            "admin_operator_ids",
             "admin_role_ids",
             "technician_user_ids",
+            "technician_operator_ids",
             "technician_role_ids",
             "parts_user_ids",
+            "parts_operator_ids",
             "parts_role_ids",
             "dispatcher_user_ids",
+            "dispatcher_operator_ids",
             "dispatcher_role_ids",
             "photo_required_sr_statuses",
             "photo_required_tags",
@@ -245,24 +253,32 @@ class Settings(BaseSettings):
 
         if any(user_id <= 0 for user_id in self.admin_user_ids):
             errors.append("OPS_HUB_ADMIN_USER_IDS must contain only positive Discord user IDs.")
+        if any(not operator_id.strip() for operator_id in self.admin_operator_ids):
+            errors.append("OPS_HUB_ADMIN_OPERATOR_IDS must not contain blank operator IDs.")
 
         if any(role_id <= 0 for role_id in self.admin_role_ids):
             errors.append("OPS_HUB_ADMIN_ROLE_IDS must contain only positive Discord role IDs.")
 
         if any(user_id <= 0 for user_id in self.technician_user_ids):
             errors.append("OPS_HUB_TECHNICIAN_USER_IDS must contain only positive Discord user IDs.")
+        if any(not operator_id.strip() for operator_id in self.technician_operator_ids):
+            errors.append("OPS_HUB_TECHNICIAN_OPERATOR_IDS must not contain blank operator IDs.")
 
         if any(role_id <= 0 for role_id in self.technician_role_ids):
             errors.append("OPS_HUB_TECHNICIAN_ROLE_IDS must contain only positive Discord role IDs.")
 
         if any(user_id <= 0 for user_id in self.parts_user_ids):
             errors.append("OPS_HUB_PARTS_USER_IDS must contain only positive Discord user IDs.")
+        if any(not operator_id.strip() for operator_id in self.parts_operator_ids):
+            errors.append("OPS_HUB_PARTS_OPERATOR_IDS must not contain blank operator IDs.")
 
         if any(role_id <= 0 for role_id in self.parts_role_ids):
             errors.append("OPS_HUB_PARTS_ROLE_IDS must contain only positive Discord role IDs.")
 
         if any(user_id <= 0 for user_id in self.dispatcher_user_ids):
             errors.append("OPS_HUB_DISPATCHER_USER_IDS must contain only positive Discord user IDs.")
+        if any(not operator_id.strip() for operator_id in self.dispatcher_operator_ids):
+            errors.append("OPS_HUB_DISPATCHER_OPERATOR_IDS must not contain blank operator IDs.")
 
         if any(role_id <= 0 for role_id in self.dispatcher_role_ids):
             errors.append("OPS_HUB_DISPATCHER_ROLE_IDS must contain only positive Discord role IDs.")

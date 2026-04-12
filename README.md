@@ -39,6 +39,7 @@ queueing, next-action logic, cross-role views, and API surfaces for the apps.
 Ops Hub is BlueFolder-first.
 
 - BlueFolder users are first-class operational identities.
+- OpsHub operator IDs are first-class web/tablet identities for RouteDesk and PartsDesk.
 - Discord linkage is optional enrichment for mentions, role gating, and notification routing.
 - Dispatch, technician, parts, and admin workflows should continue to work even when a user does not have a Discord account.
 
@@ -123,7 +124,7 @@ Ops Hub uses environment variables through `.env`.
 
 The main groups are:
 
-- Discord and role access
+- OpsHub operator IDs plus optional Discord and role access
 - technician API host/token settings
 - BlueFolder credentials and connection settings
 - workflow, notification, and store-file paths

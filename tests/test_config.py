@@ -10,12 +10,16 @@ def _settings(**overrides: object) -> Settings:
         "discord_token": "token",
         "guild_id": None,
         "admin_user_ids": [],
+        "admin_operator_ids": [],
         "admin_role_ids": [],
         "technician_user_ids": [],
+        "technician_operator_ids": [],
         "technician_role_ids": [],
         "parts_user_ids": [],
+        "parts_operator_ids": [],
         "parts_role_ids": [],
         "dispatcher_user_ids": [],
+        "dispatcher_operator_ids": [],
         "dispatcher_role_ids": [],
         "technician_bluefolder_user_map": {},
         "technician_mapping_file": None,
@@ -158,6 +162,14 @@ def test_validation_errors_reject_non_positive_dispatcher_user_ids() -> None:
     errors = settings.validation_errors()
 
     assert "OPS_HUB_DISPATCHER_USER_IDS must contain only positive Discord user IDs." in errors
+
+
+def test_validation_errors_reject_blank_dispatcher_operator_ids() -> None:
+    settings = _settings(dispatcher_operator_ids=["route-desk", " "])
+
+    errors = settings.validation_errors()
+
+    assert "OPS_HUB_DISPATCHER_OPERATOR_IDS must not contain blank operator IDs." in errors
 
 
 def test_validation_errors_reject_non_positive_dispatcher_role_ids() -> None:
