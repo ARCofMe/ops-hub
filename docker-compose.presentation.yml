@@ -61,7 +61,7 @@ services:
       args:
         VITE_OPS_HUB_API_BASE: https://ops-hub.org
         VITE_OPS_HUB_API_TOKEN: ${OPS_HUB_TECHNICIAN_API_TOKEN}
-        VITE_PARTS_USER_ID: ${OPS_HUB_PRESENTATION_PARTS_USER_ID:-}
+        VITE_PARTS_USER_ID: ""
         VITE_OPSHUB_URL: https://ops-hub.org
         VITE_ROUTEDESK_URL: https://routedesk.ops-hub.org
         VITE_PARTSAPP_URL: https://partsdesk.ops-hub.org
