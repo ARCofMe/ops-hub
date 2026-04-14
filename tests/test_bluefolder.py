@@ -436,6 +436,47 @@ def test_dispatch_adapter_loads_dispatch_env_fallbacks(tmp_path: Path) -> None:
     assert values["DEFAULT_ORIGIN"] == "Shop"
 
 
+def test_dispatch_route_simulation_preserves_manual_order_when_planner_unavailable() -> None:
+    class ManualOrderDispatchAdapter(DummyDispatchAdapter):
+        async def simulate_route_plan(self, **_kwargs):
+            return None
+
+        async def build_route_map_urls(self, stops, **_kwargs):
+            return "https://maps.example/manual", "https://maps.example/manual.png"
+
+    service = DispatchService(
+        adapter=ManualOrderDispatchAdapter(base_path=None),
+        bluefolder_service=BlueFolderService(adapter=BlueFolderAdapter(base_path=None)),
+    )
+
+    payload = asyncio.run(
+        service.get_dispatch_route_simulation_payload(
+            technician_bluefolder_user_id=13051,
+            existing_stops=[
+                {"id": "a", "label": "SR-100", "address": "100 Main St", "duration_minutes": 30},
+                {"id": "b", "label": "SR-101", "address": "101 Main St", "duration_minutes": 45},
+                {"id": "c", "label": "SR-102", "address": "102 Main St", "duration_minutes": 60},
+            ],
+            added_stops=[
+                {"id": "adhoc-1", "label": "Ad-hoc", "address": "103 Main St", "duration_minutes": 15},
+            ],
+            removed_ids=["c"],
+            manual_order=["b", "adhoc-1", "a"],
+            route_date="2026-04-14",
+            origin_address="Shop",
+            destination_address="Home",
+            optimize=False,
+        )
+    )
+
+    assert payload["success"] is True
+    assert payload["routeUrl"] == "https://maps.example/manual"
+    assert payload["imageUrl"] == "https://maps.example/manual.png"
+    assert payload["assignmentsConsidered"] == 3
+    assert [stop["id"] for stop in payload["stops"]] == ["b", "adhoc-1", "a"]
+    assert [stop["duration_minutes"] for stop in payload["stops"]] == [45, 15, 30]
+
+
 def test_dispatch_adapter_builds_heat_map_url(monkeypatch) -> None:
     adapter = DispatchAdapter(base_path=None)
 
