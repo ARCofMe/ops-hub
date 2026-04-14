@@ -45,6 +45,26 @@ def test_landing_page_promotes_ops_hub_workspaces() -> None:
     assert "technician API token" in html
 
 
+def test_dispatch_returns_ecosystem_status() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(technician_api_service=SimpleNamespace(health=_health))
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/ecosystem/status",
+            headers={"Authorization": "Bearer secret"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["success"] is True
+    assert payload["role"] == "brain"
+    assert [item["name"] for item in payload["frontends"]] == ["RouteDesk", "PartsDesk", "FieldDesk"]
+
+
 def test_dispatch_returns_today_jobs() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

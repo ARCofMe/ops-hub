@@ -22,6 +22,45 @@ from ops_hub.core.container import ServiceContainer
 logger = logging.getLogger(__name__)
 
 
+def build_ecosystem_status_payload() -> dict[str, object]:
+    """Return a stable app-facing summary of the OpsHub ecosystem surfaces."""
+    return {
+        "success": True,
+        "ecosystem": "OpsHub",
+        "role": "brain",
+        "frontends": [
+            {
+                "key": "routeDesk",
+                "name": "RouteDesk",
+                "role": "dispatch",
+                "status": "ready",
+                "url": "https://routedesk.ops-hub.org",
+            },
+            {
+                "key": "partsDesk",
+                "name": "PartsDesk",
+                "role": "parts",
+                "status": "ready",
+                "url": "https://partsdesk.ops-hub.org",
+            },
+            {
+                "key": "fieldDesk",
+                "name": "FieldDesk",
+                "role": "field",
+                "status": "ready",
+                "url": None,
+            },
+        ],
+        "capabilities": [
+            "dispatch_attention",
+            "route_planning",
+            "parts_tracking",
+            "field_execution",
+            "photo_compliance",
+        ],
+    }
+
+
 def render_landing_page() -> str:
     """Return the public OpsHub landing page HTML."""
     return """<!doctype html>
@@ -370,6 +409,9 @@ async def dispatch_technician_api_request(
 
     if method == "GET" and route_path == "/health":
         return HTTPStatus.OK, await container.technician_api_service.health()
+
+    if method == "GET" and route_path == "/ecosystem/status":
+        return HTTPStatus.OK, build_ecosystem_status_payload()
 
     if method == "GET" and route_path == "/bluefolder/status_catalog":
         return HTTPStatus.OK, container.bluefolder_service.get_status_catalog_payload()
