@@ -532,23 +532,27 @@ class DispatchAdapter:
         return "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
 
     def _load_dispatch_project_env(self, resolved_path: Path | None) -> dict[str, str]:
-        """Load selected env values from the dispatch project .env when available."""
+        """Load selected env values from the dispatch project env files when available."""
         if resolved_path is None:
-            return {}
-        env_path = resolved_path / ".env"
-        if not env_path.exists():
             return {}
 
         values: dict[str, str] = {}
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
+        for env_path in (
+            resolved_path / ".env",
+            resolved_path / "backend" / ".env",
+            resolved_path / "frontend" / ".env",
+        ):
+            if not env_path.exists():
                 continue
-            key, value = line.split("=", 1)
-            cleaned = value.strip()
-            if " #" in cleaned:
-                cleaned = cleaned.split(" #", 1)[0].rstrip()
-            values[key.strip()] = cleaned
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                cleaned = value.strip()
+                if " #" in cleaned:
+                    cleaned = cleaned.split(" #", 1)[0].rstrip()
+                values.setdefault(key.strip(), cleaned)
         return values
 
     def _geocode_address_geoapify(

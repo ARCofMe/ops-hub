@@ -421,6 +421,21 @@ def test_dispatch_adapter_route_map_includes_all_stops_and_custom_endpoints(monk
     assert "text%3AD" in image_url
 
 
+def test_dispatch_adapter_loads_dispatch_env_fallbacks(tmp_path: Path) -> None:
+    dispatch_root = tmp_path / "dispatcher-routing-app"
+    backend_dir = dispatch_root / "backend"
+    frontend_dir = dispatch_root / "frontend"
+    backend_dir.mkdir(parents=True)
+    frontend_dir.mkdir()
+    (backend_dir / ".env").write_text("GEOAPIFY_API_KEY=backend-key\nDEFAULT_ORIGIN=Shop\n", encoding="utf-8")
+    (frontend_dir / ".env").write_text("GEOAPIFY_API_KEY=frontend-key\n", encoding="utf-8")
+
+    values = DispatchAdapter()._load_dispatch_project_env(dispatch_root)
+
+    assert values["GEOAPIFY_API_KEY"] == "backend-key"
+    assert values["DEFAULT_ORIGIN"] == "Shop"
+
+
 def test_dispatch_adapter_builds_heat_map_url(monkeypatch) -> None:
     adapter = DispatchAdapter(base_path=None)
 
