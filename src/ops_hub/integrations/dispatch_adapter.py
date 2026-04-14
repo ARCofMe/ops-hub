@@ -29,6 +29,16 @@ def _is_wrapper_import_unavailable(exc: Exception) -> bool:
     text = str(exc)
     return isinstance(exc, (ImportError, ModuleNotFoundError)) and "optimized_routing" in text
 
+
+def _safe_float(value: object) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass(slots=True)
 class DispatchAdapter:
     """Adapter boundary for dispatch-facing operations."""
@@ -379,6 +389,57 @@ class DispatchAdapter:
 
         image_url = "https://maps.geoapify.com/v1/staticmap?" + urlencode(query_items)
         return route_url, image_url
+
+    async def enrich_route_geometry(
+        self,
+        stops: list[dict[str, object]],
+        *,
+        origin_address: str | None = None,
+        destination_address: str | None = None,
+    ) -> tuple[list[dict[str, object]], list[list[float]]]:
+        """Attach Geoapify coordinates to route stops when route payloads only have addresses."""
+        if not stops:
+            return [], []
+
+        resolved_path = Path(self.base_path).expanduser() if self.base_path else None
+        env_values = self._load_dispatch_project_env(resolved_path)
+        geoapify_api_key = env_values.get("GEOAPIFY_API_KEY") or None
+        if not geoapify_api_key:
+            return [dict(stop) for stop in stops], []
+
+        enriched: list[dict[str, object]] = []
+        path: list[list[float]] = []
+        origin_coord = self._geocode_address_geoapify(origin_address, api_key=geoapify_api_key) if origin_address else None
+        if origin_coord is not None:
+            lon, lat = origin_coord
+            path.append([lat, lon])
+
+        for stop in stops:
+            next_stop = dict(stop)
+            lat = _safe_float(next_stop.get("lat") or next_stop.get("latitude"))
+            lon = _safe_float(next_stop.get("lon") or next_stop.get("lng") or next_stop.get("longitude"))
+            if lat is None or lon is None:
+                address = str(next_stop.get("address") or "").strip()
+                if address:
+                    coord = self._geocode_address_geoapify(address, api_key=geoapify_api_key)
+                    if coord is not None:
+                        lon, lat = coord
+                        next_stop["lat"] = lat
+                        next_stop["lon"] = lon
+            if lat is not None and lon is not None:
+                path.append([lat, lon])
+            enriched.append(next_stop)
+
+        destination_coord = (
+            self._geocode_address_geoapify(destination_address, api_key=geoapify_api_key)
+            if destination_address
+            else None
+        )
+        if destination_coord is not None:
+            lon, lat = destination_coord
+            path.append([lat, lon])
+
+        return enriched, path
 
     async def preview_route_plan(
         self,

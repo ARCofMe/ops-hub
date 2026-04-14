@@ -421,6 +421,38 @@ def test_dispatch_adapter_route_map_includes_all_stops_and_custom_endpoints(monk
     assert "text%3AD" in image_url
 
 
+def test_dispatch_adapter_enriches_route_geometry_with_stop_coordinates(monkeypatch) -> None:
+    adapter = DispatchAdapter(base_path=None)
+
+    coords = {
+        "Shop": (-70.50, 44.25),
+        "Stop 1": (-70.25, 43.65),
+        "Stop 2": (-70.21, 44.10),
+        "Home": (-70.05, 44.30),
+    }
+
+    monkeypatch.setattr(DispatchAdapter, "_load_dispatch_project_env", lambda self, resolved_path: {"GEOAPIFY_API_KEY": "geo-key"})
+    monkeypatch.setattr(
+        DispatchAdapter,
+        "_geocode_address_geoapify",
+        lambda self, address, *, api_key: coords.get(address),
+    )
+
+    stops, path = asyncio.run(
+        adapter.enrich_route_geometry(
+            [{"address": "Stop 1", "label": "First"}, {"address": "Stop 2", "label": "Second"}],
+            origin_address="Shop",
+            destination_address="Home",
+        )
+    )
+
+    assert stops[0]["lat"] == 43.65
+    assert stops[0]["lon"] == -70.25
+    assert stops[1]["lat"] == 44.10
+    assert stops[1]["lon"] == -70.21
+    assert path == [[44.25, -70.50], [43.65, -70.25], [44.10, -70.21], [44.30, -70.05]]
+
+
 def test_dispatch_adapter_loads_dispatch_env_fallbacks(tmp_path: Path) -> None:
     dispatch_root = tmp_path / "dispatcher-routing-app"
     backend_dir = dispatch_root / "backend"
@@ -2425,6 +2457,68 @@ def test_dispatch_service_attention_cold_start_refreshes_before_returning() -> N
     assert payload["items"][0]["itemId"] == "dispatch:SR-100:quote_needed"
     assert payload["scannedJobs"] == 1
     assert elapsed < 0.15
+
+
+def test_dispatch_attention_includes_read_only_bluefolder_discovery_candidates() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[],
+            parts_cases=[],
+            events=[],
+            updated_at="2026-04-01T10:00:00Z",
+        ),
+        refresh_dispatch_attention=lambda mappings, **kwargs: asyncio.sleep(0, result=(0, [])),
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)],
+        reverse_mappings=lambda: {13051: 42},
+        display_label=lambda user_id: None,
+        discord_mention=lambda user_id: f"<@{user_id}>",
+        operator_records=lambda **kwargs: asyncio.sleep(
+            0, result=[TechnicianMappingRecord(discord_user_id=42, bluefolder_user_id=13051)]
+        ),
+        dispatch_owner_records=lambda **kwargs: asyncio.sleep(0, result=[]),
+    )
+    bluefolder_service = SimpleNamespace(
+        get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        get_assignments_for_user_on_date=lambda user_id, target_day, include_subjects=True: asyncio.sleep(
+            0,
+            result=[
+                {
+                    "serviceRequestId": "400",
+                    "subject": "Dryer repair",
+                    "status": "Scheduled",
+                    "window": "8-12",
+                }
+            ],
+        ),
+        get_job_summary=lambda reference: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                service_request_status="Scheduled",
+                subject="Dryer repair",
+                address="180 E Hebron Rd",
+                city="Hebron",
+                state="ME",
+                postal_code="04238",
+            ),
+        ),
+    )
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+    )
+
+    payload = asyncio.run(service.get_dispatch_attention_payload())
+
+    assert payload["discoveryJobs"] == 1
+    assert payload["scannedJobs"] == 1
+    assert payload["items"][0]["itemId"] == "discovery:SR-400"
+    assert payload["items"][0]["readOnly"] is True
+    assert payload["items"][0]["stage"] == "bluefolder_discovery"
+    assert payload["items"][0]["location"] == "180 E Hebron Rd, Hebron ME 04238"
 
 
 def test_dispatch_service_board_uses_recent_snapshot_without_blocking_refresh() -> None:

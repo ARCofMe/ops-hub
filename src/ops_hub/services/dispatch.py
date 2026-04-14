@@ -855,11 +855,11 @@ class DispatchService:
             scanned_jobs, items = await self.workflow_state_service.refresh_dispatch_attention(routeable_mappings)
         normalized_status = None if status is None else status.strip().lower()
         normalized_reference = None if reference is None else reference.strip().upper()
-        if stage is not None:
-            normalized_stage = stage.strip().lower().replace(" ", "_")
+        normalized_stage = stage.strip().lower().replace(" ", "_") if stage is not None else None
+        normalized_age = age.strip().lower().replace(" ", "_") if age is not None else None
+        if normalized_stage is not None:
             items = [item for item in items if item.stage == normalized_stage]
-        if age is not None:
-            normalized_age = age.strip().lower().replace(" ", "_")
+        if normalized_age is not None:
             items = [item for item in items if item.age_bucket == normalized_age]
         if technician_bluefolder_user_id is not None:
             items = [item for item in items if item.owner_bluefolder_user_id == technician_bluefolder_user_id]
@@ -869,8 +869,20 @@ class DispatchService:
             items = [item for item in items if item.status == normalized_status]
         if normalized_reference is not None:
             items = [item for item in items if item.reference.upper() == normalized_reference]
+        item_payloads = [await self._attention_item_payload(item) for item in items]
+        discovery_items = await self._bluefolder_discovery_attention_payloads(
+            routeable_mappings,
+            existing_references={str(item.reference or "").upper() for item in getattr(snapshot, "attention_items", [])},
+            stage=normalized_stage,
+            age=normalized_age,
+            status=normalized_status,
+            reference=normalized_reference,
+            technician_bluefolder_user_id=technician_bluefolder_user_id,
+            owner_discord_user_id=owner_discord_user_id,
+        )
         return {
-            "scannedJobs": scanned_jobs,
+            "scannedJobs": scanned_jobs + len(discovery_items),
+            "discoveryJobs": len(discovery_items),
             "filters": {
                 "stage": stage,
                 "age": age,
@@ -880,7 +892,7 @@ class DispatchService:
                 "reference": normalized_reference,
             },
             "ownerOptions": [self._dispatch_owner_option_payload(record) for record in await self._dispatch_owner_records()],
-            "items": [await self._attention_item_payload(item) for item in items],
+            "items": item_payloads + discovery_items,
         }
 
     async def get_dispatch_attention_item_payload(self, *, item_id: str) -> dict[str, object]:
@@ -893,6 +905,99 @@ class DispatchService:
             "item": await self._attention_item_payload(item),
             "history": [self._workflow_event_payload(event) for event in history[:20]],
         }
+
+    async def _bluefolder_discovery_attention_payloads(
+        self,
+        mappings: list[TechnicianMappingRecord],
+        *,
+        existing_references: set[str],
+        stage: str | None,
+        age: str | None,
+        status: str | None,
+        reference: str | None,
+        technician_bluefolder_user_id: int | None,
+        owner_discord_user_id: int | None,
+    ) -> list[dict[str, object]]:
+        """Build read-only BlueFolder assignment candidates not yet promoted to workflow attention."""
+        if stage not in (None, "", "bluefolder_discovery", "discovery", "bf_discovery"):
+            return []
+        if age not in (None, "", "fresh"):
+            return []
+        if status not in (None, "", "open"):
+            return []
+        if owner_discord_user_id is not None:
+            return []
+
+        candidates: list[dict[str, object]] = []
+        seen = set(existing_references)
+        for record in mappings:
+            if technician_bluefolder_user_id is not None and record.bluefolder_user_id != technician_bluefolder_user_id:
+                continue
+            try:
+                assignments = await self._assignments_for_user(record.bluefolder_user_id, include_subjects=True)
+            except Exception as exc:
+                logger.warning("BlueFolder discovery assignments unavailable for %s: %s", record.bluefolder_user_id, exc)
+                continue
+            for assignment in assignments[:12]:
+                sr_id = str(assignment.get("serviceRequestId") or "").strip()
+                if not sr_id:
+                    continue
+                ref = f"SR-{sr_id}".upper()
+                if reference is not None and ref != reference:
+                    continue
+                if ref in seen:
+                    continue
+                seen.add(ref)
+                summary = None
+                try:
+                    summary = await self.bluefolder_service.get_job_summary(ref)
+                except Exception as exc:
+                    logger.warning("BlueFolder discovery summary unavailable for %s: %s", ref, exc)
+                status_text = getattr(summary, "service_request_status", None) or assignment.get("status") or assignment.get("serviceRequestStatus")
+                address = self._format_summary_address(summary) if summary is not None else None
+                subject = getattr(summary, "subject", None) or assignment.get("subject") or "Service Request"
+                owner_label = await self._technician_label_payload(
+                    discord_user_id=record.discord_user_id,
+                    bluefolder_user_id=record.bluefolder_user_id,
+                )
+                candidates.append(
+                    {
+                        "itemId": f"discovery:{ref}",
+                        "srId": int(sr_id) if sr_id.isdigit() else sr_id,
+                        "reference": ref,
+                        "category": "discovery",
+                        "status": "open",
+                        "stage": "bluefolder_discovery",
+                        "stageLabel": "BlueFolder Discovery",
+                        "summary": f"{ref} is active in BlueFolder but has no derived OpsHub attention rule yet.",
+                        "details": f"Status: {status_text or 'unknown'}",
+                        "location": address,
+                        "routeLabel": assignment.get("routeLabel") or assignment.get("window") or assignment.get("timeWindow"),
+                        "ownerDiscordUserId": record.discord_user_id,
+                        "ownerBluefolderUserId": record.bluefolder_user_id,
+                        "ownerLabel": owner_label,
+                        "technicianLabel": owner_label,
+                        "assignedOwnerBluefolderUserId": None,
+                        "assignedOwnerDiscordUserId": None,
+                        "assignedOwnerLabel": "unassigned",
+                        "acknowledgedAt": None,
+                        "acknowledgedByUserId": None,
+                        "acknowledgedByLabel": "n/a",
+                        "snoozedUntil": None,
+                        "snoozedByUserId": None,
+                        "nextAction": "Review this BlueFolder SR and decide whether it needs scheduling, parts, quote, or closeout follow-up.",
+                        "firstSeenAt": None,
+                        "lastSeenAt": datetime.now().isoformat(timespec="seconds"),
+                        "ageHours": 0,
+                        "ageBucket": "fresh",
+                        "readOnly": True,
+                        "source": "bluefolder_discovery",
+                        "subject": subject,
+                    }
+                )
+                if len(candidates) >= 30:
+                    return candidates
+        return candidates
 
     async def get_dispatch_sr_customer_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return structured customer and location detail for one SR."""
@@ -1183,6 +1288,16 @@ class DispatchService:
             )
         except TypeError:
             route_url, image_url = await self.adapter.build_route_map_urls(route_stops)
+        route_path = planned_route.get("path") if isinstance(planned_route, dict) else []
+        if not route_path:
+            try:
+                route_stops, route_path = await self.adapter.enrich_route_geometry(
+                    route_stops,
+                    origin_address=route_origin_address,
+                    destination_address=route_destination_address,
+                )
+            except AttributeError:
+                route_path = []
 
         return {
             "success": True,
@@ -1200,7 +1315,7 @@ class DispatchService:
             "imageUrl": image_url,
             "stops": route_stops,
             "metrics": planned_route.get("metrics") if isinstance(planned_route, dict) else None,
-            "path": planned_route.get("path") if isinstance(planned_route, dict) else [],
+            "path": route_path,
         }
 
     async def get_dispatch_route_simulation_payload(
@@ -1256,6 +1371,16 @@ class DispatchService:
             )
         except TypeError:
             route_url, image_url = await self.adapter.build_route_map_urls(route_stops)
+        route_path = planned_route.get("path") if isinstance(planned_route, dict) else []
+        if not route_path:
+            try:
+                route_stops, route_path = await self.adapter.enrich_route_geometry(
+                    route_stops,
+                    origin_address=route_origin_address,
+                    destination_address=route_destination_address,
+                )
+            except AttributeError:
+                route_path = []
 
         return {
             "success": True,
@@ -1273,7 +1398,7 @@ class DispatchService:
             "imageUrl": image_url,
             "stops": route_stops,
             "metrics": planned_route.get("metrics") if isinstance(planned_route, dict) else None,
-            "path": planned_route.get("path") if isinstance(planned_route, dict) else [],
+            "path": route_path,
         }
 
     async def get_dispatch_heatmap_payload(
