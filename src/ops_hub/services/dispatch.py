@@ -42,6 +42,8 @@ class DispatchService:
     workflow_state_service: "WorkflowStateService | None" = None
     sms_service: DispatchSmsService | None = None
     board_snapshot_ttl_seconds: float = 30.0
+    attention_refresh_timeout_seconds: float = 18.0
+    discovery_scan_timeout_seconds: float = 8.0
     _board_refresh_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _board_refresh_running: bool = field(default=False, init=False, repr=False)
 
@@ -852,7 +854,17 @@ class DispatchService:
             items = list(getattr(snapshot, "attention_items", []))
             self._ensure_board_refresh(routeable_mappings)
         else:
-            scanned_jobs, items = await self.workflow_state_service.refresh_dispatch_attention(routeable_mappings)
+            try:
+                scanned_jobs, items = await asyncio.wait_for(
+                    self.workflow_state_service.refresh_dispatch_attention(routeable_mappings),
+                    timeout=self.attention_refresh_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Dispatch attention cold refresh timed out after %.1fs; returning warmable empty queue",
+                    self.attention_refresh_timeout_seconds,
+                )
+                scanned_jobs, items = 0, []
         normalized_status = None if status is None else status.strip().lower()
         normalized_reference = None if reference is None else reference.strip().upper()
         normalized_stage = stage.strip().lower().replace(" ", "_") if stage is not None else None
@@ -870,16 +882,26 @@ class DispatchService:
         if normalized_reference is not None:
             items = [item for item in items if item.reference.upper() == normalized_reference]
         item_payloads = [await self._attention_item_payload(item) for item in items]
-        discovery_items = await self._bluefolder_discovery_attention_payloads(
-            routeable_mappings,
-            existing_references={str(item.reference or "").upper() for item in getattr(snapshot, "attention_items", [])},
-            stage=normalized_stage,
-            age=normalized_age,
-            status=normalized_status,
-            reference=normalized_reference,
-            technician_bluefolder_user_id=technician_bluefolder_user_id,
-            owner_discord_user_id=owner_discord_user_id,
-        )
+        try:
+            discovery_items = await asyncio.wait_for(
+                self._bluefolder_discovery_attention_payloads(
+                    routeable_mappings,
+                    existing_references={str(item.reference or "").upper() for item in items},
+                    stage=normalized_stage,
+                    age=normalized_age,
+                    status=normalized_status,
+                    reference=normalized_reference,
+                    technician_bluefolder_user_id=technician_bluefolder_user_id,
+                    owner_discord_user_id=owner_discord_user_id,
+                ),
+                timeout=self.discovery_scan_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "BlueFolder discovery attention scan timed out after %.1fs",
+                self.discovery_scan_timeout_seconds,
+            )
+            discovery_items = []
         return {
             "scannedJobs": scanned_jobs + len(discovery_items),
             "discoveryJobs": len(discovery_items),
@@ -948,14 +970,9 @@ class DispatchService:
                 if ref in seen:
                     continue
                 seen.add(ref)
-                summary = None
-                try:
-                    summary = await self.bluefolder_service.get_job_summary(ref)
-                except Exception as exc:
-                    logger.warning("BlueFolder discovery summary unavailable for %s: %s", ref, exc)
-                status_text = getattr(summary, "service_request_status", None) or assignment.get("status") or assignment.get("serviceRequestStatus")
-                address = self._format_summary_address(summary) if summary is not None else None
-                subject = getattr(summary, "subject", None) or assignment.get("subject") or "Service Request"
+                status_text = assignment.get("status") or assignment.get("serviceRequestStatus")
+                address = assignment.get("address") or assignment.get("location")
+                subject = assignment.get("subject") or "Service Request"
                 owner_label = await self._technician_label_payload(
                     discord_user_id=record.discord_user_id,
                     bluefolder_user_id=record.bluefolder_user_id,
@@ -995,7 +1012,7 @@ class DispatchService:
                         "subject": subject,
                     }
                 )
-                if len(candidates) >= 30:
+                if len(candidates) >= 12:
                     return candidates
         return candidates
 

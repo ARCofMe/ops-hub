@@ -2489,20 +2489,11 @@ def test_dispatch_attention_includes_read_only_bluefolder_discovery_candidates()
                     "subject": "Dryer repair",
                     "status": "Scheduled",
                     "window": "8-12",
+                    "address": "180 E Hebron Rd",
                 }
             ],
         ),
-        get_job_summary=lambda reference: asyncio.sleep(
-            0,
-            result=SimpleNamespace(
-                service_request_status="Scheduled",
-                subject="Dryer repair",
-                address="180 E Hebron Rd",
-                city="Hebron",
-                state="ME",
-                postal_code="04238",
-            ),
-        ),
+        get_job_summary=lambda reference: (_ for _ in ()).throw(AssertionError("discovery must not fetch SR summaries")),
     )
     service = DispatchService(
         adapter=DummyDispatchAdapter(base_path=None),
@@ -2518,7 +2509,40 @@ def test_dispatch_attention_includes_read_only_bluefolder_discovery_candidates()
     assert payload["items"][0]["itemId"] == "discovery:SR-400"
     assert payload["items"][0]["readOnly"] is True
     assert payload["items"][0]["stage"] == "bluefolder_discovery"
-    assert payload["items"][0]["location"] == "180 E Hebron Rd, Hebron ME 04238"
+    assert payload["items"][0]["location"] == "180 E Hebron Rd"
+
+
+def test_dispatch_attention_cold_refresh_timeout_returns_fast_empty_queue() -> None:
+    workflow_state = SimpleNamespace(
+        current_snapshot=lambda: WorkflowStateSnapshot(
+            attention_items=[],
+            parts_cases=[],
+            events=[],
+            updated_at=None,
+        ),
+        refresh_dispatch_attention=lambda mappings, **kwargs: asyncio.sleep(0.2, result=(1, [])),
+    )
+    directory = SimpleNamespace(
+        mapping_records=lambda: [],
+        operator_records=lambda **kwargs: asyncio.sleep(0, result=[]),
+        dispatch_owner_records=lambda **kwargs: asyncio.sleep(0, result=[]),
+    )
+    bluefolder_service = SimpleNamespace(get_user_name=lambda user_id: asyncio.sleep(0, result=None))
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=bluefolder_service,
+        technician_directory_service=directory,
+        workflow_state_service=workflow_state,
+        attention_refresh_timeout_seconds=0.01,
+    )
+
+    started_at = perf_counter()
+    payload = asyncio.run(service.get_dispatch_attention_payload())
+    elapsed = perf_counter() - started_at
+
+    assert payload["items"] == []
+    assert payload["scannedJobs"] == 0
+    assert elapsed < 0.15
 
 
 def test_dispatch_service_board_uses_recent_snapshot_without_blocking_refresh() -> None:
