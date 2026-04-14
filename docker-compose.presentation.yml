@@ -48,6 +48,7 @@ services:
         VITE_ROUTEDESK_URL: https://routedesk.ops-hub.org
         VITE_PARTSAPP_URL: https://partsdesk.ops-hub.org
         VITE_FIELDDESK_URL: ${OPS_HUB_PRESENTATION_FIELDDESK_URL:-}
+        VITE_BLUEFOLDER_ACCOUNT_NAME: ${OPS_HUB_BLUEFOLDER_ACCOUNT_NAME:-}
     ports:
       - "4175:80"
     depends_on:
