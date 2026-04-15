@@ -1,7 +1,7 @@
 """BlueFolder adapter and service tests for Ops Hub."""
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 import threading
 from time import perf_counter
 from pathlib import Path
@@ -2208,6 +2208,92 @@ def test_dispatch_service_board_loads_technicians_concurrently() -> None:
     assert payload["mappedTechs"] == 3
     assert len(payload["technicianLoad"]) == 3
     assert elapsed < 0.18
+
+
+def test_dispatch_service_caches_assignment_reads() -> None:
+    calls = 0
+
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        nonlocal calls
+        calls += 1
+        return [{"serviceRequestId": "100", "subject": f"Job {user_id}", "start": day.isoformat()}]
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_assignments_for_user_on_date=get_assignments_for_user_on_date),
+    )
+
+    first = asyncio.run(service._assignments_for_user(13051, day=date(2026, 4, 15)))
+    second = asyncio.run(service._assignments_for_user(13051, day=date(2026, 4, 15)))
+
+    assert first == second
+    assert calls == 1
+
+
+def test_dispatch_service_collapses_concurrent_assignment_reads() -> None:
+    calls = 0
+
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.02)
+        return [{"serviceRequestId": "100", "subject": f"Job {user_id}", "start": day.isoformat()}]
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_assignments_for_user_on_date=get_assignments_for_user_on_date),
+    )
+
+    async def run_concurrent():
+        return await asyncio.gather(
+            service._assignments_for_user(13051, day=date(2026, 4, 15)),
+            service._assignments_for_user(13051, day=date(2026, 4, 15)),
+            service._assignments_for_user(13051, day=date(2026, 4, 15)),
+        )
+
+    results = asyncio.run(run_concurrent())
+
+    assert results[0] == results[1] == results[2]
+    assert calls == 1
+
+
+def test_dispatch_service_caches_route_payload_bluefolder_reads() -> None:
+    assignment_calls = 0
+    summary_calls = 0
+
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        nonlocal assignment_calls
+        assignment_calls += 1
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        nonlocal summary_calls
+        summary_calls += 1
+        return SimpleNamespace(
+            available=True,
+            service_request_id="100",
+            subject="Dryer repair",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+        )
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(
+            get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+            get_job_summary=get_job_summary,
+            get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        ),
+    )
+
+    first = asyncio.run(service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15"))
+    second = asyncio.run(service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15"))
+
+    assert first["stops"] == second["stops"]
+    assert assignment_calls == 1
+    assert summary_calls == 1
 
 
 def test_dispatch_service_board_uses_stale_snapshot_without_blocking_refresh() -> None:

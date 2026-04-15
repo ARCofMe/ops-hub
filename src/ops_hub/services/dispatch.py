@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 import logging
@@ -44,15 +45,22 @@ class DispatchService:
     board_snapshot_ttl_seconds: float = 30.0
     attention_refresh_timeout_seconds: float = 18.0
     discovery_scan_timeout_seconds: float = 8.0
+    assignment_cache_ttl_seconds: float = 120.0
+    job_summary_cache_ttl_seconds: float = 300.0
+    route_payload_cache_ttl_seconds: float = 180.0
+    heatmap_payload_cache_ttl_seconds: float = 180.0
     _board_refresh_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _board_refresh_running: bool = field(default=False, init=False, repr=False)
+    _cache_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _cache_entries: dict[str, tuple[float, object]] = field(default_factory=dict, init=False, repr=False)
+    _inflight_tasks: dict[str, asyncio.Task] = field(default_factory=dict, init=False, repr=False)
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
         if request.reference is None or not request.reference.strip():
             return await self.lookup_assignments(request)
 
-        bluefolder_result = await self.bluefolder_service.get_job_summary(request.reference)
+        bluefolder_result = await self._bluefolder_job_summary(request.reference)
         parts_brief = None
         if bluefolder_result.available and bluefolder_result.service_request_id:
             try:
@@ -1018,7 +1026,7 @@ class DispatchService:
 
     async def get_dispatch_sr_customer_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return structured customer and location detail for one SR."""
-        summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}")
+        summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
         address = self._format_summary_address(summary) if summary.available else None
         return {
             "srId": int(summary.service_request_id) if summary.available and str(summary.service_request_id or "").isdigit() else sr_id,
@@ -1070,7 +1078,7 @@ class DispatchService:
     async def get_dispatch_sr_work_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return dispatch work context for one SR."""
         reference = f"SR-{sr_id}"
-        summary = await self.bluefolder_service.get_job_summary(reference, include_customer_contacts=False)
+        summary = await self._bluefolder_job_summary(reference, include_customer_contacts=False)
         attention = await self.get_dispatch_attention_payload(reference=reference)
         parts_case = None
         photo_compliance = None
@@ -1116,7 +1124,7 @@ class DispatchService:
         """Return live photo-compliance detail and persist the cached snapshot."""
         if self.workflow_state_service is None:
             raise ValueError("Dispatch photo compliance requires the workflow state service.")
-        summary = await self.bluefolder_service.get_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
+        summary = await self._bluefolder_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
         record = await self.workflow_state_service.refresh_photo_compliance(
             sr_id=sr_id,
             service_request_status=summary.service_request_status,
@@ -1229,10 +1237,21 @@ class DispatchService:
             }
 
         selected_date = self._parse_route_date(route_date)
+        route_cache_key = self._route_payload_cache_key(
+            target_user_id,
+            selected_date,
+            origin_address,
+            destination_address,
+            optimize,
+        )
+        cached_route = self._cache_get(route_cache_key, self.route_payload_cache_ttl_seconds)
+        if isinstance(cached_route, dict):
+            return cached_route
+
         assignments = await self._assignments_for_user(target_user_id, day=selected_date)
         technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
         if not assignments:
-            return {
+            payload = {
                 "success": True,
                 "message": f"No assignments were found for {technician_label} on {selected_date.isoformat()}.",
                 "technicianBluefolderUserId": target_user_id,
@@ -1247,6 +1266,8 @@ class DispatchService:
                 "imageUrl": None,
                 "stops": [],
             }
+            self._cache_set(route_cache_key, payload)
+            return payload
 
         stops: list[dict[str, object]] = []
         missing_address_count = 0
@@ -1254,9 +1275,7 @@ class DispatchService:
             sr_id = assignment.get("serviceRequestId")
             if not isinstance(sr_id, str) or not sr_id.strip():
                 continue
-            summary = await self.bluefolder_service.get_job_summary(
-                f"SR-{sr_id}",
-            )
+            summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
             if not summary.available or not summary.address:
                 missing_address_count += 1
                 continue
@@ -1267,7 +1286,7 @@ class DispatchService:
             stops.append(self._build_route_stop_payload(assignment=assignment, address=address, subject=summary.subject))
 
         if not stops:
-            return {
+            payload = {
                 "success": False,
                 "message": (
                     f"Assignments were found for {technician_label} on {selected_date.isoformat()}, but no mappable addresses "
@@ -1285,6 +1304,8 @@ class DispatchService:
                 "imageUrl": None,
                 "stops": [],
             }
+            self._cache_set(route_cache_key, payload)
+            return payload
 
         route_origin_address = self._clean_route_endpoint(request.route_origin_address)
         route_destination_address = self._clean_route_endpoint(request.route_destination_address)
@@ -1316,7 +1337,7 @@ class DispatchService:
             except AttributeError:
                 route_path = []
 
-        return {
+        payload = {
             "success": True,
             "message": f"Route map ready for {technician_label}.",
             "technicianBluefolderUserId": target_user_id,
@@ -1334,6 +1355,8 @@ class DispatchService:
             "metrics": planned_route.get("metrics") if isinstance(planned_route, dict) else None,
             "path": route_path,
         }
+        self._cache_set(route_cache_key, payload)
+        return payload
 
     async def get_dispatch_route_simulation_payload(
         self,
@@ -1450,6 +1473,14 @@ class DispatchService:
                     "hotspots": [],
                 }
 
+        heatmap_cache_key = self._heatmap_payload_cache_key(
+            technician_bluefolder_user_id,
+            [record.bluefolder_user_id for record in mappings],
+        )
+        cached_heatmap = self._cache_get(heatmap_cache_key, self.heatmap_payload_cache_ttl_seconds)
+        if isinstance(cached_heatmap, dict):
+            return cached_heatmap
+
         hotspot_counts: dict[str, int] = {}
         address_labels: dict[str, str] = {}
         scanned_jobs = 0
@@ -1460,9 +1491,7 @@ class DispatchService:
                 if not isinstance(sr_id, str) or not sr_id.strip():
                     continue
                 scanned_jobs += 1
-                summary = await self.bluefolder_service.get_job_summary(
-                    f"SR-{sr_id}",
-                )
+                summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
                 address = self._format_summary_address(summary)
                 if not summary.available or not address:
                     continue
@@ -1470,7 +1499,7 @@ class DispatchService:
                 address_labels.setdefault(address, summary.city or summary.address or address)
 
         if not hotspot_counts:
-            return {
+            payload = {
                 "success": False,
                 "message": "No mappable assignment addresses were available for the current heatmap.",
                 "scannedJobs": scanned_jobs,
@@ -1478,6 +1507,8 @@ class DispatchService:
                 "imageUrl": None,
                 "hotspots": [],
             }
+            self._cache_set(heatmap_cache_key, payload)
+            return payload
 
         hotspots = [
             {
@@ -1490,7 +1521,7 @@ class DispatchService:
         image_url = await self.adapter.build_heat_map_url(
             [{"address": item["address"], "count": item["count"]} for item in hotspots]
         )
-        return {
+        payload = {
             "success": True,
             "message": "Dispatch heatmap ready.",
             "technicianBluefolderUserId": technician_bluefolder_user_id,
@@ -1504,6 +1535,8 @@ class DispatchService:
             "imageUrl": image_url,
             "hotspots": hotspots,
         }
+        self._cache_set(heatmap_cache_key, payload)
+        return payload
 
     async def acknowledge_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
         """Acknowledge one attention item by item id."""
@@ -1678,9 +1711,7 @@ class DispatchService:
             sr_id = assignment.get("serviceRequestId")
             if not isinstance(sr_id, str) or not sr_id.strip():
                 continue
-            summary = await self.bluefolder_service.get_job_summary(
-                f"SR-{sr_id}",
-            )
+            summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
             if not summary.available or not summary.address:
                 missing_address_count += 1
                 continue
@@ -1767,9 +1798,7 @@ class DispatchService:
                 if not isinstance(sr_id, str) or not sr_id.strip():
                     continue
                 scanned_jobs += 1
-                summary = await self.bluefolder_service.get_job_summary(
-                    f"SR-{sr_id}",
-                )
+                summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
                 address = self._format_summary_address(summary)
                 if not summary.available or not address:
                     continue
@@ -2195,23 +2224,110 @@ class DispatchService:
     ) -> list[dict[str, str | bool | None]]:
         """Load assignments for one day, preferring direct BlueFolder reads with a wrapper fallback."""
         target_day = day or date.today()
+        cache_key = self._assignment_cache_key(bluefolder_user_id, target_day, include_subjects)
+        cached = self._cache_get(cache_key, self.assignment_cache_ttl_seconds)
+        if isinstance(cached, list):
+            return cached
+
+        async def _fetch() -> list[dict[str, str | bool | None]]:
+            try:
+                assignments = await self.bluefolder_service.get_assignments_for_user_on_date(
+                    bluefolder_user_id,
+                    target_day,
+                    include_subjects=include_subjects,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "BlueFolder assignments unavailable for mapped user %s on %s: %s",
+                    bluefolder_user_id,
+                    target_day.isoformat(),
+                    exc,
+                )
+                assignments = []
+            if assignments:
+                return assignments
+            return await self.adapter.get_assignments_for_user(bluefolder_user_id)
+
+        assignments = await self._singleflight(cache_key, _fetch)
+        self._cache_set(cache_key, assignments)
+        return deepcopy(assignments)
+
+    async def _bluefolder_job_summary(self, reference: str, *, include_customer_contacts: bool = True) -> BlueFolderJobSummary:
+        """Return a cached BlueFolder SR summary and collapse concurrent identical lookups."""
+        cache_key = self._job_summary_cache_key(reference, include_customer_contacts)
+        cached = self._cache_get(cache_key, self.job_summary_cache_ttl_seconds)
+        if cached is not None:
+            return cached
+
+        async def _fetch() -> BlueFolderJobSummary:
+            try:
+                return await self.bluefolder_service.get_job_summary(
+                    reference,
+                    include_customer_contacts=include_customer_contacts,
+                )
+            except TypeError:
+                return await self.bluefolder_service.get_job_summary(reference)
+
+        summary = await self._singleflight(cache_key, _fetch)
+        self._cache_set(cache_key, summary)
+        return deepcopy(summary)
+
+    def _cache_get(self, key: str, ttl_seconds: float) -> object | None:
+        now = time.monotonic()
+        with self._cache_lock:
+            entry = self._cache_entries.get(key)
+            if entry is None:
+                return None
+            stored_at, value = entry
+            if now - stored_at > ttl_seconds:
+                self._cache_entries.pop(key, None)
+                return None
+            return deepcopy(value)
+
+    def _cache_set(self, key: str, value: object) -> None:
+        with self._cache_lock:
+            self._cache_entries[key] = (time.monotonic(), deepcopy(value))
+
+    async def _singleflight(self, key: str, factory):
+        with self._cache_lock:
+            task = self._inflight_tasks.get(key)
+            if task is None or task.done():
+                task = asyncio.create_task(factory())
+                self._inflight_tasks[key] = task
         try:
-            assignments = await self.bluefolder_service.get_assignments_for_user_on_date(
-                bluefolder_user_id,
-                target_day,
-                include_subjects=include_subjects,
-            )
-        except Exception as exc:
-            logger.warning(
-                "BlueFolder assignments unavailable for mapped user %s on %s: %s",
-                bluefolder_user_id,
-                target_day.isoformat(),
-                exc,
-            )
-            assignments = []
-        if assignments:
-            return assignments
-        return await self.adapter.get_assignments_for_user(bluefolder_user_id)
+            return await task
+        finally:
+            if task.done():
+                with self._cache_lock:
+                    if self._inflight_tasks.get(key) is task:
+                        self._inflight_tasks.pop(key, None)
+
+    @staticmethod
+    def _assignment_cache_key(bluefolder_user_id: int, target_day: date, include_subjects: bool) -> str:
+        return f"dispatch:assignments:{bluefolder_user_id}:{target_day.isoformat()}:{int(include_subjects)}"
+
+    @staticmethod
+    def _job_summary_cache_key(reference: str, include_customer_contacts: bool) -> str:
+        normalized = str(reference or "").strip().upper()
+        return f"dispatch:job-summary:{normalized}:{int(include_customer_contacts)}"
+
+    @staticmethod
+    def _route_payload_cache_key(
+        bluefolder_user_id: int,
+        target_day: date,
+        origin_address: str | None,
+        destination_address: str | None,
+        optimize: bool,
+    ) -> str:
+        origin = str(origin_address or "").strip().lower()
+        destination = str(destination_address or "").strip().lower()
+        return f"dispatch:route:{bluefolder_user_id}:{target_day.isoformat()}:{origin}:{destination}:{int(optimize)}"
+
+    @staticmethod
+    def _heatmap_payload_cache_key(bluefolder_user_id: int | None, mapped_user_ids: list[int]) -> str:
+        scope = str(bluefolder_user_id) if bluefolder_user_id is not None else "all"
+        mapped = ",".join(str(user_id) for user_id in sorted(mapped_user_ids))
+        return f"dispatch:heatmap:{scope}:{mapped}:{date.today().isoformat()}"
 
     @staticmethod
     def _parse_route_date(raw_value: str | None) -> date:
