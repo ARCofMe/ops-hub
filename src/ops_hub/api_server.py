@@ -788,6 +788,34 @@ async def dispatch_technician_api_request(
             except (RuntimeError, ValueError) as exc:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
+        if method == "POST" and route_path == "/dispatch/intake/manual/preview":
+            payload_body = body or {}
+            request_body = payload_body.get("request")
+            if not isinstance(request_body, dict):
+                request_body = payload_body
+            try:
+                return HTTPStatus.OK, container.service_smith_service.preview_manual_service_request_payload(
+                    request=request_body,
+                    duplicate_mode=str(payload_body.get("duplicateMode") or "error"),
+                )
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
+        if method == "POST" and route_path == "/dispatch/intake/manual/import":
+            payload_body = body or {}
+            request_body = payload_body.get("request")
+            if not isinstance(request_body, dict):
+                request_body = payload_body
+            try:
+                return HTTPStatus.OK, container.service_smith_service.import_manual_service_request_payload(
+                    request=request_body,
+                    duplicate_mode=str(payload_body.get("duplicateMode") or "error"),
+                    confirmed=bool(payload_body.get("confirmed")),
+                    allow_validation_override=bool(payload_body.get("allowValidationOverride")),
+                )
+            except (RuntimeError, ValueError) as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
     if route_path.startswith("/parts"):
         parts_user = _resolve_parts_identity(
             container=container,

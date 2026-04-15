@@ -195,6 +195,114 @@ def test_import_spreadsheet_payload_stops_on_fail_fast(monkeypatch, tmp_path: Pa
     assert payload["summary"]["status:duplicate_conflict"] == 1
 
 
+def test_preview_manual_service_request_payload_checks_existing_bluefolder_records(monkeypatch) -> None:
+    class DummyClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def plan_import(self, row, duplicate_mode="skip"):
+            return BlueFolderImportPlan(
+                row_number=row.get("source_row_number"),
+                customer_action="use_existing",
+                location_action="use_existing",
+                contact_action="create_contact",
+                service_request_action="error_duplicate",
+                existing_customer_id="123",
+                existing_location_id="456",
+                existing_service_request_id="999",
+                notes=[f"external_id={row.get('external_id')}", f"duplicate_mode={duplicate_mode}"],
+            )
+
+        def preview_payloads(self, row, duplicate_mode="skip"):
+            return BlueFolderPayloadPreview(
+                row_number=row.get("source_row_number"),
+                customer_payload=None,
+                location_payload=None,
+                contact_payload={"firstName": "Pat"},
+                service_request_payload={"subject": row.get("subject"), "externalId": row.get("external_id")},
+                existing_customer_id="123",
+                existing_location_id="456",
+                existing_service_request_id="999",
+                notes=[f"duplicate_mode={duplicate_mode}"],
+            )
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    payload = service.preview_manual_service_request_payload(
+        request={
+            "customerName": "Pat Smith",
+            "customerPhone": "2075551212",
+            "address": "123 Main St",
+            "city": "Lewiston",
+            "state": "me",
+            "postalCode": "04240",
+            "subject": "No heat",
+            "externalId": "phone-100",
+        },
+        duplicate_mode="error",
+    )
+
+    assert payload["blockingIssueCount"] == 0
+    assert payload["row"]["customer_phone"] == "207-555-1212"
+    assert payload["row"]["state"] == "ME"
+    assert payload["plan"]["existing_service_request_id"] == "999"
+    assert payload["plan"]["service_request_action"] == "error_duplicate"
+
+
+def test_import_manual_service_request_requires_confirmation(monkeypatch) -> None:
+    class DummyClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    try:
+        service.import_manual_service_request_payload(
+            request={"customerName": "Pat Smith", "subject": "No heat"},
+            confirmed=False,
+        )
+    except ValueError as exc:
+        assert "preview confirmation" in str(exc)
+    else:
+        raise AssertionError("Expected manual import to require confirmation.")
+
+
+def test_import_manual_service_request_returns_result(monkeypatch) -> None:
+    class DummyClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def ensure_customer_and_import(self, row, duplicate_mode="skip"):
+            return BlueFolderImportResult(
+                row_number=row.get("source_row_number"),
+                customer_id="123",
+                customer_location_id="456",
+                customer_contact_id="789",
+                service_request_id="999",
+                status="imported",
+                created_customer=False,
+                created_location=True,
+                created_contact=True,
+                notes=[f"duplicate_mode={duplicate_mode}"],
+            )
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    payload = service.import_manual_service_request_payload(
+        request={"customerName": "Pat Smith", "address": "123 Main St", "subject": "No heat"},
+        duplicate_mode="error",
+        confirmed=True,
+    )
+
+    assert payload["success"] is True
+    assert payload["result"]["service_request_id"] == "999"
+    assert payload["row"]["external_id"].startswith("routedesk-manual-")
+    assert payload["summary"]["created_location"] == 1
+
+
 def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:
     service = ServiceSmithService(
         settings=SimpleNamespace(),

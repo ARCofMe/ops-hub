@@ -320,6 +320,85 @@ def test_dispatch_imports_intake_spreadsheet() -> None:
     assert payload == {"rowCount": 1, "summary": {"status:imported": 1}}
 
 
+def test_dispatch_previews_manual_service_request() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            preview_manual_service_request_payload=lambda **kwargs: {
+                "mode": "manual_service_request",
+                "duplicateMode": kwargs["duplicate_mode"],
+                "row": kwargs["request"],
+            }
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/manual/preview",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={"request": {"customerName": "Pat Smith", "subject": "No heat"}, "duplicateMode": "error"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {
+        "mode": "manual_service_request",
+        "duplicateMode": "error",
+        "row": {"customerName": "Pat Smith", "subject": "No heat"},
+    }
+
+
+def test_dispatch_imports_manual_service_request() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(
+            import_manual_service_request_payload=lambda **kwargs: {
+                "mode": "manual_service_request",
+                "duplicateMode": kwargs["duplicate_mode"],
+                "confirmed": kwargs["confirmed"],
+                "allowValidationOverride": kwargs["allow_validation_override"],
+            }
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/manual/import",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body={
+                "request": {"customerName": "Pat Smith", "subject": "No heat"},
+                "duplicateMode": "error",
+                "confirmed": True,
+                "allowValidationOverride": True,
+            },
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload == {
+        "mode": "manual_service_request",
+        "duplicateMode": "error",
+        "confirmed": True,
+        "allowValidationOverride": True,
+    }
+
+
 def test_dispatch_returns_sr_work_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

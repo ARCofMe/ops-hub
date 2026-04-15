@@ -118,6 +118,13 @@ def validate_rows(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
     return issues
 
 
+def normalize_row_for_import(row: dict[str, object], *, row_number: str = "manual") -> dict[str, str]:
+    """Normalize one already-mapped intake row for the BlueFolder import path."""
+    mapped = {key: _stringify(value) for key, value in row.items()}
+    mapped["source_row_number"] = row_number
+    return _normalize_row(mapped)
+
+
 def _map_row(row: dict[str, str], field_map: dict[str, str], row_number: int) -> dict[str, str]:
     mapped = {canonical_name: _stringify(row.get(source_name)) for canonical_name, source_name in field_map.items()}
     mapped["source_row_number"] = str(row_number)
