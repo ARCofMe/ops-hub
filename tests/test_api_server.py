@@ -399,6 +399,32 @@ def test_dispatch_imports_manual_service_request() -> None:
     }
 
 
+def test_dispatch_rejects_non_object_manual_service_request_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/intake/manual/preview",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+            body=["not", "an", "object"],
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload == {"success": False, "message": "Manual intake payload must be a JSON object."}
+
+
 def test_dispatch_returns_sr_work_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

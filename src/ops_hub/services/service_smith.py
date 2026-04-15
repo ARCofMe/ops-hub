@@ -167,6 +167,7 @@ class ServiceSmithService:
         row_end: int | None = None,
         limit: int | None = 25,
     ) -> dict[str, object]:
+        duplicate_mode = _normalize_duplicate_mode(duplicate_mode)
         client = ServiceSmithBlueFolderClient(self.settings)
         rows = self._selected_rows(
             spreadsheet_path=spreadsheet_path,
@@ -200,6 +201,7 @@ class ServiceSmithService:
         limit: int | None = None,
         fail_fast: bool = False,
     ) -> dict[str, object]:
+        duplicate_mode = _normalize_duplicate_mode(duplicate_mode)
         client = ServiceSmithBlueFolderClient(self.settings)
         rows = self._selected_rows(
             spreadsheet_path=spreadsheet_path,
@@ -231,6 +233,7 @@ class ServiceSmithService:
         duplicate_mode: str = "error",
     ) -> dict[str, object]:
         """Plan one manually entered service request before writing to BlueFolder."""
+        duplicate_mode = _normalize_duplicate_mode(duplicate_mode)
         row = self._manual_request_row(request)
         issues = validate_rows([row])
         client = ServiceSmithBlueFolderClient(self.settings)
@@ -259,6 +262,7 @@ class ServiceSmithService:
         if not confirmed:
             raise ValueError("Manual service request import requires preview confirmation.")
 
+        duplicate_mode = _normalize_duplicate_mode(duplicate_mode)
         row = self._manual_request_row(request)
         issues = validate_rows([row])
         blocking_issues = [item for item in issues if item.get("level") == "error"]
@@ -388,3 +392,10 @@ def _manual_external_id(row: dict[str, str]) -> str:
     )
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
     return f"routedesk-manual-{digest}"
+
+
+def _normalize_duplicate_mode(value: str | None) -> str:
+    mode = str(value or "skip").strip().lower()
+    if mode not in {"skip", "error", "allow"}:
+        raise ValueError("duplicate_mode must be one of: skip, error, allow.")
+    return mode

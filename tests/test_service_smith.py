@@ -303,6 +303,25 @@ def test_import_manual_service_request_returns_result(monkeypatch) -> None:
     assert payload["summary"]["created_location"] == 1
 
 
+def test_manual_service_request_rejects_invalid_duplicate_mode(monkeypatch) -> None:
+    class DummyClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+    monkeypatch.setattr("ops_hub.services.service_smith.ServiceSmithBlueFolderClient", DummyClient)
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    try:
+        service.preview_manual_service_request_payload(
+            request={"customerName": "Pat Smith", "subject": "No heat"},
+            duplicate_mode="maybe",
+        )
+    except ValueError as exc:
+        assert "duplicate_mode" in str(exc)
+    else:
+        raise AssertionError("Expected invalid duplicate mode to fail.")
+
+
 def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:
     service = ServiceSmithService(
         settings=SimpleNamespace(),

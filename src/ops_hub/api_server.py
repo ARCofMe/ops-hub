@@ -790,6 +790,8 @@ async def dispatch_technician_api_request(
 
         if method == "POST" and route_path == "/dispatch/intake/manual/preview":
             payload_body = body or {}
+            if not isinstance(payload_body, dict):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Manual intake payload must be a JSON object."}
             request_body = payload_body.get("request")
             if not isinstance(request_body, dict):
                 request_body = payload_body
@@ -803,6 +805,8 @@ async def dispatch_technician_api_request(
 
         if method == "POST" and route_path == "/dispatch/intake/manual/import":
             payload_body = body or {}
+            if not isinstance(payload_body, dict):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Manual intake payload must be a JSON object."}
             request_body = payload_body.get("request")
             if not isinstance(request_body, dict):
                 request_body = payload_body
