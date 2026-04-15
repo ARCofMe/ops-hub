@@ -203,6 +203,9 @@ def build_container(settings: Settings) -> ServiceContainer:
             technician_directory_service=technician_directory_service,
             workflow_state_service=workflow_state_service,
             sms_service=sms_service,
+            persistent_cache_path=Path(settings.dispatch_cache_file).expanduser()
+            if settings.dispatch_cache_file
+            else None,
         ),
         technician_api_service=TechnicianApiService(
             bluefolder_service=bluefolder_service,

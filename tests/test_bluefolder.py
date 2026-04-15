@@ -2296,6 +2296,112 @@ def test_dispatch_service_caches_route_payload_bluefolder_reads() -> None:
     assert summary_calls == 1
 
 
+def test_dispatch_service_persists_route_payload_cache_across_instances(tmp_path: Path) -> None:
+    cache_path = tmp_path / "dispatch_cache.sqlite"
+
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        return SimpleNamespace(
+            available=True,
+            service_request_id="100",
+            subject="Dryer repair",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+        )
+
+    first_service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(
+            get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+            get_job_summary=get_job_summary,
+            get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        ),
+        persistent_cache_path=cache_path,
+    )
+
+    first = asyncio.run(
+        first_service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15")
+    )
+
+    async def fail_assignments(*args, **kwargs):
+        raise AssertionError("second service should use persisted route payload")
+
+    second_service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(
+            get_assignments_for_user_on_date=fail_assignments,
+            get_job_summary=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not fetch summary")),
+            get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        ),
+        persistent_cache_path=cache_path,
+    )
+
+    second = asyncio.run(
+        second_service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15")
+    )
+
+    assert second["stops"] == first["stops"]
+    assert second["cacheStatus"] == "fresh"
+
+
+def test_dispatch_service_returns_stale_persistent_route_payload_after_ttl(tmp_path: Path) -> None:
+    cache_path = tmp_path / "dispatch_cache.sqlite"
+
+    async def get_assignments_for_user_on_date(user_id: int, day, include_subjects: bool = True):
+        return [{"serviceRequestId": "100", "subject": "Dryer repair"}]
+
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        return SimpleNamespace(
+            available=True,
+            service_request_id="100",
+            subject="Dryer repair",
+            address="123 Main St",
+            city="Portland",
+            state="ME",
+            postal_code="04101",
+        )
+
+    first_service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(
+            get_assignments_for_user_on_date=get_assignments_for_user_on_date,
+            get_job_summary=get_job_summary,
+            get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        ),
+        persistent_cache_path=cache_path,
+    )
+    first = asyncio.run(
+        first_service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15")
+    )
+
+    second_service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(
+            get_assignments_for_user_on_date=lambda *args, **kwargs: asyncio.sleep(
+                0,
+                result=[{"serviceRequestId": "999", "subject": "Should not be used"}],
+            ),
+            get_job_summary=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not fetch stale summary")),
+            get_user_name=lambda user_id: asyncio.sleep(0, result="Pat Tech"),
+        ),
+        persistent_cache_path=cache_path,
+        route_payload_cache_ttl_seconds=0,
+        persistent_cache_stale_ttl_seconds=3600,
+    )
+
+    second = asyncio.run(
+        second_service.get_dispatch_route_payload(technician_bluefolder_user_id=13051, route_date="2026-04-15")
+    )
+
+    assert second["stops"] == first["stops"]
+    assert second["cacheStatus"] == "stale"
+    assert second["cached"] is True
+
+
 def test_dispatch_service_board_uses_stale_snapshot_without_blocking_refresh() -> None:
     workflow_state = SimpleNamespace(
         current_snapshot=lambda: WorkflowStateSnapshot(

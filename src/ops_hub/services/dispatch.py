@@ -7,6 +7,9 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 import logging
+from pathlib import Path
+import pickle
+import sqlite3
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -49,11 +52,14 @@ class DispatchService:
     job_summary_cache_ttl_seconds: float = 300.0
     route_payload_cache_ttl_seconds: float = 180.0
     heatmap_payload_cache_ttl_seconds: float = 180.0
+    persistent_cache_path: Path | None = None
+    persistent_cache_stale_ttl_seconds: float = 3600.0
     _board_refresh_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _board_refresh_running: bool = field(default=False, init=False, repr=False)
     _cache_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _cache_entries: dict[str, tuple[float, object]] = field(default_factory=dict, init=False, repr=False)
     _inflight_tasks: dict[str, asyncio.Task] = field(default_factory=dict, init=False, repr=False)
+    _persistent_cache_ready: bool = field(default=False, init=False, repr=False)
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
         """Return a job lookup response using the best available read-only data."""
@@ -1246,9 +1252,18 @@ class DispatchService:
         )
         cached_route = self._cache_get(route_cache_key, self.route_payload_cache_ttl_seconds)
         if isinstance(cached_route, dict):
-            return cached_route
+            return self._with_cache_metadata(cached_route, "fresh")
+        stale_route = self._cache_get(route_cache_key, self.route_payload_cache_ttl_seconds, allow_stale=True)
+        if isinstance(stale_route, dict):
+            return self._with_cache_metadata(stale_route, "stale")
 
-        assignments = await self._assignments_for_user(target_user_id, day=selected_date)
+        try:
+            assignments = await self._assignments_for_user(target_user_id, day=selected_date)
+        except Exception:
+            stale_route = self._cache_get(route_cache_key, self.route_payload_cache_ttl_seconds, allow_stale=True)
+            if isinstance(stale_route, dict):
+                return self._with_cache_metadata(stale_route, "stale")
+            raise
         technician_label = await self._technician_label(bluefolder_user_id=target_user_id)
         if not assignments:
             payload = {
@@ -1267,7 +1282,7 @@ class DispatchService:
                 "stops": [],
             }
             self._cache_set(route_cache_key, payload)
-            return payload
+            return self._with_cache_metadata(payload, "miss")
 
         stops: list[dict[str, object]] = []
         missing_address_count = 0
@@ -1305,7 +1320,7 @@ class DispatchService:
                 "stops": [],
             }
             self._cache_set(route_cache_key, payload)
-            return payload
+            return self._with_cache_metadata(payload, "miss")
 
         route_origin_address = self._clean_route_endpoint(request.route_origin_address)
         route_destination_address = self._clean_route_endpoint(request.route_destination_address)
@@ -1356,7 +1371,7 @@ class DispatchService:
             "path": route_path,
         }
         self._cache_set(route_cache_key, payload)
-        return payload
+        return self._with_cache_metadata(payload, "miss")
 
     async def get_dispatch_route_simulation_payload(
         self,
@@ -1479,13 +1494,26 @@ class DispatchService:
         )
         cached_heatmap = self._cache_get(heatmap_cache_key, self.heatmap_payload_cache_ttl_seconds)
         if isinstance(cached_heatmap, dict):
-            return cached_heatmap
+            return self._with_cache_metadata(cached_heatmap, "fresh")
+        stale_heatmap = self._cache_get(heatmap_cache_key, self.heatmap_payload_cache_ttl_seconds, allow_stale=True)
+        if isinstance(stale_heatmap, dict):
+            return self._with_cache_metadata(stale_heatmap, "stale")
 
         hotspot_counts: dict[str, int] = {}
         address_labels: dict[str, str] = {}
         scanned_jobs = 0
         for record in mappings:
-            assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            try:
+                assignments = await self._assignments_for_user(record.bluefolder_user_id)
+            except Exception:
+                stale_heatmap = self._cache_get(
+                    heatmap_cache_key,
+                    self.heatmap_payload_cache_ttl_seconds,
+                    allow_stale=True,
+                )
+                if isinstance(stale_heatmap, dict):
+                    return self._with_cache_metadata(stale_heatmap, "stale")
+                raise
             for assignment in assignments[:10]:
                 sr_id = assignment.get("serviceRequestId")
                 if not isinstance(sr_id, str) or not sr_id.strip():
@@ -1508,7 +1536,7 @@ class DispatchService:
                 "hotspots": [],
             }
             self._cache_set(heatmap_cache_key, payload)
-            return payload
+            return self._with_cache_metadata(payload, "miss")
 
         hotspots = [
             {
@@ -1536,7 +1564,7 @@ class DispatchService:
             "hotspots": hotspots,
         }
         self._cache_set(heatmap_cache_key, payload)
-        return payload
+        return self._with_cache_metadata(payload, "miss")
 
     async def acknowledge_dispatch_attention_item(self, *, item_id: str, actor_user_id: int) -> dict[str, object]:
         """Acknowledge one attention item by item id."""
@@ -2228,6 +2256,14 @@ class DispatchService:
         cached = self._cache_get(cache_key, self.assignment_cache_ttl_seconds)
         if isinstance(cached, list):
             return cached
+        stale_assignments = self._cache_get(cache_key, self.assignment_cache_ttl_seconds, allow_stale=True)
+        if isinstance(stale_assignments, list):
+            logger.info(
+                "Serving stale BlueFolder assignments for mapped user %s on %s",
+                bluefolder_user_id,
+                target_day.isoformat(),
+            )
+            return stale_assignments
 
         async def _fetch() -> list[dict[str, str | bool | None]]:
             try:
@@ -2248,7 +2284,18 @@ class DispatchService:
                 return assignments
             return await self.adapter.get_assignments_for_user(bluefolder_user_id)
 
-        assignments = await self._singleflight(cache_key, _fetch)
+        try:
+            assignments = await self._singleflight(cache_key, _fetch)
+        except Exception:
+            stale_assignments = self._cache_get(cache_key, self.assignment_cache_ttl_seconds, allow_stale=True)
+            if isinstance(stale_assignments, list):
+                logger.warning(
+                    "Serving stale BlueFolder assignments for mapped user %s on %s after refresh failure",
+                    bluefolder_user_id,
+                    target_day.isoformat(),
+                )
+                return stale_assignments
+            raise
         self._cache_set(cache_key, assignments)
         return deepcopy(assignments)
 
@@ -2258,6 +2305,10 @@ class DispatchService:
         cached = self._cache_get(cache_key, self.job_summary_cache_ttl_seconds)
         if cached is not None:
             return cached
+        stale_summary = self._cache_get(cache_key, self.job_summary_cache_ttl_seconds, allow_stale=True)
+        if stale_summary is not None:
+            logger.info("Serving stale BlueFolder SR summary for %s", reference)
+            return stale_summary
 
         async def _fetch() -> BlueFolderJobSummary:
             try:
@@ -2268,25 +2319,112 @@ class DispatchService:
             except TypeError:
                 return await self.bluefolder_service.get_job_summary(reference)
 
-        summary = await self._singleflight(cache_key, _fetch)
+        try:
+            summary = await self._singleflight(cache_key, _fetch)
+        except Exception:
+            stale_summary = self._cache_get(cache_key, self.job_summary_cache_ttl_seconds, allow_stale=True)
+            if stale_summary is not None:
+                logger.warning("Serving stale BlueFolder SR summary for %s after refresh failure", reference)
+                return stale_summary
+            raise
         self._cache_set(cache_key, summary)
         return deepcopy(summary)
 
-    def _cache_get(self, key: str, ttl_seconds: float) -> object | None:
+    def _cache_get(self, key: str, ttl_seconds: float, *, allow_stale: bool = False) -> object | None:
         now = time.monotonic()
         with self._cache_lock:
             entry = self._cache_entries.get(key)
-            if entry is None:
-                return None
-            stored_at, value = entry
-            if now - stored_at > ttl_seconds:
+            if entry is not None:
+                stored_at, value = entry
+                max_age = self.persistent_cache_stale_ttl_seconds if allow_stale else ttl_seconds
+                if now - stored_at <= max_age:
+                    return deepcopy(value)
                 self._cache_entries.pop(key, None)
-                return None
-            return deepcopy(value)
+
+        persistent_value = self._persistent_cache_get(key, ttl_seconds, allow_stale=allow_stale)
+        if persistent_value is None:
+            return None
+        with self._cache_lock:
+            self._cache_entries[key] = (time.monotonic(), deepcopy(persistent_value))
+        return deepcopy(persistent_value)
 
     def _cache_set(self, key: str, value: object) -> None:
         with self._cache_lock:
             self._cache_entries[key] = (time.monotonic(), deepcopy(value))
+        self._persistent_cache_set(key, value)
+
+    def _persistent_cache_get(self, key: str, ttl_seconds: float, *, allow_stale: bool = False) -> object | None:
+        if self.persistent_cache_path is None:
+            return None
+        try:
+            self._ensure_persistent_cache()
+            with sqlite3.connect(self.persistent_cache_path) as connection:
+                row = connection.execute(
+                    "SELECT created_at, payload FROM dispatch_cache WHERE cache_key = ?",
+                    (key,),
+                ).fetchone()
+            if row is None:
+                return None
+            created_at, payload = row
+            max_age = self.persistent_cache_stale_ttl_seconds if allow_stale else ttl_seconds
+            if time.time() - float(created_at) > max_age:
+                return None
+            return pickle.loads(payload)
+        except Exception as exc:
+            logger.warning("Persistent dispatch cache read failed for %s: %s", key, exc)
+            return None
+
+    def _persistent_cache_set(self, key: str, value: object) -> None:
+        if self.persistent_cache_path is None:
+            return
+        try:
+            self._ensure_persistent_cache()
+            payload = pickle.dumps(deepcopy(value), protocol=pickle.HIGHEST_PROTOCOL)
+            with sqlite3.connect(self.persistent_cache_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO dispatch_cache(cache_key, created_at, payload)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(cache_key) DO UPDATE SET
+                        created_at = excluded.created_at,
+                        payload = excluded.payload
+                    """,
+                    (key, time.time(), payload),
+                )
+                connection.commit()
+        except Exception as exc:
+            logger.warning("Persistent dispatch cache write failed for %s: %s", key, exc)
+
+    def _persistent_cache_delete(self, key: str) -> None:
+        if self.persistent_cache_path is None:
+            return
+        try:
+            self._ensure_persistent_cache()
+            with sqlite3.connect(self.persistent_cache_path) as connection:
+                connection.execute("DELETE FROM dispatch_cache WHERE cache_key = ?", (key,))
+                connection.commit()
+        except Exception as exc:
+            logger.warning("Persistent dispatch cache delete failed for %s: %s", key, exc)
+
+    def _ensure_persistent_cache(self) -> None:
+        if self.persistent_cache_path is None:
+            return
+        with self._cache_lock:
+            if self._persistent_cache_ready:
+                return
+            self.persistent_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self.persistent_cache_path) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS dispatch_cache (
+                        cache_key TEXT PRIMARY KEY,
+                        created_at REAL NOT NULL,
+                        payload BLOB NOT NULL
+                    )
+                    """
+                )
+                connection.commit()
+            self._persistent_cache_ready = True
 
     async def _singleflight(self, key: str, factory):
         with self._cache_lock:
@@ -2328,6 +2466,15 @@ class DispatchService:
         scope = str(bluefolder_user_id) if bluefolder_user_id is not None else "all"
         mapped = ",".join(str(user_id) for user_id in sorted(mapped_user_ids))
         return f"dispatch:heatmap:{scope}:{mapped}:{date.today().isoformat()}"
+
+    @staticmethod
+    def _with_cache_metadata(payload: dict[str, object], status: str) -> dict[str, object]:
+        next_payload = dict(payload)
+        next_payload.setdefault("cacheStatus", status)
+        next_payload.setdefault("cached", status in {"fresh", "stale"})
+        if status == "stale":
+            next_payload.setdefault("message", "Showing cached dispatch data while OpsHub refreshes BlueFolder.")
+        return next_payload
 
     @staticmethod
     def _parse_route_date(raw_value: str | None) -> date:

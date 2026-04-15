@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     member_export_timestamped: bool = True
     parts_request_file: str | None = None
     workflow_state_file: str | None = None
+    dispatch_cache_file: str | None = None
     enable_workflow_policy_runner: bool = False
     workflow_policy_interval_seconds: int = 900
     notification_channel_id: int | None = None
@@ -151,6 +152,7 @@ class Settings(BaseSettings):
             "operator_mapping_file",
             "parts_request_file",
             "workflow_state_file",
+            "dispatch_cache_file",
             "enable_workflow_policy_runner",
             "workflow_policy_interval_seconds",
             "notification_channel_id",
@@ -373,6 +375,7 @@ class Settings(BaseSettings):
             ("OPS_HUB_MEMBER_EXPORT_PATH", self.member_export_path),
             ("OPS_HUB_PARTS_REQUEST_FILE", self.parts_request_file),
             ("OPS_HUB_WORKFLOW_STATE_FILE", self.workflow_state_file),
+            ("OPS_HUB_DISPATCH_CACHE_FILE", self.dispatch_cache_file),
             ("OPS_HUB_PHOTO_FEATURE_FLAGS_FILE", self.photo_feature_flags_file),
         ]:
             errors.extend(self._file_target_path_errors(env_name, path_value))

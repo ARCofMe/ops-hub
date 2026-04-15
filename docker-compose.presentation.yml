@@ -17,6 +17,7 @@ services:
       OPS_HUB_MEMBER_EXPORT_PATH: /data/exports/discord_members.json
       OPS_HUB_PARTS_REQUEST_FILE: /data/parts_requests.json
       OPS_HUB_WORKFLOW_STATE_FILE: /data/workflow_state.json
+      OPS_HUB_DISPATCH_CACHE_FILE: /data/dispatch_cache.sqlite
       OPS_HUB_PHOTO_FEATURE_FLAGS_FILE: /data/photo_feature_flags.json
       OPS_HUB_SMS_AUDIT_FILE: /data/sms_audit.jsonl
       OPS_HUB_SERVICE_SMITH_PROFILE_FILE: /data/service_smith_profiles.json
