@@ -8,6 +8,7 @@ from ops_hub.services.service_smith_bluefolder import (
     BlueFolderImportResult,
     BlueFolderImportPlan,
     BlueFolderPayloadPreview,
+    ServiceSmithBlueFolderClient,
 )
 from ops_hub.services.service_smith_profile_store import ServiceSmithProfileStore
 from types import SimpleNamespace
@@ -237,6 +238,7 @@ def test_preview_manual_service_request_payload_checks_existing_bluefolder_recor
             "city": "Lewiston",
             "state": "me",
             "postalCode": "04240",
+            "requestedWindow": "8 AM - 10 AM",
             "subject": "No heat",
             "externalId": "phone-100",
         },
@@ -246,6 +248,7 @@ def test_preview_manual_service_request_payload_checks_existing_bluefolder_recor
     assert payload["blockingIssueCount"] == 0
     assert payload["row"]["customer_phone"] == "207-555-1212"
     assert payload["row"]["state"] == "ME"
+    assert payload["row"]["service_window"] == "8 AM - 10 AM"
     assert payload["plan"]["existing_service_request_id"] == "999"
     assert payload["plan"]["service_request_action"] == "error_duplicate"
 
@@ -320,6 +323,27 @@ def test_manual_service_request_rejects_invalid_duplicate_mode(monkeypatch) -> N
         assert "duplicate_mode" in str(exc)
     else:
         raise AssertionError("Expected invalid duplicate mode to fail.")
+
+
+def test_bluefolder_payload_includes_requested_service_window() -> None:
+    client = object.__new__(ServiceSmithBlueFolderClient)
+    client.settings = SimpleNamespace(
+        service_smith_default_sr_priority="Normal",
+        service_smith_default_sr_status="New",
+    )
+
+    payload = client.build_service_request_payload(
+        {
+            "subject": "No heat",
+            "description": "Customer has no heat.",
+            "service_window": "8 AM - 10 AM",
+        },
+        customer_id="1",
+        customer_location_id="2",
+        customer_contact_id="3",
+    )
+
+    assert payload["description"] == "Customer has no heat.\nRequested service window: 8 AM - 10 AM"
 
 
 def test_save_and_delete_profile_payload_round_trip(tmp_path: Path) -> None:

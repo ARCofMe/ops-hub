@@ -376,12 +376,13 @@ class ServiceSmithBlueFolderClient:
         customer_location_id: str | None,
         customer_contact_id: str | None,
     ) -> dict[str, Any]:
+        description = self._service_request_description(row)
         return {
             "customerId": customer_id,
             "customerLocationId": customer_location_id,
             "customerContactId": customer_contact_id,
             "subject": row.get("subject"),
-            "description": row.get("description") or row.get("subject"),
+            "description": description,
             "priority": row.get("priority") or self.settings.service_smith_default_sr_priority,
             "status": row.get("status") or self.settings.service_smith_default_sr_status,
             "externalId": row.get("external_id"),
@@ -390,6 +391,16 @@ class ServiceSmithBlueFolderClient:
             "customerLocationState": row.get("state"),
             "customerLocationPostalCode": row.get("zip"),
         }
+
+    @staticmethod
+    def _service_request_description(row: dict[str, Any]) -> str | None:
+        description = str(row.get("description") or row.get("subject") or "").strip()
+        service_window = str(row.get("service_window") or "").strip()
+        if service_window:
+            description = "\n".join(
+                part for part in [description, f"Requested service window: {service_window}"] if part
+            )
+        return description or None
 
     def _list_customers(self) -> list[dict[str, str]]:
         if self._customer_cache is not None:

@@ -345,6 +345,7 @@ class ServiceSmithService:
             "zip": _first_value(request, "zip", "postalCode", "addressPostalCode"),
             "subject": _first_value(request, "subject", "title"),
             "description": _first_value(request, "description", "details"),
+            "service_window": _first_value(request, "service_window", "serviceWindow", "requestedWindow"),
             "priority": _first_value(request, "priority"),
             "status": _first_value(request, "status"),
             "external_id": _first_value(request, "external_id", "externalId"),
@@ -387,6 +388,7 @@ def _manual_external_id(row: dict[str, str]) -> str:
             row.get("city", "").casefold(),
             row.get("state", "").casefold(),
             row.get("zip", "").casefold(),
+            row.get("service_window", "").casefold(),
             (row.get("subject") or row.get("description") or "").casefold(),
         ]
     )
