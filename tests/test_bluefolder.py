@@ -144,6 +144,72 @@ def test_bluefolder_adapter_skips_assignment_subject_lookups_when_disabled(tmp_p
     assert assignments[0]["subject"] == "Service Request"
 
 
+def test_bluefolder_adapter_enriches_assignments_with_location_context(tmp_path: Path) -> None:
+    bluefolder_package = tmp_path / "bluefolder_api"
+    bluefolder_package.mkdir()
+    (bluefolder_package / "__init__.py").write_text("", encoding="utf-8")
+    (bluefolder_package / "client.py").write_text(
+        textwrap.dedent(
+            """
+            import xml.etree.ElementTree as ET
+
+            class _Assignments:
+                def list_for_user_range(self, user_id, start_date, end_date, date_range_type=None):
+                    return [{"serviceRequestId": "96268", "start": "2026-04-16T08:00:00"}]
+
+            class _ServiceRequests:
+                def get_by_id(self, service_request_id: int):
+                    root = ET.Element("response")
+                    sr = ET.SubElement(root, "serviceRequest")
+                    ET.SubElement(sr, "customerId").text = "42"
+                    ET.SubElement(sr, "customerLocationId").text = "9"
+                    ET.SubElement(sr, "description").text = "Field service"
+                    ET.SubElement(sr, "customerName").text = "Pat Customer"
+                    ET.SubElement(sr, "customerContactPhone").text = "(555) 010-0200"
+                    ET.SubElement(sr, "serviceRequestStatus").text = "Scheduled"
+                    return root
+
+            class _Customers:
+                def get_location_by_id(self, customer_id: str, location_id: str):
+                    root = ET.Element("response")
+                    location = ET.SubElement(root, "customerLocation")
+                    ET.SubElement(location, "addressStreet").text = "180 E Hebron Rd"
+                    ET.SubElement(location, "addressCity").text = "Hebron"
+                    ET.SubElement(location, "addressState").text = "ME"
+                    ET.SubElement(location, "addressPostalCode").text = "04238"
+                    return root
+
+            class BlueFolderClient:
+                def __init__(self, base_url: str | None = None):
+                    self.base_url = base_url
+                    self.assignments = _Assignments()
+                    self.service_requests = _ServiceRequests()
+                    self.customers = _Customers()
+            """
+        ),
+        encoding="utf-8",
+    )
+    adapter = BlueFolderAdapter(
+        base_path=str(tmp_path),
+        api_key="key",
+        account_name="acme",
+    )
+
+    assignments = asyncio.run(
+        adapter.get_assignments_for_user_on_date(13051, day=__import__("datetime").date(2026, 4, 16))
+    )
+
+    assert assignments[0]["serviceRequestId"] == "96268"
+    assert assignments[0]["subject"] == "Field service"
+    assert assignments[0]["address"] == "180 E Hebron Rd"
+    assert assignments[0]["city"] == "Hebron"
+    assert assignments[0]["state"] == "ME"
+    assert assignments[0]["postalCode"] == "04238"
+    assert assignments[0]["customerName"] == "Pat Customer"
+    assert assignments[0]["customerPhone"] == "(555) 010-0200"
+    assert assignments[0]["status"] == "Scheduled"
+
+
 def test_dispatch_service_includes_bluefolder_status_in_message(tmp_path: Path) -> None:
     bluefolder_service = BlueFolderService(adapter=BlueFolderAdapter(base_path=str(tmp_path)))
     service = DispatchService(

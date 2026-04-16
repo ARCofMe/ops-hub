@@ -727,9 +727,10 @@ class TechnicianApiService:
     @staticmethod
     def _assignment_to_job(item: dict[str, object]) -> dict[str, object]:
         """Normalize an assignment into the Android app's job payload."""
+        address = TechnicianApiService._format_assignment_address(item)
         return {
             "id": str(item.get("serviceRequestId") or item.get("id") or ""),
-            "address": str(item.get("address") or ""),
+            "address": address,
             "appointmentWindow": str(item.get("timeWindow") or item.get("appointmentWindow") or "Unscheduled"),
             "customerName": str(item.get("customerName") or item.get("subject") or "Unknown customer"),
             "customerPhone": str(item.get("customerPhone") or ""),
@@ -738,6 +739,16 @@ class TechnicianApiService:
             "distanceMiles": item.get("distanceMiles"),
             "equipment": item.get("equipment"),
         }
+
+    @staticmethod
+    def _format_assignment_address(item: dict[str, object]) -> str:
+        """Build one mappable address string from assignment or location fields."""
+        street = str(item.get("address") or item.get("location") or "").strip()
+        city = str(item.get("city") or "").strip()
+        state = str(item.get("state") or "").strip()
+        postal_code = str(item.get("postalCode") or item.get("zip") or "").strip()
+        locality = " ".join(part for part in [city, state, postal_code] if part).strip()
+        return ", ".join(part for part in [street, locality] if part)
 
     @staticmethod
     def _normalize_quote_subtype(subtype: str | None) -> str:

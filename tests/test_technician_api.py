@@ -83,6 +83,40 @@ def test_get_today_normalizes_assignment_shape() -> None:
     ]
 
 
+def test_get_today_builds_address_from_assignment_location_fields() -> None:
+    bluefolder = SimpleNamespace(
+        get_assignments_for_user_today=lambda user_id: asyncio.sleep(
+            0,
+            result=[
+                {
+                    "serviceRequestId": "96268",
+                    "address": "180 E Hebron Rd",
+                    "city": "Hebron",
+                    "state": "ME",
+                    "postalCode": "04238",
+                    "customerName": "Pat Customer",
+                    "customerPhone": "555-0100",
+                    "status": "Scheduled",
+                }
+            ],
+        )
+    )
+    service = TechnicianApiService(
+        bluefolder_service=bluefolder,
+        technician_directory_service=SimpleNamespace(mappings=lambda: {}),
+        parts_cannon_service=SimpleNamespace(),
+        photo_ingest_service=SimpleNamespace(),
+        workflow_state_service=SimpleNamespace(),
+    )
+
+    jobs = asyncio.run(service.get_today(technician_bluefolder_user_id=9001))
+
+    assert jobs[0]["id"] == "96268"
+    assert jobs[0]["address"] == "180 E Hebron Rd, Hebron ME 04238"
+    assert jobs[0]["customerName"] == "Pat Customer"
+    assert jobs[0]["customerPhone"] == "555-0100"
+
+
 def test_submit_note_requires_text() -> None:
     service = TechnicianApiService(
         bluefolder_service=SimpleNamespace(),

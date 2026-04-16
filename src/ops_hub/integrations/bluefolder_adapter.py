@@ -1136,6 +1136,13 @@ class BlueFolderAdapter:
                 continue
             service_request_id = row.get("serviceRequestId")
             subject = None
+            customer_name = None
+            customer_phone = None
+            status = None
+            address = None
+            city = self._stringify(row.get("city"))
+            state = self._stringify(row.get("state"))
+            postal_code = self._stringify(row.get("postalCode") or row.get("zip"))
             sr_lookup_id = self._safe_int(service_request_id)
             if include_subjects and sr_lookup_id is not None:
                 try:
@@ -1143,6 +1150,64 @@ class BlueFolderAdapter:
                     sr = sr_xml.find(".//serviceRequest")
                     if sr is not None:
                         subject = sr.findtext("description") or sr.findtext("subject")
+                        customer_name = sr.findtext("customerName") or sr.findtext(".//customerName")
+                        customer_phone = self._clean_phone(
+                            sr.findtext("customerContactPhone")
+                            or sr.findtext(".//customerContactPhone")
+                            or sr.findtext("phone")
+                            or sr.findtext(".//phone")
+                        )
+                        status = (
+                            sr.findtext("serviceRequestStatus")
+                            or sr.findtext("serviceRequestStatusName")
+                            or sr.findtext("status")
+                            or sr.findtext("statusName")
+                        )
+                        customer_id = sr.findtext("customerId")
+                        customer_location_id = sr.findtext("customerLocationId")
+                        address = (
+                            sr.findtext("addressStreet")
+                            or sr.findtext("customerLocationStreetAddress")
+                            or sr.findtext(".//addressStreet")
+                            or sr.findtext(".//customerLocationStreetAddress")
+                        )
+                        city = (
+                            sr.findtext("addressCity")
+                            or sr.findtext("customerLocationCity")
+                            or sr.findtext(".//addressCity")
+                            or sr.findtext(".//customerLocationCity")
+                            or city
+                        )
+                        state = (
+                            sr.findtext("addressState")
+                            or sr.findtext("customerLocationState")
+                            or sr.findtext(".//addressState")
+                            or sr.findtext(".//customerLocationState")
+                            or state
+                        )
+                        postal_code = (
+                            sr.findtext("addressPostalCode")
+                            or sr.findtext("customerLocationPostalCode")
+                            or sr.findtext(".//addressPostalCode")
+                            or sr.findtext(".//customerLocationPostalCode")
+                            or postal_code
+                        )
+                        if customer_id and customer_location_id and hasattr(client, "customers"):
+                            try:
+                                loc_xml = client.customers.get_location_by_id(customer_id, customer_location_id)
+                                location = loc_xml.find(".//customerLocation")
+                            except Exception as exc:
+                                logger.warning(
+                                    "BlueFolder assignment location lookup failed for SR %s: %s",
+                                    sr_lookup_id,
+                                    exc,
+                                )
+                            else:
+                                if location is not None:
+                                    address = location.findtext("addressStreet") or address
+                                    city = location.findtext("addressCity") or city
+                                    state = location.findtext("addressState") or state
+                                    postal_code = location.findtext("addressPostalCode") or postal_code
                 except Exception as exc:
                     if isinstance(exc, RuntimeError) and str(exc) == "Invalid XML response":
                         logger.warning(
@@ -1168,8 +1233,14 @@ class BlueFolderAdapter:
                     "routeLabel": self._stringify(
                         row.get("routeLabel") or row.get("window") or row.get("timeWindow")
                     ),
-                    "city": self._stringify(row.get("city")),
-                    "state": self._stringify(row.get("state")),
+                    "address": self._stringify(row.get("address") or address),
+                    "city": city,
+                    "state": state,
+                    "postalCode": postal_code,
+                    "zip": postal_code,
+                    "customerName": customer_name,
+                    "customerPhone": customer_phone,
+                    "status": status,
                     "isComplete": row.get("isComplete") if isinstance(row.get("isComplete"), bool) else None,
                 }
             )
