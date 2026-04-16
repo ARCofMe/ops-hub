@@ -330,6 +330,8 @@ class ServiceSmithService:
 
     @staticmethod
     def _manual_request_row(request: dict[str, object]) -> dict[str, str]:
+        if not isinstance(request, dict):
+            raise ValueError("Manual service request must be a mapped field object.")
         row = {
             "customer_name": _first_value(request, "customer_name", "customerName"),
             "customer_email": _first_value(request, "customer_email", "customerEmail", "email"),

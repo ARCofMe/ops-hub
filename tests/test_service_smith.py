@@ -325,6 +325,17 @@ def test_manual_service_request_rejects_invalid_duplicate_mode(monkeypatch) -> N
         raise AssertionError("Expected invalid duplicate mode to fail.")
 
 
+def test_manual_service_request_rejects_non_object_request() -> None:
+    service = ServiceSmithService(settings=SimpleNamespace())
+
+    try:
+        service.preview_manual_service_request_payload(request=["bad"], duplicate_mode="error")  # type: ignore[arg-type]
+    except ValueError as exc:
+        assert "mapped field object" in str(exc)
+    else:
+        raise AssertionError("Expected manual intake request shape validation.")
+
+
 def test_bluefolder_payload_includes_requested_service_window() -> None:
     client = object.__new__(ServiceSmithBlueFolderClient)
     client.settings = SimpleNamespace(
