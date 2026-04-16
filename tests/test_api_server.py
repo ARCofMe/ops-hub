@@ -63,6 +63,9 @@ def test_dispatch_returns_ecosystem_status() -> None:
     assert payload["success"] is True
     assert payload["role"] == "brain"
     assert [item["name"] for item in payload["frontends"]] == ["RouteDesk", "PartsDesk", "FieldDesk"]
+    assert payload["releaseReadiness"]["target"] == "v1.0.0"
+    assert payload["releaseReadiness"]["status"] == "candidate"
+    assert payload["frontends"][0]["presentationPath"].startswith("Board")
 
 
 def test_dispatch_returns_today_jobs() -> None:

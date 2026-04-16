@@ -35,6 +35,8 @@ def build_ecosystem_status_payload() -> dict[str, object]:
                 "role": "dispatch",
                 "status": "ready",
                 "url": "https://routedesk.ops-hub.org",
+                "v1Readiness": "candidate",
+                "presentationPath": "Board -> Attention -> SR context -> Routes -> Intake",
             },
             {
                 "key": "partsDesk",
@@ -42,6 +44,8 @@ def build_ecosystem_status_payload() -> dict[str, object]:
                 "role": "parts",
                 "status": "ready",
                 "url": "https://partsdesk.ops-hub.org",
+                "v1Readiness": "candidate",
+                "presentationPath": "Board -> Cases -> Requests -> Scheduling handoff",
             },
             {
                 "key": "fieldDesk",
@@ -49,8 +53,21 @@ def build_ecosystem_status_payload() -> dict[str, object]:
                 "role": "field",
                 "status": "ready",
                 "url": None,
+                "v1Readiness": "candidate",
+                "presentationPath": "Today -> Job overview -> Notes -> Photos -> Closeout",
             },
         ],
+        "releaseReadiness": {
+            "target": "v1.0.0",
+            "status": "candidate",
+            "requiredChecks": [
+                "ops_hub_api_health",
+                "routedesk_board_loads",
+                "partsdesk_board_loads",
+                "fielddesk_today_loads",
+                "bluefolder_write_actions_confirmed",
+            ],
+        },
         "capabilities": [
             "dispatch_attention",
             "route_planning",
