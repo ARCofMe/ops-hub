@@ -86,7 +86,7 @@ def render_landing_page() -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpsHub | Service Operations Command Center</title>
-  <meta name="description" content="OpsHub connects dispatch, parts, and field execution into one service operations brain.">
+  <meta name="description" content="OpsHub connects dispatch, parts, field execution, and complaint intelligence into one service operations brain.">
   <style>
     :root {
       color-scheme: dark;
@@ -349,10 +349,10 @@ def render_landing_page() -> str:
     <div class="hero">
       <div>
         <p class="eyebrow">Service operations brain</p>
-        <h1>Dispatch, parts, and field execution in one command layer.</h1>
+        <h1>Dispatch, parts, field execution, and repair intelligence in one command layer.</h1>
         <p class="copy">
-          OpsHub coordinates RouteDesk, PartsDesk, and FieldDesk so service teams can move from incoming work to
-          technician-ready execution without losing context between systems.
+          OpsHub coordinates RouteDesk, PartsDesk, FieldDesk, and Complaint Intelligence so service teams can move
+          from incoming work to evidence-backed execution without losing context between systems.
         </p>
         <div class="cta">
           <a class="button primary" href="https://routedesk.ops-hub.org">Open RouteDesk</a>
@@ -368,16 +368,20 @@ def render_landing_page() -> str:
           </div>
           <div class="card">
             <strong>PartsDesk</strong>
-            <span>Parts cases, requests, readiness tracking, and dispatch handoff context.</span>
+            <span>Parts cases, requests, readiness tracking, dispatch handoff context, and PartsCannon evidence prompts.</span>
           </div>
           <div class="card">
             <strong>FieldDesk</strong>
             <span>Technician workflow, service-window order, notes, photos, closeout, and job execution assists.</span>
           </div>
+          <div class="card">
+            <strong>Complaint Intelligence</strong>
+            <span>Historical complaint tags, model trends, ranked part evidence, and diagnostic questions for SR triage.</span>
+          </div>
           <div class="metric" aria-label="Platform pillars">
             <div><b>1</b><span>brain</span></div>
             <div><b>3</b><span>frontends</span></div>
-            <div><b>0</b><span>context gaps</span></div>
+            <div><b>1</b><span>evidence layer</span></div>
           </div>
         </div>
       </aside>
@@ -393,8 +397,8 @@ def render_landing_page() -> str:
         <span>Move from dispatch to parts to the field without retyping job context or guessing ownership.</span>
       </div>
       <div class="card">
-        <strong>Presentation-safe workflow</strong>
-        <span>Built for repeatable demos, release preflight checks, and field access through the production tunnel.</span>
+        <strong>Evidence-backed recommendations</strong>
+        <span>Ground parts conversations in completed SR history, diagnostic questions, and supported recommendations.</span>
       </div>
     </section>
 
