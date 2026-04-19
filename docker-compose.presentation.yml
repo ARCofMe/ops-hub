@@ -25,6 +25,8 @@ services:
       OPS_HUB_BLUEBOT_DISCORD_EXTENSION_PATH: /workspace/bluebot-discord-extension
       OPS_HUB_PHOTO_INGEST_PROJECT_PATH: /workspace/photo_ingest/mdsn-photo-ingest
       OPS_HUB_DISPATCH_PROJECT_PATH: /workspace/dispatcher-routing-app
+      OPS_HUB_COMPLAINT_INTELLIGENCE_PROJECT_PATH: /workspace/complaint-intelligence
+      OPS_HUB_COMPLAINT_INTELLIGENCE_DATABASE_URL: sqlite:////workspace/complaint-intelligence/complaint_intelligence.db
       OPS_HUB_PARTS_HANDOFF_PROJECT_PATH: ""
       OPS_HUB_PARTS_CANNON_PROJECT_PATH: ""
     volumes:
@@ -33,6 +35,7 @@ services:
       - ../bluebot-discord-extension:/workspace/bluebot-discord-extension:ro
       - ../photo_ingest/mdsn-photo-ingest:/workspace/photo_ingest/mdsn-photo-ingest:ro
       - ../dispatcher-routing-app:/workspace/dispatcher-routing-app:ro
+      - ../complaint-intelligence:/workspace/complaint-intelligence:ro
     ports:
       - "8787:8787"
     restart: unless-stopped
