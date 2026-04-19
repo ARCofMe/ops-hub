@@ -615,6 +615,39 @@ def test_part_update_builds_request_update_payload() -> None:
     assert interaction.response.messages == [{"content": "request updated", "ephemeral": True, "embed": None}]
 
 
+def test_parts_recommend_sends_supported_evidence_only() -> None:
+    cog = _build_cog(parts_user_ids=[42])
+    interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))
+
+    async def fake_recommendation(self, sr_id: int):
+        assert sr_id == 100
+        return {
+            "available": True,
+            "srId": "100",
+            "conversation": {
+                "supportedPartRecommendations": [
+                    {"item": "FAN-1", "itemType": "part", "matchingRequestCount": 2, "score": 0.5}
+                ],
+                "diagnosticQuestions": ["Is the evaporator fan running?"],
+                "unsupportedPartsPolicy": "Do not present unsupported parts as recommendations.",
+            },
+        }
+
+    with patch.object(
+        type(cog.bot.container.parts_cannon_service),
+        "get_recommendation_conversation_payload",
+        new=fake_recommendation,
+    ):
+        asyncio.run(cog.parts_recommend.callback(cog, interaction, sr_id=100))
+
+    content = interaction.response.messages[0]["content"]
+    assert "PartsCannon evidence for SR 100" in content
+    assert "FAN-1 | part | 2 matching SRs | 50% match" in content
+    assert "Is the evaporator fan running?" in content
+    assert "Do not present unsupported parts as recommendations." in content
+    assert interaction.response.messages[0]["ephemeral"] is True
+
+
 def test_part_claim_and_unclaim_build_claim_payloads() -> None:
     cog = _build_cog(parts_user_ids=[42])
     interaction = _DummyInteraction(user=_DummyUser(id=42, roles=[]))

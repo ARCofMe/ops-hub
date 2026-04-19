@@ -532,6 +532,16 @@ class OperationsCog(commands.Cog):
         result = await self.bot.container.parts_cannon_service.get_request(request_id)
         await self._send_result(interaction, result)
 
+    @app_commands.command(name="parts_recommend", description="Show evidence-backed parts recommendations for a service request.")
+    @app_commands.describe(sr_id="BlueFolder service request id to inspect.")
+    async def parts_recommend(self, interaction: discord.Interaction, sr_id: int) -> None:
+        """Show PartsCannon recommendations without inventing unsupported parts."""
+        identity = self._resolve_identity(interaction)
+        if not self._can_view_parts_context(identity):
+            raise app_commands.CheckFailure("You do not have permission to use this command.")
+        payload = await self.bot.container.parts_cannon_service.get_recommendation_conversation_payload(sr_id=sr_id)
+        await interaction.response.send_message(_format_recommendation_conversation(payload), ephemeral=True)
+
     @app_commands.command(name="part_update", description="Update the status of a tracked parts request.")
     @app_commands.describe(
         request_id="Tracked parts request id.",
@@ -711,6 +721,49 @@ class OperationsCog(commands.Cog):
             content_type=attachment.content_type,
             data=await attachment.read(),
         )
+
+
+def _format_recommendation_conversation(payload: dict[str, object]) -> str:
+    if not payload.get("available"):
+        return str(payload.get("message") or "PartsCannon evidence is not available for this SR.")
+
+    conversation = payload.get("conversation")
+    if not isinstance(conversation, dict):
+        return "PartsCannon evidence is not available for this SR."
+    recommendations = [item for item in conversation.get("supportedPartRecommendations") or [] if isinstance(item, dict)]
+    questions = [str(item) for item in conversation.get("diagnosticQuestions") or [] if str(item).strip()]
+    lines = [f"PartsCannon evidence for SR {payload.get('srId')}"]
+    if recommendations:
+        lines.append("Supported historical parts:")
+        for item in recommendations[:5]:
+            score = _format_percent(item.get("score"))
+            lines.append(
+                "- "
+                + " | ".join(
+                    str(value)
+                    for value in (
+                        item.get("item"),
+                        item.get("itemType"),
+                        f"{item.get('matchingRequestCount', 0)} matching SRs",
+                        score,
+                    )
+                    if value
+                )
+            )
+    else:
+        lines.append("No supported historical parts found.")
+    if questions:
+        lines.append("Ask before ordering:")
+        lines.extend(f"- {question}" for question in questions[:3])
+    lines.append(str(conversation.get("unsupportedPartsPolicy") or "Do not present unsupported parts as recommendations."))
+    return "\n".join(lines)
+
+
+def _format_percent(value: object) -> str:
+    try:
+        return f"{round(float(value) * 100)}% match"
+    except (TypeError, ValueError):
+        return ""
 
 
 async def setup(bot: OpsHubBot) -> None:
