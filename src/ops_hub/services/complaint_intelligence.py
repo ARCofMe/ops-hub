@@ -53,6 +53,12 @@ class ComplaintIntelligenceService:
                 similar = self._fetch_similar_requests(conn, request, tags)
                 recommendations = self._fetch_recommendations(conn, similar)
                 common_resolutions = self._fetch_common_resolutions(conn, similar)
+                evidence_packet = self._build_evidence_packet(
+                    request=request,
+                    tags=tags,
+                    similar=similar,
+                    recommendations=recommendations,
+                )
         except sqlite3.Error as exc:
             return self._unavailable(
                 sr_id=sr_id,
@@ -81,6 +87,7 @@ class ComplaintIntelligenceService:
             "similarRequestCount": len(similar),
             "recommendations": recommendations,
             "commonResolutions": common_resolutions,
+            "evidencePacket": evidence_packet,
         }
 
     @staticmethod
@@ -223,6 +230,54 @@ class ComplaintIntelligenceService:
         ).fetchall()
         return [str(row["resolution_notes"]) for row in rows]
 
+    @staticmethod
+    def _build_evidence_packet(
+        *,
+        request: sqlite3.Row,
+        tags: list[dict[str, object]],
+        similar: list[sqlite3.Row],
+        recommendations: list[dict[str, object]],
+    ) -> dict[str, object]:
+        tag_values = [str(tag["tag"]) for tag in tags if tag.get("tag")]
+        return {
+            "tool": "complaint_intelligence.service_request_evidence",
+            "version": "evidence.v1",
+            "purpose": "Package historical completed-service-request evidence for downstream decision-support clients.",
+            "input": {
+                "serviceRequestId": request["service_request_id"],
+                "complaintText": _truncate(request["complaint_text"], 700),
+                "modelNumber": request["model_number"],
+                "brand": request["brand"],
+                "applianceType": request["appliance_type"],
+            },
+            "classification": {
+                "complaintTags": tag_values,
+                "matchedHistoricalRequestCount": len(similar),
+            },
+            "rankedParts": recommendations,
+            "supportingEvidence": [
+                {
+                    "serviceRequestId": row["service_request_id"],
+                    "completedAt": row["completed_at"],
+                    "modelNumber": row["model_number"],
+                    "brand": row["brand"],
+                    "applianceType": row["appliance_type"],
+                    "complaintText": _truncate(row["complaint_text"], 700),
+                    "resolutionNotes": _truncate(row["resolution_notes"], 500),
+                }
+                for row in similar[:5]
+            ],
+            "diagnosticQuestions": _diagnostic_questions(tuple(tag_values)),
+            "useConstraints": [
+                "Use rankedParts as historical evidence, not a guaranteed diagnosis.",
+                "Do not recommend a part that is not present in rankedParts unless clearly labeled as a new hypothesis.",
+                "Ask diagnosticQuestions before presenting a parts-first path when evidence is weak or missing.",
+                "Prefer model-specific evidence over brand-only or appliance-type-only evidence.",
+                "Mention matchedHistoricalRequestCount so the user understands evidence strength.",
+            ],
+            "confidence": _confidence_label(len(similar), recommendations),
+        }
+
     def _unavailable(self, *, sr_id: int, status: str, message: str) -> dict[str, object]:
         return {
             "success": True,
@@ -237,6 +292,7 @@ class ComplaintIntelligenceService:
             "similarRequestCount": 0,
             "recommendations": [],
             "commonResolutions": [],
+            "evidencePacket": None,
         }
 
     @staticmethod
@@ -249,3 +305,90 @@ class ComplaintIntelligenceService:
         if database_url.startswith("sqlite:////"):
             return Path(unquote(database_url[len("sqlite:///") :]))
         return None
+
+
+def _truncate(value: str | None, max_length: int) -> str | None:
+    text_value = (value or "").strip()
+    if not text_value:
+        return None
+    if len(text_value) <= max_length:
+        return text_value
+    return f"{text_value[:max_length].rstrip()}..."
+
+
+def _confidence_label(similar_request_count: int, recommendations: list[dict[str, object]]) -> str:
+    if similar_request_count <= 0 or not recommendations:
+        return "no_historical_match"
+    top_score = float(recommendations[0].get("score") or 0)
+    if similar_request_count >= 10 and top_score >= 0.5:
+        return "strong"
+    if similar_request_count >= 3 and top_score >= 0.34:
+        return "moderate"
+    return "limited"
+
+
+def _diagnostic_questions(tags: tuple[str, ...]) -> list[str]:
+    questions_by_tag = {
+        "no_cool": [
+            "Is the evaporator fan running when the unit is calling for cooling?",
+            "Is there frost buildup on the evaporator cover or a blocked return air path?",
+            "Are condenser coils, compressor operation, and thermistor readings normal?",
+        ],
+        "no_heat": [
+            "Is the unit receiving the correct voltage at the terminal block?",
+            "Does the heating element or igniter test open?",
+            "Are thermal cutoffs, thermostats, or airflow restrictions present?",
+        ],
+        "water_leak": [
+            "Where is the leak visible: fill, drain, dispenser, door, or underneath?",
+            "Does the leak happen during fill, wash, drain, or idle?",
+            "Are hoses, gaskets, dispenser drawer, and drain path seated and clear?",
+        ],
+        "no_drain": [
+            "Does the drain pump run or only hum?",
+            "Is the pump filter, drain hose, or standpipe restricted?",
+            "Is there voltage at the drain pump during the drain cycle?",
+        ],
+        "no_spin": [
+            "Does the unit drain fully before spin should begin?",
+            "Are there balance, lid lock, door lock, or motor control errors?",
+            "Does the basket turn freely by hand?",
+        ],
+        "ice_maker_issue": [
+            "Is the ice maker receiving water and reaching harvest temperature?",
+            "Are fill tube, inlet valve, water filter, and ice maker error codes checked?",
+            "Is the ice room frozen over or leaking air?",
+        ],
+        "not_igniting": [
+            "Is the igniter glowing or sparking during ignition?",
+            "Is gas supply present and are burner ports clear?",
+            "Do flame sensor, igniter, and safety valve readings match spec?",
+        ],
+        "error_code": [
+            "What exact error code is displayed and when does it appear?",
+            "Does the code return after power reset and diagnostic mode?",
+            "Which components does the service manual map to that code?",
+        ],
+        "intermittent_operation": [
+            "Can the failure be reproduced, and under what cycle/load/temperature?",
+            "Are harness connections, control faults, and stored error codes present?",
+            "Does vibration, heat, or moisture appear to trigger the issue?",
+        ],
+        "noisy": [
+            "When does the noise occur: fill, wash, spin, drain, compressor start, or fan operation?",
+            "Is the sound mechanical, airflow-related, vibration, scraping, or electrical hum?",
+            "Are moving parts, mounts, bearings, fans, and foreign objects checked?",
+        ],
+    }
+    questions: list[str] = []
+    for tag in tags:
+        questions.extend(questions_by_tag.get(tag, []))
+    if not questions:
+        questions.extend(
+            [
+                "What exact symptom does the customer observe?",
+                "When does the symptom occur in the cycle or operating state?",
+                "Are there model-specific service bulletins or stored error codes?",
+            ]
+        )
+    return list(dict.fromkeys(questions))[:6]

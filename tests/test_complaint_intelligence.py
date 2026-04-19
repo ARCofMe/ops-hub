@@ -31,6 +31,12 @@ def test_complaint_intelligence_returns_sr_evidence(tmp_path: Path) -> None:
     assert payload["similarRequestCount"] == 2
     assert payload["recommendations"][0]["item"] == "FAN-1"
     assert payload["recommendations"][0]["score"] == 1.0
+    assert payload["evidencePacket"]["version"] == "evidence.v1"
+    assert payload["evidencePacket"]["confidence"] == "limited"
+    assert payload["evidencePacket"]["classification"]["complaintTags"] == ["no_cool"]
+    assert payload["evidencePacket"]["rankedParts"][0]["item"] == "FAN-1"
+    assert payload["evidencePacket"]["supportingEvidence"][0]["serviceRequestId"] == "1001"
+    assert any("evaporator fan" in question.lower() for question in payload["evidencePacket"]["diagnosticQuestions"])
 
 
 def _build_db(path: Path) -> None:
@@ -85,4 +91,3 @@ def _build_db(path: Path) -> None:
                 """,
                 (pk,),
             )
-
