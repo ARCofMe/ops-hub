@@ -11,6 +11,7 @@ from ops_hub.integrations.dispatch_adapter import DispatchAdapter
 from ops_hub.integrations.parts_cannon_adapter import PartsHandoffAdapter
 from ops_hub.integrations.photo_ingest_adapter import PhotoIngestAdapter
 from ops_hub.services.bluefolder import BlueFolderService
+from ops_hub.services.complaint_intelligence import ComplaintIntelligenceService
 from ops_hub.services.dispatch import DispatchService
 from ops_hub.services.notifications import NotificationService
 from ops_hub.services.operator_directory import TechnicianDirectoryService
@@ -45,6 +46,7 @@ class ServiceContainer:
     workflow_state_service: WorkflowStateService
     service_smith_service: ServiceSmithService
     sms_service: DispatchSmsService
+    complaint_intelligence_service: ComplaintIntelligenceService
 
     @property
     def parts_cannon_service(self) -> PartsHandoffService:
@@ -159,6 +161,10 @@ def build_container(settings: Settings) -> ServiceContainer:
         store=sms_audit_store,
         from_label=(settings.sms_from_number or "ARCoM Ops"),
     )
+    complaint_intelligence_service = ComplaintIntelligenceService(
+        database_url=settings.complaint_intelligence_database_url,
+        project_path=settings.complaint_intelligence_project_path,
+    )
 
     bluefolder_service = BlueFolderService(
         adapter=bluefolder_adapter,
@@ -220,4 +226,5 @@ def build_container(settings: Settings) -> ServiceContainer:
             profile_store=service_smith_profile_store,
         ),
         sms_service=sms_service,
+        complaint_intelligence_service=complaint_intelligence_service,
     )

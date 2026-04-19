@@ -25,6 +25,8 @@ def _settings(**overrides: object) -> Settings:
         "parts_request_file": None,
         "workflow_state_file": None,
         "service_smith_profile_file": None,
+        "complaint_intelligence_database_url": None,
+        "complaint_intelligence_project_path": None,
         "photo_feature_flags_file": None,
         "notification_channel_id": None,
         "notification_channel_map": {},
@@ -120,3 +122,4 @@ def test_build_container_shares_expected_collaborators() -> None:
     assert container.bluefolder_service.adapter is container.photo_ingest_service.bluefolder_service.adapter
     assert container.bluefolder_service.adapter is container.dispatch_service.bluefolder_service.adapter
     assert container.service_smith_service is not None
+    assert container.complaint_intelligence_service is not None

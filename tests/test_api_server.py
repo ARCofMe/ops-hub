@@ -176,6 +176,47 @@ def test_dispatch_returns_intake_profiles() -> None:
     assert payload == {"items": [{"name": "vendor-a"}]}
 
 
+def test_dispatch_returns_complaint_intelligence_for_sr() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        complaint_intelligence_service=SimpleNamespace(
+            get_service_request_payload=lambda **kwargs: asyncio.sleep(
+                0,
+                result={
+                    "success": True,
+                    "available": True,
+                    "srId": str(kwargs["sr_id"]),
+                    "recommendations": [],
+                },
+            )
+        ),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_operator_identity=lambda **_: SimpleNamespace(
+                discord_user_id=None,
+                actor_user_id=2001,
+                is_dispatcher=True,
+                is_admin=False,
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/dispatch/sr/1001/complaint_intelligence",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "route-desk"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["available"] is True
+    assert payload["srId"] == "1001"
+
+
 def test_dispatch_saves_intake_profile() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

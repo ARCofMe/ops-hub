@@ -85,6 +85,7 @@ Current app-facing routes include:
 - `GET /dispatch/sr/<sr_id>/timeline`
 - `GET /dispatch/sr/<sr_id>/work`
 - `GET /dispatch/sr/<sr_id>/photo_compliance`
+- `GET /dispatch/sr/<sr_id>/complaint_intelligence`
 - `GET /dispatch/sr/<sr_id>/sms_capabilities`
 - `GET /dispatch/sr/<sr_id>/sms/history`
 - `POST /dispatch/sr/<sr_id>/sms/preview`
@@ -131,6 +132,7 @@ The main groups are:
 - optional parts handoff integration
 - optional photo archive/mailbox integration
 - optional ServiceSmith intake profile storage
+- optional Complaint Intelligence SQLite integration for RouteDesk triage evidence
 - optional SMS provider settings
 
 For the supported variables and inline examples, use:
@@ -141,6 +143,20 @@ Repository-backed config files:
 
 - `config/operator_roles.json`
 - `config/technician_closeout_matrix.json`
+
+Complaint Intelligence can be wired in read-only mode after the standalone
+collector has built its SQLite database:
+
+```bash
+OPS_HUB_COMPLAINT_INTELLIGENCE_PROJECT_PATH=../complaint-intelligence
+OPS_HUB_COMPLAINT_INTELLIGENCE_DATABASE_URL=sqlite:///../complaint-intelligence/complaint_intelligence.db
+```
+
+The RouteDesk-facing backend endpoint is
+`GET /dispatch/sr/<sr_id>/complaint_intelligence`. It returns the normalized
+complaint record, complaint tags, billed items, similar historical requests,
+part recommendations, and common resolution notes when the SR exists in the
+Complaint Intelligence database.
 
 ## Local Run
 

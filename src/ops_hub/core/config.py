@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     service_smith_default_sr_status: str | None = "New"
     service_smith_default_sr_priority: str | None = None
     service_smith_default_contact_title: str | None = None
+    complaint_intelligence_project_path: str | None = None
+    complaint_intelligence_database_url: str | None = None
 
     # Deprecated compatibility fields. Prefer the technician_* names.
     operator_user_ids: list[int] = []
@@ -197,6 +199,8 @@ class Settings(BaseSettings):
             "service_smith_default_sr_status",
             "service_smith_default_sr_priority",
             "service_smith_default_contact_title",
+            "complaint_intelligence_project_path",
+            "complaint_intelligence_database_url",
         }
 
         for field in list_fields:
@@ -365,6 +369,7 @@ class Settings(BaseSettings):
             ("OPS_HUB_BLUEFOLDER_API_PATH", self.bluefolder_api_path),
             ("OPS_HUB_BLUEBOT_DISCORD_EXTENSION_PATH", self.bluebot_discord_extension_path),
             ("OPS_HUB_PHOTO_INGEST_PROJECT_PATH", self.photo_ingest_project_path),
+            ("OPS_HUB_COMPLAINT_INTELLIGENCE_PROJECT_PATH", self.complaint_intelligence_project_path),
             ("OPS_HUB_PARTS_HANDOFF_PROJECT_PATH", self.parts_handoff_project_path),
             ("OPS_HUB_DISPATCH_PROJECT_PATH", self.dispatch_project_path),
         ]:

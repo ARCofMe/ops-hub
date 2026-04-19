@@ -539,6 +539,11 @@ async def dispatch_technician_api_request(
                     return HTTPStatus.OK, await container.dispatch_service.get_dispatch_sr_photo_compliance_payload(sr_id=sr_id)
                 except ValueError as exc:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            if route_path.endswith("/complaint_intelligence"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/complaint_intelligence")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                return HTTPStatus.OK, await container.complaint_intelligence_service.get_service_request_payload(sr_id=sr_id)
         if method == "POST" and route_path.startswith("/dispatch/sr/"):
             if route_path.endswith("/sms/preview"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms/preview")
