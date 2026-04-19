@@ -104,6 +104,7 @@ Current app-facing routes include:
 - `GET /parts/cases`
 - `GET /parts/cases/<reference>`
 - `GET /parts/cases/<reference>/timeline`
+- `GET /parts/sr/<sr_id>/recommendation_conversation`
 - `GET /parts/requests`
 - `GET /parts/requests/<request_id>`
 - `POST /parts/requests/<request_id>/claim`

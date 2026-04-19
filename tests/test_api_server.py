@@ -1144,6 +1144,40 @@ def test_parts_returns_cases_payload() -> None:
     assert payload["items"][0]["reference"] == "SR-100"
 
 
+def test_parts_returns_recommendation_conversation_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        parts_cannon_service=SimpleNamespace(
+            get_recommendation_conversation_payload=lambda **kwargs: asyncio.sleep(
+                0,
+                result={
+                    "available": True,
+                    "srId": str(kwargs["sr_id"]),
+                    "conversation": {"supportedPartRecommendations": [{"item": "FAN-1"}]},
+                },
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/parts/sr/1001/recommendation_conversation",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["srId"] == "1001"
+    assert payload["conversation"]["supportedPartRecommendations"][0]["item"] == "FAN-1"
+
+
 def test_parts_returns_request_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

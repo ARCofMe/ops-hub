@@ -115,6 +115,7 @@ def test_build_container_shares_expected_collaborators() -> None:
     assert container.parts_cannon_service.notifications is container.notification_service
     assert container.parts_cannon_service.technician_directory_service is container.technician_directory_service
     assert container.parts_cannon_service.workflow_state_service is container.workflow_state_service
+    assert container.parts_cannon_service.complaint_intelligence_service is container.complaint_intelligence_service
     assert container.bluefolder_service.workflow_state_service is container.workflow_state_service
     assert container.dispatch_service.workflow_state_service is container.workflow_state_service
     assert container.dispatch_service.technician_directory_service is container.technician_directory_service

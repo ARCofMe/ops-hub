@@ -856,6 +856,12 @@ async def dispatch_technician_api_request(
         if method == "GET" and route_path == "/parts/board":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_board_payload()
 
+        if method == "GET" and route_path.startswith("/parts/sr/") and route_path.endswith("/recommendation_conversation"):
+            sr_id = _path_int(route_path, prefix="/parts/sr/", suffix="/recommendation_conversation")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            return HTTPStatus.OK, await container.parts_cannon_service.get_recommendation_conversation_payload(sr_id=sr_id)
+
         if method == "GET" and route_path == "/parts/cases":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_cases_payload(
                 stage=(query.get("stage") or [None])[0],

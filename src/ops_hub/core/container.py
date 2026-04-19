@@ -175,6 +175,7 @@ def build_container(settings: Settings) -> ServiceContainer:
         notifications=notification_service,
         request_store=parts_request_store,
         technician_directory_service=technician_directory_service,
+        complaint_intelligence_service=complaint_intelligence_service,
     )
     photo_ingest_service = PhotoIngestService(
         settings=settings,

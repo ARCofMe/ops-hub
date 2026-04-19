@@ -202,6 +202,46 @@ def test_parts_adapter_reconcile_reports_missing_receipt_file(tmp_path: Path) ->
     assert "Status: `no_receipts`" in result.message
 
 
+def test_parts_cannon_builds_recommendation_conversation_from_evidence() -> None:
+    service = PartsCannonService(
+        adapter=PartsCannonAdapter(base_path=None),
+        notifications=NotificationService(),
+        request_store=PartsRequestStore(file_path=None),
+        complaint_intelligence_service=SimpleNamespace(
+            get_service_request_payload=lambda **_: asyncio.sleep(
+                0,
+                result={
+                    "available": True,
+                    "integrationStatus": "ok",
+                    "evidencePacket": {
+                        "version": "evidence.v1",
+                        "classification": {"matchedHistoricalRequestCount": 2, "complaintTags": ["no_cool"]},
+                        "confidence": "moderate",
+                        "rankedParts": [
+                            {
+                                "item": "FAN-1",
+                                "itemType": "part",
+                                "score": 0.75,
+                                "matchingRequestCount": 2,
+                            }
+                        ],
+                        "diagnosticQuestions": ["Is the evaporator fan running?"],
+                        "useConstraints": ["Use rankedParts as historical evidence, not a guaranteed diagnosis."],
+                    },
+                },
+            )
+        ),
+    )
+
+    payload = asyncio.run(service.get_recommendation_conversation_payload(sr_id=1001))
+
+    assert payload["available"] is True
+    assert payload["conversation"]["supportedPartRecommendations"][0]["item"] == "FAN-1"
+    assert payload["conversation"]["diagnosticQuestions"] == ["Is the evaporator fan running?"]
+    assert "Do not add unsupported parts" in payload["conversation"]["suggestedReply"]
+    assert "FAN-1" in payload["conversation"]["suggestedReply"]
+
+
 def test_parts_cases_include_tenant_active_parts_statuses_without_tracked_requests(tmp_path: Path) -> None:
     (tmp_path / "bluefolder_status_inventory.json").write_text(
         json.dumps(

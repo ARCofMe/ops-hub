@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ops_hub.integrations.parts_cannon_adapter import PartsHandoffAdapter
 from ops_hub.models.requests import (
@@ -44,6 +44,7 @@ class PartsHandoffService:
     request_store: PartsRequestStore
     technician_directory_service: TechnicianDirectoryService | None = None
     workflow_state_service: "WorkflowStateService | None" = None
+    complaint_intelligence_service: Any | None = None
 
     async def lookup_part(self, request: PartLookupRequest) -> CommandResult:
         """Return the current parts-system and local queue state for a reference."""
@@ -657,6 +658,63 @@ class PartsHandoffService:
             "case": await self._parts_case_payload(case),
         }
 
+    async def get_recommendation_conversation_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return a PartsCannon conversation scaffold grounded in Complaint Intelligence evidence."""
+        if self.complaint_intelligence_service is None:
+            return self._recommendation_unavailable(
+                sr_id=sr_id,
+                status="unconfigured",
+                message="Complaint Intelligence is not wired into PartsCannon.",
+            )
+
+        intelligence = await self.complaint_intelligence_service.get_service_request_payload(sr_id=sr_id)
+        if not intelligence.get("available"):
+            return self._recommendation_unavailable(
+                sr_id=sr_id,
+                status=str(intelligence.get("integrationStatus") or "unavailable"),
+                message=str(intelligence.get("message") or "Complaint Intelligence is unavailable for this service request."),
+                evidence_packet=intelligence.get("evidencePacket") if isinstance(intelligence.get("evidencePacket"), dict) else None,
+            )
+
+        evidence_packet = intelligence.get("evidencePacket")
+        if not isinstance(evidence_packet, dict):
+            return self._recommendation_unavailable(
+                sr_id=sr_id,
+                status="missing_evidence",
+                message="Complaint Intelligence returned a record without an evidence packet.",
+            )
+
+        ranked_parts = [item for item in evidence_packet.get("rankedParts") or [] if isinstance(item, dict)]
+        questions = [str(item) for item in evidence_packet.get("diagnosticQuestions") or [] if str(item).strip()]
+        constraints = [str(item) for item in evidence_packet.get("useConstraints") or [] if str(item).strip()]
+        confidence = str(evidence_packet.get("confidence") or "unknown")
+        return {
+            "success": True,
+            "available": True,
+            "integrationStatus": "ok",
+            "srId": str(sr_id),
+            "source": "parts_cannon",
+            "evidencePacket": evidence_packet,
+            "conversation": {
+                "mode": "deterministic_evidence",
+                "opening": self._recommendation_opening(sr_id=sr_id, ranked_parts=ranked_parts, confidence=confidence),
+                "supportedPartRecommendations": ranked_parts,
+                "diagnosticQuestions": questions,
+                "useConstraints": constraints,
+                "unsupportedPartsPolicy": (
+                    "Do not present unsupported parts as recommendations. If a part is not in "
+                    "supportedPartRecommendations, label it as a separate technician hypothesis."
+                ),
+                "suggestedReply": self._recommendation_reply(
+                    sr_id=sr_id,
+                    ranked_parts=ranked_parts,
+                    questions=questions,
+                    confidence=confidence,
+                    matched_count=int((evidence_packet.get("classification") or {}).get("matchedHistoricalRequestCount") or 0),
+                ),
+            },
+        }
+
     async def claim_request_payload(self, *, request_id: int, parts_user_id: int | None, actor_user_id: int) -> dict[str, object]:
         """Assign or clear a tracked request and return the updated payload."""
         result = await self.claim_request(
@@ -710,6 +768,73 @@ class PartsHandoffService:
             "message": result.message,
             "queueSummary": self._queue_summary_payload(self.queue_summary()),
         }
+
+    @staticmethod
+    def _recommendation_unavailable(
+        *,
+        sr_id: int,
+        status: str,
+        message: str,
+        evidence_packet: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "success": True,
+            "available": False,
+            "integrationStatus": status,
+            "message": message,
+            "srId": str(sr_id),
+            "source": "parts_cannon",
+            "evidencePacket": evidence_packet,
+            "conversation": {
+                "mode": "deterministic_evidence",
+                "opening": message,
+                "supportedPartRecommendations": [],
+                "diagnosticQuestions": [],
+                "useConstraints": [
+                    "Do not recommend parts without Complaint Intelligence evidence.",
+                ],
+                "unsupportedPartsPolicy": "No parts are supported by historical evidence for this response.",
+                "suggestedReply": message,
+            },
+        }
+
+    @staticmethod
+    def _recommendation_opening(*, sr_id: int, ranked_parts: list[dict[str, object]], confidence: str) -> str:
+        if not ranked_parts:
+            return f"SR {sr_id} has no historically supported parts in Complaint Intelligence yet."
+        top_part = str(ranked_parts[0].get("item") or "unknown part")
+        return f"SR {sr_id} has historical evidence for {top_part}; confidence is {confidence}."
+
+    @staticmethod
+    def _recommendation_reply(
+        *,
+        sr_id: int,
+        ranked_parts: list[dict[str, object]],
+        questions: list[str],
+        confidence: str,
+        matched_count: int,
+    ) -> str:
+        lines = [
+            f"PartsCannon evidence for SR {sr_id}:",
+            f"Historical match strength: {confidence} from {matched_count} matched completed SR(s).",
+        ]
+        if ranked_parts:
+            lines.append("Supported historical part recommendations:")
+            for item in ranked_parts[:5]:
+                label = str(item.get("item") or "unknown")
+                item_type = str(item.get("itemType") or "item")
+                score = item.get("score")
+                match_count = item.get("matchingRequestCount")
+                lines.append(f"- {label} ({item_type}), score {score}, seen in {match_count} matched SR(s)")
+        else:
+            lines.append("No supported historical part recommendation is available.")
+
+        if questions:
+            lines.append("Ask before recommending a parts-first path:")
+            lines.extend(f"- {question}" for question in questions[:5])
+
+        lines.append("Do not add unsupported parts unless clearly labeled as a technician hypothesis.")
+        return "\n".join(lines)
 
     def _normalize_status(self, status: str) -> str | None:
         """Normalize a requested parts status and reject unsupported values."""
