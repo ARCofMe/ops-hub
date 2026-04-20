@@ -2358,6 +2358,31 @@ def test_dispatch_service_does_not_share_inflight_tasks_across_event_loops() -> 
     assert calls == 2
 
 
+def test_dispatch_service_serves_stale_sr_section_payload_after_refresh_failure() -> None:
+    calls = 0
+
+    async def factory():
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("BlueFolder throttled")
+        return {"srId": 100, "reference": "SR-100"}
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(),
+        sr_payload_cache_ttl_seconds=0,
+    )
+
+    first = asyncio.run(service._cached_sr_payload("customer", 100, factory))
+    second = asyncio.run(service._cached_sr_payload("customer", 100, factory))
+
+    assert first["cacheStatus"] == "miss"
+    assert second["cacheStatus"] == "stale"
+    assert second["reference"] == "SR-100"
+    assert calls == 2
+
+
 def test_dispatch_service_caches_route_payload_bluefolder_reads() -> None:
     assignment_calls = 0
     summary_calls = 0

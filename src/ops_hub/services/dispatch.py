@@ -50,6 +50,7 @@ class DispatchService:
     discovery_scan_timeout_seconds: float = 8.0
     assignment_cache_ttl_seconds: float = 120.0
     job_summary_cache_ttl_seconds: float = 300.0
+    sr_payload_cache_ttl_seconds: float = 180.0
     route_payload_cache_ttl_seconds: float = 180.0
     heatmap_payload_cache_ttl_seconds: float = 180.0
     persistent_cache_path: Path | None = None
@@ -1036,136 +1037,151 @@ class DispatchService:
 
     async def get_dispatch_sr_customer_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return structured customer and location detail for one SR."""
-        summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
-        address = self._format_summary_address(summary) if summary.available else None
-        return {
-            "srId": int(summary.service_request_id) if summary.available and str(summary.service_request_id or "").isdigit() else sr_id,
-            "reference": f"SR-{summary.service_request_id or sr_id}",
-            "available": summary.available,
-            "integrationStatus": summary.integration_status,
-            "message": summary.message,
-            "subject": summary.subject,
-            "customerName": summary.customer_name,
-            "customerPhone": summary.customer_phone,
-            "status": summary.service_request_status,
-            "statusMeta": self._status_meta(summary.service_request_status),
-            "address": address,
-            "customerId": summary.customer_id,
-            "customerLocationId": summary.customer_location_id,
-            "contacts": [
-                {
-                    "name": contact.name,
-                    "title": contact.title,
-                    "phone": contact.phone,
-                    "email": contact.email,
-                    "isPrimary": contact.is_primary,
-                }
-                for contact in summary.customer_contacts
-            ],
-        }
+        async def _build() -> dict[str, object]:
+            summary = await self._bluefolder_job_summary(f"SR-{sr_id}")
+            address = self._format_summary_address(summary) if summary.available else None
+            return {
+                "srId": int(summary.service_request_id) if summary.available and str(summary.service_request_id or "").isdigit() else sr_id,
+                "reference": f"SR-{summary.service_request_id or sr_id}",
+                "available": summary.available,
+                "integrationStatus": summary.integration_status,
+                "message": summary.message,
+                "subject": summary.subject,
+                "customerName": summary.customer_name,
+                "customerPhone": summary.customer_phone,
+                "status": summary.service_request_status,
+                "statusMeta": self._status_meta(summary.service_request_status),
+                "address": address,
+                "customerId": summary.customer_id,
+                "customerLocationId": summary.customer_location_id,
+                "contacts": [
+                    {
+                        "name": contact.name,
+                        "title": contact.title,
+                        "phone": contact.phone,
+                        "email": contact.email,
+                        "isPrimary": contact.is_primary,
+                    }
+                    for contact in summary.customer_contacts
+                ],
+            }
+
+        return await self._cached_sr_payload("customer", sr_id, _build)
 
     async def get_dispatch_sr_timeline_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return structured SR timeline detail for dispatch clients."""
-        if self.workflow_state_service is None:
-            raise ValueError("Dispatch SR timeline requires the workflow state service.")
-        timeline = await self.workflow_state_service.build_service_request_timeline(sr_id)
-        return {
-            "srId": timeline.sr_id,
-            "reference": timeline.reference,
-            "entries": [
-                {
-                    "occurredAt": entry.occurred_at,
-                    "source": entry.source,
-                    "eventType": entry.event_type,
-                    "summary": entry.summary,
-                    "details": entry.details,
-                    "actorLabel": entry.actor_label,
-                }
-                for entry in timeline.entries
-            ],
-        }
+        async def _build() -> dict[str, object]:
+            if self.workflow_state_service is None:
+                raise ValueError("Dispatch SR timeline requires the workflow state service.")
+            timeline = await self.workflow_state_service.build_service_request_timeline(sr_id)
+            return {
+                "srId": timeline.sr_id,
+                "reference": timeline.reference,
+                "entries": [
+                    {
+                        "occurredAt": entry.occurred_at,
+                        "source": entry.source,
+                        "eventType": entry.event_type,
+                        "summary": entry.summary,
+                        "details": entry.details,
+                        "actorLabel": entry.actor_label,
+                    }
+                    for entry in timeline.entries
+                ],
+            }
+
+        return await self._cached_sr_payload("timeline", sr_id, _build)
 
     async def get_dispatch_sr_work_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return dispatch work context for one SR."""
-        reference = f"SR-{sr_id}"
-        summary = await self._bluefolder_job_summary(reference, include_customer_contacts=False)
-        attention = await self.get_dispatch_attention_payload(reference=reference)
-        parts_case = None
-        photo_compliance = None
-        if self.workflow_state_service is not None:
-            try:
-                case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
-            except ValueError:
-                case = None
-            if case is not None:
-                parts_case = await self._parts_case_payload(case)
-            photo_compliance = self._photo_compliance_payload(
-                self.workflow_state_service.get_cached_photo_compliance(sr_id=sr_id)
-            )
+        async def _build() -> dict[str, object]:
+            reference = f"SR-{sr_id}"
+            summary = await self._bluefolder_job_summary(reference, include_customer_contacts=False)
+            attention = await self.get_dispatch_attention_payload(reference=reference)
+            parts_case = None
+            photo_compliance = None
+            if self.workflow_state_service is not None:
+                try:
+                    case = await self.workflow_state_service.get_parts_case(sr_id=sr_id)
+                except ValueError:
+                    case = None
+                if case is not None:
+                    parts_case = await self._parts_case_payload(case)
+                photo_compliance = self._photo_compliance_payload(
+                    self.workflow_state_service.get_cached_photo_compliance(sr_id=sr_id)
+                )
 
-        next_actions: list[str] = []
-        for item in attention.get("items", []):
-            action = str(item.get("nextAction") or "").strip()
-            if action and action not in next_actions:
-                next_actions.append(action)
-        if parts_case is not None:
-            action = str(parts_case.get("nextAction") or "").strip()
-            if action and action not in next_actions:
-                next_actions.append(action)
+            next_actions: list[str] = []
+            for item in attention.get("items", []):
+                action = str(item.get("nextAction") or "").strip()
+                if action and action not in next_actions:
+                    next_actions.append(action)
+            if parts_case is not None:
+                action = str(parts_case.get("nextAction") or "").strip()
+                if action and action not in next_actions:
+                    next_actions.append(action)
 
-        return {
-            "srId": sr_id,
-            "reference": reference,
-            "serviceRequestStatus": summary.service_request_status,
-            "statusMeta": self._status_meta(summary.service_request_status),
-            "attentionItems": attention.get("items", []),
-            "partsCase": parts_case,
-            "photoCompliance": photo_compliance,
-            "nextActions": next_actions,
-            "ownerGapCount": sum(
-                1
-                for item in attention.get("items", [])
-                if not (item.get("assignedOwnerBluefolderUserId") or item.get("assignedOwnerDiscordUserId"))
-            ),
-            "urgentCount": sum(1 for item in attention.get("items", []) if item.get("ageBucket") == "urgent"),
-        }
-
-    async def get_dispatch_sr_photo_compliance_payload(self, *, sr_id: int) -> dict[str, object]:
-        """Return live photo-compliance detail and persist the cached snapshot."""
-        if self.workflow_state_service is None:
-            raise ValueError("Dispatch photo compliance requires the workflow state service.")
-        summary = await self._bluefolder_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
-        record = await self.workflow_state_service.refresh_photo_compliance(
-            sr_id=sr_id,
-            service_request_status=summary.service_request_status,
-        )
-        payload = self._photo_compliance_payload(record)
-        assert payload is not None
-        payload["srId"] = sr_id
-        return payload
-
-    async def get_dispatch_sr_sms_capabilities_payload(self, *, sr_id: int) -> dict[str, object]:
-        """Return SMS capability metadata for one SR."""
-        customer = await self.get_dispatch_sr_customer_payload(sr_id=sr_id)
-        work = await self.get_dispatch_sr_work_payload(sr_id=sr_id)
-        reference = str(customer.get("reference") or f"SR-{sr_id}")
-        if self.sms_service is None:
             return {
                 "srId": sr_id,
                 "reference": reference,
-                "provider": "disabled",
-                "enabled": False,
-                "toNumber": None,
-                "fromLabel": "ARCoM Ops",
-                "reason": "SMS is not configured in Ops Hub yet.",
-                "intents": [],
+                "serviceRequestStatus": summary.service_request_status,
+                "statusMeta": self._status_meta(summary.service_request_status),
+                "attentionItems": attention.get("items", []),
+                "partsCase": parts_case,
+                "photoCompliance": photo_compliance,
+                "nextActions": next_actions,
+                "ownerGapCount": sum(
+                    1
+                    for item in attention.get("items", [])
+                    if not (item.get("assignedOwnerBluefolderUserId") or item.get("assignedOwnerDiscordUserId"))
+                ),
+                "urgentCount": sum(1 for item in attention.get("items", []) if item.get("ageBucket") == "urgent"),
             }
-        return self.sms_service.capabilities_payload(
-            sr_id=sr_id,
-            reference=reference,
-            customer=customer,
-            work=work,
-        )
+
+        return await self._cached_sr_payload("work", sr_id, _build)
+
+    async def get_dispatch_sr_photo_compliance_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return live photo-compliance detail and persist the cached snapshot."""
+        async def _build() -> dict[str, object]:
+            if self.workflow_state_service is None:
+                raise ValueError("Dispatch photo compliance requires the workflow state service.")
+            summary = await self._bluefolder_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
+            record = await self.workflow_state_service.refresh_photo_compliance(
+                sr_id=sr_id,
+                service_request_status=summary.service_request_status,
+            )
+            payload = self._photo_compliance_payload(record)
+            assert payload is not None
+            payload["srId"] = sr_id
+            return payload
+
+        return await self._cached_sr_payload("photo-compliance", sr_id, _build)
+
+    async def get_dispatch_sr_sms_capabilities_payload(self, *, sr_id: int) -> dict[str, object]:
+        """Return SMS capability metadata for one SR."""
+        async def _build() -> dict[str, object]:
+            customer = await self.get_dispatch_sr_customer_payload(sr_id=sr_id)
+            work = await self.get_dispatch_sr_work_payload(sr_id=sr_id)
+            reference = str(customer.get("reference") or f"SR-{sr_id}")
+            if self.sms_service is None:
+                return {
+                    "srId": sr_id,
+                    "reference": reference,
+                    "provider": "disabled",
+                    "enabled": False,
+                    "toNumber": None,
+                    "fromLabel": "ARCoM Ops",
+                    "reason": "SMS is not configured in Ops Hub yet.",
+                    "intents": [],
+                }
+            return self.sms_service.capabilities_payload(
+                sr_id=sr_id,
+                reference=reference,
+                customer=customer,
+                work=work,
+            )
+
+        return await self._cached_sr_payload("sms-capabilities", sr_id, _build)
 
     async def get_dispatch_sr_sms_history_payload(self, *, sr_id: int) -> dict[str, object]:
         """Return recent SMS attempts for one SR."""
@@ -2334,6 +2350,27 @@ class DispatchService:
         self._cache_set(cache_key, summary)
         return deepcopy(summary)
 
+    async def _cached_sr_payload(self, section: str, sr_id: int, factory) -> dict[str, object]:
+        """Return a cached SR section payload, falling back to stale data when live reads fail."""
+        cache_key = self._sr_payload_cache_key(section, sr_id)
+        cached = self._cache_get(cache_key, self.sr_payload_cache_ttl_seconds)
+        if isinstance(cached, dict):
+            return self._with_cache_metadata(cached, "fresh")
+        try:
+            payload = await factory()
+        except Exception:
+            stale = self._cache_get(cache_key, self.sr_payload_cache_ttl_seconds, allow_stale=True)
+            if isinstance(stale, dict):
+                logger.warning(
+                    "Serving stale dispatch SR %s payload for SR-%s after refresh failure",
+                    section,
+                    sr_id,
+                )
+                return self._with_cache_metadata(stale, "stale")
+            raise
+        self._cache_set(cache_key, payload)
+        return self._with_cache_metadata(payload, "miss")
+
     def _cache_get(self, key: str, ttl_seconds: float, *, allow_stale: bool = False) -> object | None:
         now = time.monotonic()
         with self._cache_lock:
@@ -2341,9 +2378,11 @@ class DispatchService:
             if entry is not None:
                 stored_at, value = entry
                 max_age = self.persistent_cache_stale_ttl_seconds if allow_stale else ttl_seconds
-                if now - stored_at <= max_age:
+                age = now - stored_at
+                if age <= max_age:
                     return deepcopy(value)
-                self._cache_entries.pop(key, None)
+                if age > self.persistent_cache_stale_ttl_seconds:
+                    self._cache_entries.pop(key, None)
 
         persistent_value = self._persistent_cache_get(key, ttl_seconds, allow_stale=allow_stale)
         if persistent_value is None:
@@ -2455,6 +2494,11 @@ class DispatchService:
     def _job_summary_cache_key(reference: str, include_customer_contacts: bool) -> str:
         normalized = str(reference or "").strip().upper()
         return f"dispatch:job-summary:{normalized}:{int(include_customer_contacts)}"
+
+    @staticmethod
+    def _sr_payload_cache_key(section: str, sr_id: int) -> str:
+        normalized_section = str(section or "").strip().lower()
+        return f"dispatch:sr-payload:{normalized_section}:{int(sr_id)}"
 
     @staticmethod
     def _route_payload_cache_key(

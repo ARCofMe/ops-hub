@@ -496,6 +496,71 @@ def test_dispatch_returns_sr_work_payload() -> None:
     assert payload == {"srId": 200, "urgentCount": 1}
 
 
+def test_dispatch_handles_concurrent_sr_section_requests() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+
+    class _DispatchService:
+        async def get_dispatch_sr_customer_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "reference": f"SR-{kwargs['sr_id']}"}
+
+        async def get_dispatch_sr_work_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "urgentCount": 1}
+
+        async def get_dispatch_sr_timeline_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "entries": []}
+
+        async def get_dispatch_sr_photo_compliance_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "mailboxStatus": "found"}
+
+        async def get_dispatch_sr_sms_capabilities_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "enabled": True}
+
+        async def get_dispatch_sr_sms_history_payload(self, **kwargs):
+            await asyncio.sleep(0.01)
+            return {"srId": kwargs["sr_id"], "items": []}
+
+    container = SimpleNamespace(
+        dispatch_service=_DispatchService(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=123, is_dispatcher=True, is_admin=False)
+        ),
+        service_smith_service=SimpleNamespace(),
+    )
+
+    async def run_requests():
+        paths = [
+            "/dispatch/sr/200/customer",
+            "/dispatch/sr/200/work",
+            "/dispatch/sr/200/timeline",
+            "/dispatch/sr/200/photo_compliance",
+            "/dispatch/sr/200/sms_capabilities",
+            "/dispatch/sr/200/sms/history",
+        ]
+        return await asyncio.gather(
+            *[
+                dispatch_technician_api_request(
+                    settings=settings,
+                    container=container,
+                    method="GET",
+                    path=path,
+                    headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "123"},
+                )
+                for path in paths
+            ]
+        )
+
+    results = asyncio.run(run_requests())
+
+    assert [status for status, _ in results] == [HTTPStatus.OK] * 6
+    assert all("Task <Task" not in str(payload) for _, payload in results)
+
+
 def test_dispatch_returns_sr_photo_compliance_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
