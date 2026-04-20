@@ -317,6 +317,47 @@ def render_landing_page() -> str:
       min-height: 178px;
     }
 
+    .workflow {
+      grid-template-columns: 0.9fr 1.1fr;
+      align-items: start;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .step b {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      color: #06120c;
+      background: var(--gold);
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .step span {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
     footer {
       color: var(--muted);
       margin-top: 48px;
@@ -326,7 +367,7 @@ def render_landing_page() -> str:
     @media (max-width: 860px) {
       main { padding-top: 24px; }
       nav { align-items: flex-start; margin-bottom: 42px; }
-      .hero, section { grid-template-columns: 1fr; }
+      .hero, section, .workflow { grid-template-columns: 1fr; }
       .console { min-height: auto; }
       .metric { grid-template-columns: 1fr; }
     }
@@ -386,6 +427,36 @@ def render_landing_page() -> str:
         </div>
       </aside>
     </div>
+
+    <section class="workflow" aria-label="Ecosystem workflow">
+      <div class="card">
+        <strong>Where the work lives</strong>
+        <span>OpsHub is the coordination layer. Daily operators should start in the app that matches the decision they are making, then drill into supporting evidence only when needed.</span>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <b>1</b>
+          <div>
+            <strong>RouteDesk: decide and dispatch</strong>
+            <span>Use Board for today’s pressure, Triage for complaint evidence, and Service Request only when deeper context is needed.</span>
+          </div>
+        </div>
+        <div class="step">
+          <b>2</b>
+          <div>
+            <strong>PartsDesk: clear blockers</strong>
+            <span>Use the fulfillment brief first, then open cases or requests for handoff, evidence, and status updates.</span>
+          </div>
+        </div>
+        <div class="step">
+          <b>3</b>
+          <div>
+            <strong>FieldDesk: execute the next stop</strong>
+            <span>Use Today for the active stop, job detail for customer contact and workflow, and supporting context only after the next action is clear.</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section aria-label="OpsHub outcomes">
       <div class="card">
