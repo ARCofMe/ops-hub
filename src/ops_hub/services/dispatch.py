@@ -58,7 +58,11 @@ class DispatchService:
     _board_refresh_running: bool = field(default=False, init=False, repr=False)
     _cache_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _cache_entries: dict[str, tuple[float, object]] = field(default_factory=dict, init=False, repr=False)
-    _inflight_tasks: dict[str, asyncio.Task] = field(default_factory=dict, init=False, repr=False)
+    _inflight_tasks: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Task]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
     _persistent_cache_ready: bool = field(default=False, init=False, repr=False)
 
     async def lookup_job(self, request: JobLookupRequest) -> CommandResult:
@@ -2427,17 +2431,20 @@ class DispatchService:
             self._persistent_cache_ready = True
 
     async def _singleflight(self, key: str, factory):
+        current_loop = asyncio.get_running_loop()
         with self._cache_lock:
-            task = self._inflight_tasks.get(key)
-            if task is None or task.done():
+            entry = self._inflight_tasks.get(key)
+            task = entry[1] if entry is not None else None
+            task_loop = entry[0] if entry is not None else None
+            if task is None or task.done() or task_loop is not current_loop:
                 task = asyncio.create_task(factory())
-                self._inflight_tasks[key] = task
+                self._inflight_tasks[key] = (current_loop, task)
         try:
             return await task
         finally:
             if task.done():
                 with self._cache_lock:
-                    if self._inflight_tasks.get(key) is task:
+                    if self._inflight_tasks.get(key) == (current_loop, task):
                         self._inflight_tasks.pop(key, None)
 
     @staticmethod

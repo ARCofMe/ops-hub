@@ -2323,6 +2323,41 @@ def test_dispatch_service_collapses_concurrent_assignment_reads() -> None:
     assert calls == 1
 
 
+def test_dispatch_service_does_not_share_inflight_tasks_across_event_loops() -> None:
+    calls = 0
+    barrier = threading.Barrier(2)
+
+    async def get_job_summary(reference: str, include_customer_contacts: bool = True):
+        nonlocal calls
+        calls += 1
+        barrier.wait(timeout=2)
+        await asyncio.sleep(0.02)
+        return SimpleNamespace(available=True, service_request_id="100", reference=reference)
+
+    service = DispatchService(
+        adapter=DummyDispatchAdapter(base_path=None),
+        bluefolder_service=SimpleNamespace(get_job_summary=get_job_summary),
+    )
+    results: list[object] = []
+    errors: list[BaseException] = []
+
+    def run_lookup() -> None:
+        try:
+            results.append(asyncio.run(service._bluefolder_job_summary("SR-100")))
+        except BaseException as exc:  # pragma: no cover - assertion reports the captured exception
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run_lookup) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert errors == []
+    assert len(results) == 2
+    assert calls == 2
+
+
 def test_dispatch_service_caches_route_payload_bluefolder_reads() -> None:
     assignment_calls = 0
     summary_calls = 0
