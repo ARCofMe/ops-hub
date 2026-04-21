@@ -952,6 +952,22 @@ async def dispatch_technician_api_request(
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
             return HTTPStatus.OK, await container.parts_cannon_service.get_recommendation_conversation_payload(sr_id=sr_id)
 
+        if method == "POST" and route_path.startswith("/parts/sr/") and route_path.endswith("/complaint_intelligence/feedback"):
+            sr_id = _path_int(route_path, prefix="/parts/sr/", suffix="/complaint_intelligence/feedback")
+            if sr_id is None:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            try:
+                return HTTPStatus.OK, await container.complaint_intelligence_service.record_feedback(
+                    sr_id=sr_id,
+                    outcome=str((body or {}).get("outcome") or ""),
+                    actor_user_id=parts_user_id,
+                    source="ops_hub.partsdesk",
+                    recommended_item=str((body or {}).get("recommendedItem") or "") or None,
+                    notes=str((body or {}).get("notes") or "") or None,
+                )
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
         if method == "GET" and route_path == "/parts/cases":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_cases_payload(
                 stage=(query.get("stage") or [None])[0],

@@ -1285,6 +1285,42 @@ def test_parts_returns_recommendation_conversation_payload() -> None:
     assert payload["conversation"]["supportedPartRecommendations"][0]["item"] == "FAN-1"
 
 
+def test_parts_records_complaint_intelligence_feedback() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        complaint_intelligence_service=SimpleNamespace(
+            record_feedback=lambda **kwargs: asyncio.sleep(
+                0,
+                result={
+                    "success": True,
+                    "srId": str(kwargs["sr_id"]),
+                    "outcome": kwargs["outcome"],
+                    "feedbackSummary": {"counts": {"helpful": 1}, "latest": None},
+                },
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/parts/sr/1001/complaint_intelligence/feedback",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+            body={"outcome": "helpful", "recommendedItem": "FAN-1"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["srId"] == "1001"
+    assert payload["feedbackSummary"]["counts"]["helpful"] == 1
+
+
 def test_parts_returns_request_payload() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
