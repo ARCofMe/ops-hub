@@ -215,6 +215,7 @@ def test_parts_cannon_builds_recommendation_conversation_from_evidence() -> None
                     "integrationStatus": "ok",
                     "modelFamilyTrends": {"modelFamily": "RF1", "requestCount": 4},
                     "feedbackSummary": {"counts": {"helpful": 1}, "latest": {"outcome": "helpful"}},
+                    "feedbackHealth": {"status": "supportive", "label": "Prior feedback supports this evidence"},
                     "evidencePacket": {
                         "version": "evidence.v1",
                         "classification": {"matchedHistoricalRequestCount": 2, "complaintTags": ["no_cool"]},
@@ -240,6 +241,7 @@ def test_parts_cannon_builds_recommendation_conversation_from_evidence() -> None
     assert payload["available"] is True
     assert payload["conversation"]["supportedPartRecommendations"][0]["item"] == "FAN-1"
     assert payload["conversation"]["evidenceSummary"]["modelFamilyTrends"]["modelFamily"] == "RF1"
+    assert payload["conversation"]["evidenceSummary"]["feedbackHealth"]["status"] == "supportive"
     assert payload["conversation"]["feedbackPrompt"].startswith("After the repair path is clear")
     assert payload["conversation"]["diagnosticQuestions"] == ["Is the evaporator fan running?"]
     assert "Do not add unsupported parts" in payload["conversation"]["suggestedReply"]

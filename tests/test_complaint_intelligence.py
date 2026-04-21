@@ -33,6 +33,7 @@ def test_complaint_intelligence_returns_sr_evidence(tmp_path: Path) -> None:
     assert payload["recommendations"][0]["score"] == 1.0
     assert payload["modelFamilyTrends"]["modelFamily"] == "RF1"
     assert payload["feedbackSummary"]["counts"] == {}
+    assert payload["feedbackHealth"]["status"] == "no_feedback"
     assert payload["evidencePacket"]["version"] == "evidence.v1"
     assert payload["evidencePacket"]["confidence"] == "limited"
     assert payload["evidencePacket"]["classification"]["complaintTags"] == ["no_cool"]
@@ -61,6 +62,7 @@ def test_complaint_intelligence_records_feedback(tmp_path: Path) -> None:
     assert result["outcome"] == "helpful"
     assert payload["feedbackSummary"]["counts"]["helpful"] == 1
     assert payload["feedbackSummary"]["latest"]["recommendedItem"] == "FAN-1"
+    assert payload["feedbackHealth"]["status"] == "supportive"
 
 
 def test_complaint_intelligence_trims_feedback_inputs(tmp_path: Path) -> None:

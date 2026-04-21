@@ -624,6 +624,8 @@ async def dispatch_technician_api_request(
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/complaint_intelligence/feedback")
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                if not isinstance(body, dict):
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Feedback payload must be a JSON object."}
                 try:
                     return HTTPStatus.OK, await container.complaint_intelligence_service.record_feedback(
                         sr_id=sr_id,
@@ -956,6 +958,8 @@ async def dispatch_technician_api_request(
             sr_id = _path_int(route_path, prefix="/parts/sr/", suffix="/complaint_intelligence/feedback")
             if sr_id is None:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+            if not isinstance(body, dict):
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Feedback payload must be a JSON object."}
             try:
                 return HTTPStatus.OK, await container.complaint_intelligence_service.record_feedback(
                     sr_id=sr_id,

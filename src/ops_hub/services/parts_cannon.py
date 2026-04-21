@@ -690,6 +690,7 @@ class PartsHandoffService:
         confidence = str(evidence_packet.get("confidence") or "unknown")
         model_family_trends = intelligence.get("modelFamilyTrends") if isinstance(intelligence.get("modelFamilyTrends"), dict) else None
         feedback_summary = intelligence.get("feedbackSummary") if isinstance(intelligence.get("feedbackSummary"), dict) else {"counts": {}, "latest": None}
+        feedback_health = intelligence.get("feedbackHealth") if isinstance(intelligence.get("feedbackHealth"), dict) else {"status": "no_feedback", "label": "No operator feedback yet"}
         return {
             "success": True,
             "available": True,
@@ -707,6 +708,7 @@ class PartsHandoffService:
                     matched_count=int((evidence_packet.get("classification") or {}).get("matchedHistoricalRequestCount") or 0),
                     model_family_trends=model_family_trends,
                     feedback_summary=feedback_summary,
+                    feedback_health=feedback_health,
                 ),
                 "diagnosticQuestions": questions,
                 "useConstraints": constraints,
@@ -854,6 +856,7 @@ class PartsHandoffService:
         matched_count: int,
         model_family_trends: dict[str, object] | None,
         feedback_summary: dict[str, object],
+        feedback_health: dict[str, object],
     ) -> dict[str, object]:
         return {
             "confidence": confidence,
@@ -861,6 +864,7 @@ class PartsHandoffService:
             "topSupportedPart": ranked_parts[0] if ranked_parts else None,
             "modelFamilyTrends": model_family_trends,
             "feedbackSummary": feedback_summary,
+            "feedbackHealth": feedback_health,
         }
 
     def _normalize_status(self, status: str) -> str | None:

@@ -259,6 +259,37 @@ def test_dispatch_records_complaint_intelligence_feedback() -> None:
     assert payload["feedbackSummary"]["counts"]["helpful"] == 1
 
 
+def test_dispatch_rejects_non_object_complaint_feedback_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        complaint_intelligence_service=SimpleNamespace(),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_operator_identity=lambda **_: SimpleNamespace(
+                discord_user_id=None,
+                actor_user_id=2001,
+                is_dispatcher=True,
+                is_admin=False,
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/sr/1001/complaint_intelligence/feedback",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "route-desk"},
+            body=["helpful"],
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload["message"] == "Feedback payload must be a JSON object."
+
+
 def test_dispatch_saves_intake_profile() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(
@@ -1319,6 +1350,31 @@ def test_parts_records_complaint_intelligence_feedback() -> None:
     assert status == HTTPStatus.OK
     assert payload["srId"] == "1001"
     assert payload["feedbackSummary"]["counts"]["helpful"] == 1
+
+
+def test_parts_rejects_non_object_complaint_feedback_payload() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        complaint_intelligence_service=SimpleNamespace(),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/parts/sr/1001/complaint_intelligence/feedback",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+            body=["helpful"],
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload["message"] == "Feedback payload must be a JSON object."
 
 
 def test_parts_returns_request_payload() -> None:

@@ -55,6 +55,7 @@ class ComplaintIntelligenceService:
                 common_resolutions = self._fetch_common_resolutions(conn, similar)
                 model_family_trends = self._fetch_model_family_trends(conn, request)
                 feedback_summary = self._fetch_feedback_summary(conn, request["id"])
+                feedback_health = _feedback_health(feedback_summary)
                 evidence_packet = self._build_evidence_packet(
                     request=request,
                     tags=tags,
@@ -91,6 +92,7 @@ class ComplaintIntelligenceService:
             "commonResolutions": common_resolutions,
             "modelFamilyTrends": model_family_trends,
             "feedbackSummary": feedback_summary,
+            "feedbackHealth": feedback_health,
             "feedbackCaptureEnabled": True,
             "evidencePacket": evidence_packet,
         }
@@ -467,6 +469,7 @@ class ComplaintIntelligenceService:
             "commonResolutions": [],
             "modelFamilyTrends": None,
             "feedbackSummary": {"counts": {}, "latest": None},
+            "feedbackHealth": _feedback_health({"counts": {}, "latest": None}),
             "feedbackCaptureEnabled": False,
             "evidencePacket": None,
         }
@@ -504,6 +507,38 @@ def _normalize_feedback_outcome(value: str | None) -> str | None:
     if normalized in {"helpful", "not_helpful", "needs_review"}:
         return normalized
     return None
+
+
+def _feedback_health(feedback_summary: dict[str, object]) -> dict[str, object]:
+    counts = feedback_summary.get("counts") if isinstance(feedback_summary, dict) else {}
+    if not isinstance(counts, dict):
+        counts = {}
+    helpful = int(counts.get("helpful") or 0)
+    needs_review = int(counts.get("needs_review") or 0)
+    not_helpful = int(counts.get("not_helpful") or 0)
+    total = helpful + needs_review + not_helpful
+    if total == 0:
+        status = "no_feedback"
+        label = "No operator feedback yet"
+    elif not_helpful > helpful:
+        status = "caution"
+        label = "Prior feedback says this evidence has been weak"
+    elif needs_review >= helpful and needs_review > 0:
+        status = "needs_review"
+        label = "Prior feedback needs review before relying on this evidence"
+    elif helpful > 0 and not_helpful == 0:
+        status = "supportive"
+        label = "Prior feedback supports this evidence"
+    else:
+        status = "mixed"
+        label = "Prior feedback is mixed"
+    helpful_rate = round(helpful / total, 3) if total else None
+    return {
+        "status": status,
+        "label": label,
+        "totalFeedback": total,
+        "helpfulRate": helpful_rate,
+    }
 
 
 def _model_family_prefix(model_number: str | None) -> str | None:
