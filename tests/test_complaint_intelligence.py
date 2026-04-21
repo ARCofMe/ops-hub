@@ -143,6 +143,53 @@ def test_complaint_intelligence_dashboard_and_review_queue(tmp_path: Path) -> No
     assert queue["items"][0]["outcome"] == "not_helpful"
 
 
+def test_complaint_intelligence_resolves_review_into_part_decision(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    asyncio.run(
+        service.record_feedback(
+            sr_id=1001,
+            outcome="not_helpful",
+            actor_user_id=42,
+            source="ops_hub.routedesk",
+            recommended_item="FAN-1",
+            notes="Wrong part for this pattern.",
+        )
+    )
+    feedback_id = asyncio.run(service.get_feedback_review_queue())["items"][0]["feedbackId"]
+
+    result = asyncio.run(
+        service.resolve_feedback_review(
+            feedback_id=feedback_id,
+            decision="excluded",
+            actor_user_id=42,
+            notes="Exclude for this model/tag pattern.",
+        )
+    )
+    queue = asyncio.run(service.get_feedback_review_queue())
+    payload = asyncio.run(service.get_service_request_payload(sr_id=1001))
+
+    assert result["decision"] == "excluded"
+    assert queue["items"] == []
+    assert payload["recommendations"] == []
+
+
+def test_complaint_intelligence_seeds_historical_feedback(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    result = asyncio.run(service.seed_historical_feedback(limit=10))
+    dashboard = asyncio.run(service.get_dashboard_payload())
+
+    assert result["success"] is True
+    assert result["inserted"] == 2
+    assert dashboard["feedbackVolume"] == 2
+    assert dashboard["helpfulCount"] == 2
+
+
 def _build_db(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(

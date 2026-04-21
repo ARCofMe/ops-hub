@@ -268,6 +268,65 @@ def test_complaint_intelligence_review_queue_endpoint_bounds_limit() -> None:
     assert seen["limit"] == 100
 
 
+def test_complaint_intelligence_seed_feedback_endpoint() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    seen = {}
+
+    async def seed(*, limit: int):
+        seen["limit"] = limit
+        return {"success": True, "inserted": 3}
+
+    container = SimpleNamespace(
+        complaint_intelligence_service=SimpleNamespace(seed_historical_feedback=seed),
+        technician_api_service=SimpleNamespace(health=_health),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/complaint_intelligence/feedback/seed",
+            headers={"Authorization": "Bearer secret"},
+            body={"limit": 5000},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["inserted"] == 3
+    assert seen["limit"] == 1000
+
+
+def test_complaint_intelligence_resolve_feedback_endpoint() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    seen = {}
+
+    async def resolve(**kwargs):
+        seen.update(kwargs)
+        return {"success": True, "decision": kwargs["decision"]}
+
+    container = SimpleNamespace(
+        complaint_intelligence_service=SimpleNamespace(resolve_feedback_review=resolve),
+        technician_api_service=SimpleNamespace(health=_health),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/complaint_intelligence/review_queue/55/resolve",
+            headers={"Authorization": "Bearer secret"},
+            body={"decision": "trusted", "notes": "Confirmed by final repair."},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["decision"] == "trusted"
+    assert seen["feedback_id"] == 55
+    assert seen["notes"] == "Confirmed by final repair."
+
+
 def test_dispatch_records_complaint_intelligence_feedback() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

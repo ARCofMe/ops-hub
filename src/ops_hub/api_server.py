@@ -518,6 +518,31 @@ async def dispatch_technician_api_request(
             limit = 25
         return HTTPStatus.OK, await container.complaint_intelligence_service.get_feedback_review_queue(limit=limit)
 
+    if method == "POST" and route_path == "/complaint_intelligence/feedback/seed":
+        if not isinstance(body, dict):
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Seed payload must be a JSON object."}
+        try:
+            limit = max(1, min(int((body or {}).get("limit") or 250), 1000))
+        except (TypeError, ValueError):
+            limit = 250
+        return HTTPStatus.OK, await container.complaint_intelligence_service.seed_historical_feedback(limit=limit)
+
+    if method == "POST" and route_path.startswith("/complaint_intelligence/review_queue/") and route_path.endswith("/resolve"):
+        feedback_id = _path_int(route_path, prefix="/complaint_intelligence/review_queue/", suffix="/resolve")
+        if feedback_id is None:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid feedback id."}
+        if not isinstance(body, dict):
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Review payload must be a JSON object."}
+        try:
+            return HTTPStatus.OK, await container.complaint_intelligence_service.resolve_feedback_review(
+                feedback_id=feedback_id,
+                decision=str((body or {}).get("decision") or ""),
+                actor_user_id=None,
+                notes=str((body or {}).get("notes") or "") or None,
+            )
+        except ValueError as exc:
+            return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+
     if route_path.startswith("/dispatch"):
         dispatcher = _resolve_dispatcher_identity(
             container=container,

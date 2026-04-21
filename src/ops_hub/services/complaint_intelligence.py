@@ -60,7 +60,7 @@ class ComplaintIntelligenceService:
                 tags = self._fetch_tags(conn, request["id"])
                 billed_items = self._fetch_billed_items(conn, request["id"])
                 match_scope, similar = self._fetch_similar_requests(conn, request, tags)
-                recommendations = self._fetch_recommendations(conn, similar)
+                recommendations = self._fetch_recommendations(conn, similar, request=request, tags=tags)
                 common_resolutions = self._fetch_common_resolutions(conn, similar)
                 model_family_trends = self._fetch_model_family_trends(conn, request)
                 feedback_summary = self._fetch_feedback_summary(conn, request["id"])
@@ -136,7 +136,7 @@ class ComplaintIntelligenceService:
             for tag in _classify_complaint_text(complaint_text)
         ]
         match_scope, similar = self._fetch_similar_requests(conn, request, tags)
-        recommendations = self._fetch_recommendations(conn, similar)
+        recommendations = self._fetch_recommendations(conn, similar, request=request, tags=tags)
         common_resolutions = self._fetch_common_resolutions(conn, similar)
         model_family_trends = self._fetch_model_family_trends(conn, request)
         evidence_packet = self._build_evidence_packet(
@@ -229,6 +229,123 @@ class ComplaintIntelligenceService:
             "message": f"Recorded Complaint Intelligence feedback as {normalized_outcome.replace('_', ' ')}.",
         }
 
+    async def seed_historical_feedback(self, *, limit: int = 250) -> dict[str, object]:
+        """Populate initial positive feedback from completed SR billed parts."""
+        if not (db_path := self._ready_sqlite_path()):
+            return {"success": False, "message": "Complaint Intelligence database is not configured.", "inserted": 0}
+        inserted = 0
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                self._ensure_feedback_table(conn)
+                rows = conn.execute(
+                    """
+                    SELECT sr.id AS service_request_pk, COALESCE(NULLIF(bi.sku, ''), bi.description) AS recommended_item
+                    FROM service_requests sr
+                    JOIN billed_items bi ON bi.service_request_pk = sr.id
+                    WHERE bi.item_type != 'labor'
+                      AND COALESCE(NULLIF(bi.sku, ''), bi.description) IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM recommendation_feedback rf
+                          WHERE rf.service_request_pk = sr.id
+                            AND rf.source = 'historical_completion'
+                            AND rf.recommended_item = COALESCE(NULLIF(bi.sku, ''), bi.description)
+                      )
+                    ORDER BY sr.completed_at DESC
+                    LIMIT ?
+                    """,
+                    (max(1, min(int(limit), 1000)),),
+                ).fetchall()
+                for row in rows:
+                    conn.execute(
+                        """
+                        INSERT INTO recommendation_feedback (
+                            service_request_pk, outcome, actor_user_id, source, recommended_item, notes
+                        )
+                        VALUES (?, 'helpful', NULL, 'historical_completion', ?, 'Seeded from completed SR billed item.')
+                        """,
+                        (row["service_request_pk"], row["recommended_item"]),
+                    )
+                    inserted += 1
+                conn.commit()
+        except sqlite3.Error as exc:
+            return {"success": False, "message": f"Complaint Intelligence feedback seed failed: {exc}", "inserted": inserted}
+        return {"success": True, "message": f"Seeded {inserted} historical feedback records.", "inserted": inserted}
+
+    async def resolve_feedback_review(
+        self,
+        *,
+        feedback_id: int,
+        decision: str,
+        actor_user_id: int | None,
+        notes: str | None = None,
+    ) -> dict[str, object]:
+        """Resolve weak evidence feedback and persist its model/complaint/part decision."""
+        normalized_decision = _normalize_review_decision(decision)
+        if normalized_decision is None:
+            raise ValueError("Review decision must be one of `trusted`, `downgraded`, or `excluded`.")
+        if not (db_path := self._ready_sqlite_path()):
+            raise ValueError("Complaint Intelligence review requires a local SQLite database.")
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                self._ensure_feedback_table(conn)
+                row = conn.execute(
+                    """
+                    SELECT rf.id, rf.recommended_item, sr.model_number, ct.tag AS complaint_tag
+                    FROM recommendation_feedback rf
+                    JOIN service_requests sr ON sr.id = rf.service_request_pk
+                    LEFT JOIN complaint_tags ct ON ct.service_request_pk = sr.id
+                    WHERE rf.id = ?
+                    ORDER BY ct.tag ASC
+                    LIMIT 1
+                    """,
+                    (feedback_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Feedback `{feedback_id}` was not found.")
+                review_notes = _clean_optional(notes, max_length=1000)
+                conn.execute(
+                    """
+                    UPDATE recommendation_feedback
+                    SET review_status = 'resolved',
+                        review_decision = ?,
+                        reviewed_by_user_id = ?,
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        review_notes = ?
+                    WHERE id = ?
+                    """,
+                    (normalized_decision, actor_user_id, review_notes, feedback_id),
+                )
+                recommended_item = _clean_optional(row["recommended_item"], max_length=128)
+                if recommended_item:
+                    conn.execute(
+                        """
+                        INSERT INTO recommendation_part_overrides (
+                            model_number, complaint_tag, recommended_item, decision, notes, actor_user_id, created_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """,
+                        (
+                            _clean_optional(row["model_number"], max_length=128),
+                            _clean_optional(row["complaint_tag"], max_length=64),
+                            recommended_item,
+                            normalized_decision,
+                            review_notes,
+                            actor_user_id,
+                        ),
+                    )
+                conn.commit()
+        except sqlite3.Error as exc:
+            raise ValueError(f"Complaint Intelligence review write failed: {exc}") from exc
+        return {
+            "success": True,
+            "feedbackId": feedback_id,
+            "decision": normalized_decision,
+            "message": f"Resolved feedback {feedback_id} as {normalized_decision}.",
+        }
+
     async def get_feedback_review_queue(self, *, limit: int = 25) -> dict[str, object]:
         """Return evidence feedback that needs operator review."""
         if not (db_path := self._ready_sqlite_path()):
@@ -255,6 +372,7 @@ class ComplaintIntelligenceService:
                     FROM recommendation_feedback rf
                     JOIN service_requests sr ON sr.id = rf.service_request_pk
                     WHERE rf.outcome IN ('needs_review', 'not_helpful')
+                      AND COALESCE(rf.review_status, 'open') != 'resolved'
                     ORDER BY rf.created_at DESC, rf.id DESC
                     LIMIT ?
                     """,
@@ -446,7 +564,13 @@ class ComplaintIntelligenceService:
         return "complaint_only", []
 
     @staticmethod
-    def _fetch_recommendations(conn: sqlite3.Connection, similar: list[sqlite3.Row]) -> list[dict[str, object]]:
+    def _fetch_recommendations(
+        conn: sqlite3.Connection,
+        similar: list[sqlite3.Row],
+        *,
+        request: sqlite3.Row | dict[str, object],
+        tags: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
         if not similar:
             return []
         ids = [row["id"] for row in similar]
@@ -467,15 +591,22 @@ class ComplaintIntelligenceService:
             ids,
         ).fetchall()
         denominator = max(len(ids), 1)
+        decisions = ComplaintIntelligenceService._fetch_part_decisions(conn, request=request, tags=tags)
         recommendations = []
         for row in rows:
-            feedback = feedback_by_item.get(str(row["item"]), {"helpful": 0, "needs_review": 0, "not_helpful": 0})
+            item_name = str(row["item"])
+            decision = decisions.get(item_name)
+            if decision == "excluded":
+                continue
+            feedback = feedback_by_item.get(item_name, {"helpful": 0, "needs_review": 0, "not_helpful": 0})
             base_score = float(row["matching_request_count"]) / denominator
+            decision_adjustment = 0.15 if decision == "trusted" else -0.15 if decision == "downgraded" else 0.0
             score = max(
                 0.0,
                 min(
                     1.0,
                     base_score
+                    + decision_adjustment
                     + (0.05 * int(feedback.get("helpful") or 0))
                     - (0.03 * int(feedback.get("needs_review") or 0))
                     - (0.1 * int(feedback.get("not_helpful") or 0)),
@@ -494,9 +625,39 @@ class ComplaintIntelligenceService:
                         "needsReview": int(feedback.get("needs_review") or 0),
                         "notHelpful": int(feedback.get("not_helpful") or 0),
                     },
+                    "reviewDecision": decision,
                 }
             )
         return sorted(recommendations, key=lambda item: (-float(item["score"]), str(item["item"])))[:10]
+
+    @staticmethod
+    def _fetch_part_decisions(
+        conn: sqlite3.Connection,
+        *,
+        request: sqlite3.Row | dict[str, object],
+        tags: list[dict[str, object]],
+    ) -> dict[str, str]:
+        ComplaintIntelligenceService._ensure_feedback_table(conn)
+        tag_values = [str(tag["tag"]) for tag in tags if tag.get("tag")]
+        if not tag_values:
+            tag_values = [""]
+        placeholders = ",".join("?" for _ in tag_values)
+        rows = conn.execute(
+            f"""
+            SELECT recommended_item, decision
+            FROM recommendation_part_overrides
+            WHERE (model_number IS NULL OR model_number = ?)
+              AND (complaint_tag IS NULL OR complaint_tag IN ({placeholders}))
+            ORDER BY created_at DESC, id DESC
+            """,
+            [_clean_optional(request["model_number"], max_length=128), *tag_values],
+        ).fetchall()
+        decisions: dict[str, str] = {}
+        for row in rows:
+            item = str(row["recommended_item"])
+            if item not in decisions:
+                decisions[item] = str(row["decision"])
+        return decisions
 
     @staticmethod
     def _fetch_feedback_by_item(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
@@ -642,10 +803,50 @@ class ComplaintIntelligenceService:
             )
             """
         )
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(recommendation_feedback)").fetchall()
+        }
+        column_sql = {
+            "review_status": "ALTER TABLE recommendation_feedback ADD COLUMN review_status VARCHAR(32) DEFAULT 'open'",
+            "review_decision": "ALTER TABLE recommendation_feedback ADD COLUMN review_decision VARCHAR(32)",
+            "reviewed_by_user_id": "ALTER TABLE recommendation_feedback ADD COLUMN reviewed_by_user_id INTEGER",
+            "reviewed_at": "ALTER TABLE recommendation_feedback ADD COLUMN reviewed_at DATETIME",
+            "review_notes": "ALTER TABLE recommendation_feedback ADD COLUMN review_notes TEXT",
+        }
+        for column, sql in column_sql.items():
+            if column not in existing_columns:
+                conn.execute(sql)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recommendation_part_overrides (
+                id INTEGER PRIMARY KEY,
+                model_number VARCHAR(128),
+                complaint_tag VARCHAR(64),
+                recommended_item VARCHAR(128) NOT NULL,
+                decision VARCHAR(32) NOT NULL,
+                notes TEXT,
+                actor_user_id INTEGER,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS ix_feedback_sr_outcome
             ON recommendation_feedback (service_request_pk, outcome, created_at)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_feedback_review_status
+            ON recommendation_feedback (review_status, outcome, created_at)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_part_overrides_pattern
+            ON recommendation_part_overrides (model_number, complaint_tag, recommended_item, created_at)
             """
         )
 
@@ -751,6 +952,13 @@ def _clean_optional(value: object | None, *, max_length: int | None = None) -> s
 def _normalize_feedback_outcome(value: str | None) -> str | None:
     normalized = str(value or "").strip().lower()
     if normalized in {"helpful", "not_helpful", "needs_review"}:
+        return normalized
+    return None
+
+
+def _normalize_review_decision(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"trusted", "downgraded", "excluded"}:
         return normalized
     return None
 
