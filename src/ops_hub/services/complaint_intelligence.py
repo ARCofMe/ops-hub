@@ -132,9 +132,9 @@ class ComplaintIntelligenceService:
                         int(request["id"]),
                         normalized_outcome,
                         actor_user_id,
-                        source,
-                        _clean_optional(recommended_item),
-                        _clean_optional(notes),
+                        _clean_optional(source, max_length=64) or "unknown",
+                        _clean_optional(recommended_item, max_length=128),
+                        _clean_optional(notes, max_length=1000),
                     ),
                 )
                 conn.commit()
@@ -492,8 +492,10 @@ def _truncate(value: str | None, max_length: int) -> str | None:
     return f"{text_value[:max_length].rstrip()}..."
 
 
-def _clean_optional(value: str | None) -> str | None:
+def _clean_optional(value: str | None, *, max_length: int | None = None) -> str | None:
     cleaned = str(value or "").strip()
+    if max_length is not None and len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip()
     return cleaned or None
 
 

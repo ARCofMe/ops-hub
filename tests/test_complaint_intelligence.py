@@ -63,6 +63,29 @@ def test_complaint_intelligence_records_feedback(tmp_path: Path) -> None:
     assert payload["feedbackSummary"]["latest"]["recommendedItem"] == "FAN-1"
 
 
+def test_complaint_intelligence_trims_feedback_inputs(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    asyncio.run(
+        service.record_feedback(
+            sr_id=1001,
+            outcome="needs_review",
+            actor_user_id=42,
+            source="x" * 80,
+            recommended_item="PART-" + ("A" * 200),
+            notes="n" * 1200,
+        )
+    )
+    payload = asyncio.run(service.get_service_request_payload(sr_id=1001))
+
+    latest = payload["feedbackSummary"]["latest"]
+    assert latest["source"] == "x" * 64
+    assert len(latest["recommendedItem"]) == 128
+    assert len(latest["notes"]) == 1000
+
+
 def _build_db(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(
