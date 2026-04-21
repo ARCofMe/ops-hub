@@ -42,6 +42,31 @@ def test_complaint_intelligence_returns_sr_evidence(tmp_path: Path) -> None:
     assert any("evaporator fan" in question.lower() for question in payload["evidencePacket"]["diagnosticQuestions"])
 
 
+def test_complaint_intelligence_uses_live_context_when_sr_not_ingested(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    payload = asyncio.run(
+        service.get_service_request_payload(
+            sr_id=9999,
+            current_context={
+                "complaintText": "Customer says refrigerator is not cooling",
+                "modelNumber": "RF1",
+                "brand": "Samsung",
+                "applianceType": "refrigerator",
+            },
+        )
+    )
+
+    assert payload["available"] is True
+    assert payload["integrationStatus"] == "live_context"
+    assert payload["feedbackCaptureEnabled"] is False
+    assert payload["similarRequestCount"] == 2
+    assert payload["recommendations"][0]["item"] == "FAN-1"
+    assert payload["evidencePacket"]["classification"]["matchScope"] == "exact_model"
+
+
 def test_complaint_intelligence_records_feedback(tmp_path: Path) -> None:
     db_path = tmp_path / "complaint_intelligence.db"
     _build_db(db_path)
@@ -63,6 +88,8 @@ def test_complaint_intelligence_records_feedback(tmp_path: Path) -> None:
     assert payload["feedbackSummary"]["counts"]["helpful"] == 1
     assert payload["feedbackSummary"]["latest"]["recommendedItem"] == "FAN-1"
     assert payload["feedbackHealth"]["status"] == "supportive"
+    assert payload["recommendations"][0]["feedbackWeight"]["helpful"] == 1
+    assert payload["recommendations"][0]["baseScore"] == 1.0
 
 
 def test_complaint_intelligence_trims_feedback_inputs(tmp_path: Path) -> None:
@@ -86,6 +113,34 @@ def test_complaint_intelligence_trims_feedback_inputs(tmp_path: Path) -> None:
     assert latest["source"] == "x" * 64
     assert len(latest["recommendedItem"]) == 128
     assert len(latest["notes"]) == 1000
+
+
+def test_complaint_intelligence_dashboard_and_review_queue(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    asyncio.run(
+        service.record_feedback(
+            sr_id=1001,
+            outcome="not_helpful",
+            actor_user_id=42,
+            source="ops_hub.routedesk",
+            recommended_item="FAN-1",
+            notes="Did not match final repair.",
+        )
+    )
+
+    dashboard = asyncio.run(service.get_dashboard_payload())
+    queue = asyncio.run(service.get_feedback_review_queue())
+
+    assert dashboard["available"] is True
+    assert dashboard["feedbackVolume"] == 1
+    assert dashboard["reviewQueueCount"] == 1
+    assert dashboard["weakRecommendations"][0]["recommendedItem"] == "FAN-1"
+    assert queue["available"] is True
+    assert queue["items"][0]["serviceRequestId"] == "1001"
+    assert queue["items"][0]["outcome"] == "not_helpful"
 
 
 def _build_db(path: Path) -> None:

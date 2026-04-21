@@ -217,6 +217,57 @@ def test_dispatch_returns_complaint_intelligence_for_sr() -> None:
     assert payload["srId"] == "1001"
 
 
+def test_complaint_intelligence_dashboard_endpoint() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        complaint_intelligence_service=SimpleNamespace(
+            get_dashboard_payload=lambda: asyncio.sleep(0, result={"available": True, "feedbackVolume": 2})
+        ),
+        technician_api_service=SimpleNamespace(health=_health),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/complaint_intelligence/dashboard",
+            headers={"Authorization": "Bearer secret"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["feedbackVolume"] == 2
+
+
+def test_complaint_intelligence_review_queue_endpoint_bounds_limit() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    seen = {}
+
+    async def review_queue(*, limit: int):
+        seen["limit"] = limit
+        return {"available": True, "items": []}
+
+    container = SimpleNamespace(
+        complaint_intelligence_service=SimpleNamespace(get_feedback_review_queue=review_queue),
+        technician_api_service=SimpleNamespace(health=_health),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="GET",
+            path="/complaint_intelligence/review_queue?limit=500",
+            headers={"Authorization": "Bearer secret"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["items"] == []
+    assert seen["limit"] == 100
+
+
 def test_dispatch_records_complaint_intelligence_feedback() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

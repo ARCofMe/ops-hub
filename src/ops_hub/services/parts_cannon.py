@@ -667,7 +667,11 @@ class PartsHandoffService:
                 message="Complaint Intelligence is not wired into PartsCannon.",
             )
 
-        intelligence = await self.complaint_intelligence_service.get_service_request_payload(sr_id=sr_id)
+        current_context = await self._live_complaint_context(sr_id)
+        intelligence = await self.complaint_intelligence_service.get_service_request_payload(
+            sr_id=sr_id,
+            current_context=current_context,
+        )
         if not intelligence.get("available"):
             return self._recommendation_unavailable(
                 sr_id=sr_id,
@@ -723,6 +727,7 @@ class PartsHandoffService:
                     questions=questions,
                     confidence=confidence,
                     matched_count=int((evidence_packet.get("classification") or {}).get("matchedHistoricalRequestCount") or 0),
+                    feedback_health=feedback_health,
                 ),
             },
         }
@@ -743,6 +748,23 @@ class PartsHandoffService:
             "success": True,
             "message": result.message,
             "request": await self._record_payload(record),
+        }
+
+    async def _live_complaint_context(self, sr_id: int) -> dict[str, object] | None:
+        bluefolder_service = getattr(self.workflow_state_service, "bluefolder_service", None)
+        if bluefolder_service is None:
+            return None
+        try:
+            summary = await bluefolder_service.get_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
+        except Exception:
+            return None
+        if not getattr(summary, "available", False):
+            return None
+        return {
+            "complaintText": getattr(summary, "subject", None),
+            "modelNumber": getattr(summary, "model_number", None),
+            "brand": getattr(summary, "brand", None),
+            "applianceType": getattr(summary, "appliance_type", None),
         }
 
     async def update_request_payload(self, *, request_id: int, status: str, actor_user_id: int) -> dict[str, object]:
@@ -825,10 +847,19 @@ class PartsHandoffService:
         questions: list[str],
         confidence: str,
         matched_count: int,
+        feedback_health: dict[str, object],
     ) -> str:
+        feedback_status = str(feedback_health.get("status") or "no_feedback")
+        if feedback_status in {"caution", "needs_review", "mixed"}:
+            questions = [
+                "Prior feedback on this evidence is weak or unresolved. What observation confirms this complaint path before ordering?",
+                "Which recommended part was questioned previously, and is the same symptom present on this unit?",
+                *questions,
+            ]
         lines = [
             f"PartsCannon evidence for SR {sr_id}:",
             f"Historical match strength: {confidence} from {matched_count} matched completed SR(s).",
+            f"Feedback signal: {feedback_health.get('label') or 'No operator feedback yet'}.",
         ]
         if ranked_parts:
             lines.append("Supported historical part recommendations:")

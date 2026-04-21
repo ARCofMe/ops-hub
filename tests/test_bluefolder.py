@@ -67,6 +67,10 @@ def test_bluefolder_adapter_skips_customer_enrichment_when_contacts_are_disabled
                     ET.SubElement(sr, "customerLocationId").text = "9"
                     ET.SubElement(sr, "description").text = "Dryer repair"
                     ET.SubElement(sr, "serviceRequestStatus").text = "Scheduled"
+                    equipment = ET.SubElement(ET.SubElement(sr, "equipmentToService"), "equipmentItem")
+                    ET.SubElement(equipment, "modelNo").text = "DLEX4000"
+                    ET.SubElement(equipment, "mfrName").text = "LG"
+                    ET.SubElement(equipment, "equipType").text = "Dryer"
                     return root
 
             class _Customers:
@@ -101,6 +105,9 @@ def test_bluefolder_adapter_skips_customer_enrichment_when_contacts_are_disabled
     assert result.available is True
     assert result.subject == "Dryer repair"
     assert result.service_request_status == "Scheduled"
+    assert result.model_number == "DLEX4000"
+    assert result.brand == "LG"
+    assert result.appliance_type == "Dryer"
     assert result.address is None
     assert result.customer_contacts == ()
 

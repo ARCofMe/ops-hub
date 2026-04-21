@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import sqlite3
 from urllib.parse import unquote
 
@@ -15,7 +16,12 @@ class ComplaintIntelligenceService:
     database_url: str | None = None
     project_path: str | None = None
 
-    async def get_service_request_payload(self, *, sr_id: int) -> dict[str, object]:
+    async def get_service_request_payload(
+        self,
+        *,
+        sr_id: int,
+        current_context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         """Return complaint intelligence for one service request id."""
         if not (self.database_url or "").strip():
             return self._unavailable(
@@ -43,6 +49,9 @@ class ComplaintIntelligenceService:
                 conn.row_factory = sqlite3.Row
                 request = self._fetch_request(conn, sr_id)
                 if request is None:
+                    live_payload = self._build_live_context_payload(conn, sr_id=sr_id, current_context=current_context)
+                    if live_payload is not None:
+                        return live_payload
                     return self._unavailable(
                         sr_id=sr_id,
                         status="not_found",
@@ -50,7 +59,7 @@ class ComplaintIntelligenceService:
                     )
                 tags = self._fetch_tags(conn, request["id"])
                 billed_items = self._fetch_billed_items(conn, request["id"])
-                similar = self._fetch_similar_requests(conn, request, tags)
+                match_scope, similar = self._fetch_similar_requests(conn, request, tags)
                 recommendations = self._fetch_recommendations(conn, similar)
                 common_resolutions = self._fetch_common_resolutions(conn, similar)
                 model_family_trends = self._fetch_model_family_trends(conn, request)
@@ -61,6 +70,7 @@ class ComplaintIntelligenceService:
                     tags=tags,
                     similar=similar,
                     recommendations=recommendations,
+                    match_scope=match_scope,
                 )
         except sqlite3.Error as exc:
             return self._unavailable(
@@ -94,6 +104,73 @@ class ComplaintIntelligenceService:
             "feedbackSummary": feedback_summary,
             "feedbackHealth": feedback_health,
             "feedbackCaptureEnabled": True,
+            "evidencePacket": evidence_packet,
+        }
+
+    def _build_live_context_payload(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        sr_id: int,
+        current_context: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        """Build historical evidence from live BlueFolder context for an SR not yet ingested."""
+        if not isinstance(current_context, dict):
+            return None
+        complaint_text = _clean_optional(current_context.get("complaintText"), max_length=2000)
+        if complaint_text is None:
+            return None
+
+        request = {
+            "id": None,
+            "service_request_id": str(sr_id),
+            "completed_at": None,
+            "model_number": _clean_optional(current_context.get("modelNumber"), max_length=128),
+            "brand": _clean_optional(current_context.get("brand"), max_length=128),
+            "appliance_type": _clean_optional(current_context.get("applianceType"), max_length=128),
+            "complaint_text": complaint_text,
+            "resolution_notes": None,
+        }
+        tags = [
+            {"tag": tag, "confidence": 1.0, "source": "rules_live_context"}
+            for tag in _classify_complaint_text(complaint_text)
+        ]
+        match_scope, similar = self._fetch_similar_requests(conn, request, tags)
+        recommendations = self._fetch_recommendations(conn, similar)
+        common_resolutions = self._fetch_common_resolutions(conn, similar)
+        model_family_trends = self._fetch_model_family_trends(conn, request)
+        evidence_packet = self._build_evidence_packet(
+            request=request,
+            tags=tags,
+            similar=similar,
+            recommendations=recommendations,
+            match_scope=match_scope,
+        )
+        return {
+            "success": True,
+            "available": True,
+            "integrationStatus": "live_context",
+            "message": "Built Complaint Intelligence evidence from live BlueFolder context because this SR has not been ingested yet.",
+            "srId": str(sr_id),
+            "sourcePath": str(Path(self.project_path).expanduser()) if self.project_path else None,
+            "request": {
+                "serviceRequestId": str(sr_id),
+                "completedAt": None,
+                "modelNumber": request["model_number"],
+                "brand": request["brand"],
+                "applianceType": request["appliance_type"],
+                "complaintText": request["complaint_text"],
+                "resolutionNotes": None,
+            },
+            "complaintTags": tags,
+            "billedItems": [],
+            "similarRequestCount": len(similar),
+            "recommendations": recommendations,
+            "commonResolutions": common_resolutions,
+            "modelFamilyTrends": model_family_trends,
+            "feedbackSummary": {"counts": {}, "latest": None},
+            "feedbackHealth": _feedback_health({"counts": {}, "latest": None}),
+            "feedbackCaptureEnabled": False,
             "evidencePacket": evidence_packet,
         }
 
@@ -152,6 +229,124 @@ class ComplaintIntelligenceService:
             "message": f"Recorded Complaint Intelligence feedback as {normalized_outcome.replace('_', ' ')}.",
         }
 
+    async def get_feedback_review_queue(self, *, limit: int = 25) -> dict[str, object]:
+        """Return evidence feedback that needs operator review."""
+        if not (db_path := self._ready_sqlite_path()):
+            return {"success": True, "available": False, "items": [], "message": "Complaint Intelligence database is not configured."}
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                self._ensure_feedback_table(conn)
+                rows = conn.execute(
+                    """
+                    SELECT
+                        rf.id,
+                        rf.outcome,
+                        rf.source,
+                        rf.recommended_item,
+                        rf.notes,
+                        rf.actor_user_id,
+                        rf.created_at,
+                        sr.service_request_id,
+                        sr.model_number,
+                        sr.brand,
+                        sr.appliance_type,
+                        sr.complaint_text
+                    FROM recommendation_feedback rf
+                    JOIN service_requests sr ON sr.id = rf.service_request_pk
+                    WHERE rf.outcome IN ('needs_review', 'not_helpful')
+                    ORDER BY rf.created_at DESC, rf.id DESC
+                    LIMIT ?
+                    """,
+                    (max(1, min(int(limit), 100)),),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            return {"success": True, "available": False, "items": [], "message": f"Complaint Intelligence review queue failed: {exc}"}
+        return {
+            "success": True,
+            "available": True,
+            "items": [
+                {
+                    "feedbackId": row["id"],
+                    "serviceRequestId": row["service_request_id"],
+                    "outcome": row["outcome"],
+                    "source": row["source"],
+                    "recommendedItem": row["recommended_item"],
+                    "notes": row["notes"],
+                    "actorUserId": row["actor_user_id"],
+                    "createdAt": row["created_at"],
+                    "modelNumber": row["model_number"],
+                    "brand": row["brand"],
+                    "applianceType": row["appliance_type"],
+                    "complaintText": _truncate(row["complaint_text"], 500),
+                }
+                for row in rows
+            ],
+        }
+
+    async def get_dashboard_payload(self) -> dict[str, object]:
+        """Return aggregate Complaint Intelligence adoption and feedback health metrics."""
+        if not (db_path := self._ready_sqlite_path()):
+            return {"success": True, "available": False, "message": "Complaint Intelligence database is not configured."}
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                self._ensure_feedback_table(conn)
+                totals = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS total_feedback,
+                        SUM(CASE WHEN outcome = 'helpful' THEN 1 ELSE 0 END) AS helpful,
+                        SUM(CASE WHEN outcome = 'needs_review' THEN 1 ELSE 0 END) AS needs_review,
+                        SUM(CASE WHEN outcome = 'not_helpful' THEN 1 ELSE 0 END) AS not_helpful
+                    FROM recommendation_feedback
+                    """
+                ).fetchone()
+                weak_rows = conn.execute(
+                    """
+                    SELECT
+                        COALESCE(recommended_item, 'unspecified') AS recommended_item,
+                        COUNT(*) AS weak_count,
+                        MAX(created_at) AS latest_feedback_at
+                    FROM recommendation_feedback
+                    WHERE outcome IN ('needs_review', 'not_helpful')
+                    GROUP BY COALESCE(recommended_item, 'unspecified')
+                    ORDER BY weak_count DESC, latest_feedback_at DESC
+                    LIMIT 5
+                    """
+                ).fetchall()
+        except sqlite3.Error as exc:
+            return {"success": True, "available": False, "message": f"Complaint Intelligence dashboard failed: {exc}"}
+
+        helpful = int(totals["helpful"] or 0)
+        needs_review = int(totals["needs_review"] or 0)
+        not_helpful = int(totals["not_helpful"] or 0)
+        total = int(totals["total_feedback"] or 0)
+        return {
+            "success": True,
+            "available": True,
+            "feedbackVolume": total,
+            "helpfulCount": helpful,
+            "needsReviewCount": needs_review,
+            "notHelpfulCount": not_helpful,
+            "helpfulRate": round(helpful / total, 3) if total else None,
+            "reviewQueueCount": needs_review + not_helpful,
+            "weakRecommendations": [
+                {
+                    "recommendedItem": row["recommended_item"],
+                    "weakFeedbackCount": row["weak_count"],
+                    "latestFeedbackAt": row["latest_feedback_at"],
+                }
+                for row in weak_rows
+            ],
+        }
+
+    def _ready_sqlite_path(self) -> Path | None:
+        db_path = self._sqlite_path(self.database_url or "")
+        if db_path is None or not db_path.exists():
+            return None
+        return db_path
+
     @staticmethod
     def _fetch_request(conn: sqlite3.Connection, sr_id: int) -> sqlite3.Row | None:
         return conn.execute(
@@ -208,36 +403,47 @@ class ComplaintIntelligenceService:
     @staticmethod
     def _fetch_similar_requests(
         conn: sqlite3.Connection,
-        request: sqlite3.Row,
+        request: sqlite3.Row | dict[str, object],
         tags: list[dict[str, object]],
-    ) -> list[sqlite3.Row]:
+    ) -> tuple[str, list[sqlite3.Row]]:
         tag_values = [str(tag["tag"]) for tag in tags if tag.get("tag")]
         if not tag_values:
-            return []
+            return "no_classification", []
         placeholders = ",".join("?" for _ in tag_values)
-        return conn.execute(
-            f"""
-            SELECT DISTINCT sr.id, sr.service_request_id, sr.completed_at, sr.model_number, sr.brand, sr.appliance_type,
-                   sr.complaint_text, sr.resolution_notes
-            FROM service_requests sr
-            JOIN complaint_tags ct ON ct.service_request_pk = sr.id
-            WHERE ct.tag IN ({placeholders})
-              AND (? IS NULL OR sr.model_number = ?)
-              AND (? IS NULL OR sr.brand = ?)
-              AND (? IS NULL OR sr.appliance_type = ?)
-            ORDER BY sr.completed_at DESC
-            LIMIT 25
-            """,
-            tag_values
-            + [
-                request["model_number"],
-                request["model_number"],
-                request["brand"],
-                request["brand"],
-                request["appliance_type"],
-                request["appliance_type"],
-            ],
-        ).fetchall()
+        for match_scope, filters in _match_scope_candidates(
+            model_number=request["model_number"],
+            brand=request["brand"],
+            appliance_type=request["appliance_type"],
+        ):
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT sr.id, sr.service_request_id, sr.completed_at, sr.model_number, sr.brand, sr.appliance_type,
+                       sr.complaint_text, sr.resolution_notes
+                FROM service_requests sr
+                JOIN complaint_tags ct ON ct.service_request_pk = sr.id
+                WHERE ct.tag IN ({placeholders})
+                  AND (? IS NULL OR sr.model_number = ?)
+                  AND (? IS NULL OR REPLACE(REPLACE(REPLACE(UPPER(sr.model_number), '-', ''), '/', ''), '.', '') LIKE ?)
+                  AND (? IS NULL OR sr.brand = ?)
+                  AND (? IS NULL OR sr.appliance_type = ?)
+                ORDER BY sr.completed_at DESC
+                LIMIT 25
+                """,
+                tag_values
+                + [
+                    filters["model_number"],
+                    filters["model_number"],
+                    filters["model_prefix"],
+                    filters["model_prefix"],
+                    filters["brand"],
+                    filters["brand"],
+                    filters["appliance_type"],
+                    filters["appliance_type"],
+                ],
+            ).fetchall()
+            if rows:
+                return match_scope, rows
+        return "complaint_only", []
 
     @staticmethod
     def _fetch_recommendations(conn: sqlite3.Connection, similar: list[sqlite3.Row]) -> list[dict[str, object]]:
@@ -245,6 +451,7 @@ class ComplaintIntelligenceService:
             return []
         ids = [row["id"] for row in similar]
         placeholders = ",".join("?" for _ in ids)
+        feedback_by_item = ComplaintIntelligenceService._fetch_feedback_by_item(conn)
         rows = conn.execute(
             f"""
             SELECT COALESCE(NULLIF(sku, ''), description) AS item, item_type,
@@ -260,16 +467,53 @@ class ComplaintIntelligenceService:
             ids,
         ).fetchall()
         denominator = max(len(ids), 1)
-        return [
-            {
-                "item": row["item"],
-                "itemType": row["item_type"],
-                "seenCount": row["seen_count"],
-                "matchingRequestCount": row["matching_request_count"],
-                "score": round(float(row["matching_request_count"]) / denominator, 4),
-            }
-            for row in rows
-        ]
+        recommendations = []
+        for row in rows:
+            feedback = feedback_by_item.get(str(row["item"]), {"helpful": 0, "needs_review": 0, "not_helpful": 0})
+            base_score = float(row["matching_request_count"]) / denominator
+            score = max(
+                0.0,
+                min(
+                    1.0,
+                    base_score
+                    + (0.05 * int(feedback.get("helpful") or 0))
+                    - (0.03 * int(feedback.get("needs_review") or 0))
+                    - (0.1 * int(feedback.get("not_helpful") or 0)),
+                ),
+            )
+            recommendations.append(
+                {
+                    "item": row["item"],
+                    "itemType": row["item_type"],
+                    "seenCount": row["seen_count"],
+                    "matchingRequestCount": row["matching_request_count"],
+                    "baseScore": round(base_score, 4),
+                    "score": round(score, 4),
+                    "feedbackWeight": {
+                        "helpful": int(feedback.get("helpful") or 0),
+                        "needsReview": int(feedback.get("needs_review") or 0),
+                        "notHelpful": int(feedback.get("not_helpful") or 0),
+                    },
+                }
+            )
+        return sorted(recommendations, key=lambda item: (-float(item["score"]), str(item["item"])))[:10]
+
+    @staticmethod
+    def _fetch_feedback_by_item(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
+        ComplaintIntelligenceService._ensure_feedback_table(conn)
+        rows = conn.execute(
+            """
+            SELECT recommended_item, outcome, COUNT(*) AS feedback_count
+            FROM recommendation_feedback
+            WHERE recommended_item IS NOT NULL AND recommended_item != ''
+            GROUP BY recommended_item, outcome
+            """
+        ).fetchall()
+        feedback: dict[str, dict[str, int]] = {}
+        for row in rows:
+            item = str(row["recommended_item"])
+            feedback.setdefault(item, {})[str(row["outcome"])] = int(row["feedback_count"])
+        return feedback
 
     @staticmethod
     def _fetch_common_resolutions(conn: sqlite3.Connection, similar: list[sqlite3.Row]) -> list[str]:
@@ -412,6 +656,7 @@ class ComplaintIntelligenceService:
         tags: list[dict[str, object]],
         similar: list[sqlite3.Row],
         recommendations: list[dict[str, object]],
+        match_scope: str,
     ) -> dict[str, object]:
         tag_values = [str(tag["tag"]) for tag in tags if tag.get("tag")]
         return {
@@ -427,6 +672,7 @@ class ComplaintIntelligenceService:
             },
             "classification": {
                 "complaintTags": tag_values,
+                "matchScope": match_scope,
                 "matchedHistoricalRequestCount": len(similar),
             },
             "rankedParts": recommendations,
@@ -495,7 +741,7 @@ def _truncate(value: str | None, max_length: int) -> str | None:
     return f"{text_value[:max_length].rstrip()}..."
 
 
-def _clean_optional(value: str | None, *, max_length: int | None = None) -> str | None:
+def _clean_optional(value: object | None, *, max_length: int | None = None) -> str | None:
     cleaned = str(value or "").strip()
     if max_length is not None and len(cleaned) > max_length:
         cleaned = cleaned[:max_length].rstrip()
@@ -546,6 +792,84 @@ def _model_family_prefix(model_number: str | None) -> str | None:
     if not cleaned:
         return None
     return cleaned[:5]
+
+
+def _match_scope_candidates(
+    *,
+    model_number: object | None,
+    brand: object | None,
+    appliance_type: object | None,
+) -> tuple[tuple[str, dict[str, str | None]], ...]:
+    model = _clean_optional(model_number)
+    brand_value = _clean_optional(brand)
+    appliance = _clean_optional(appliance_type)
+    candidates: list[tuple[str, dict[str, str | None]]] = []
+    if model:
+        candidates.append(
+            (
+                "exact_model",
+                {"model_number": model, "model_prefix": None, "brand": brand_value, "appliance_type": appliance},
+            )
+        )
+        model_prefix = _model_family_prefix(model)
+        if model_prefix:
+            candidates.append(
+                (
+                    "model_family",
+                    {"model_number": None, "model_prefix": f"{model_prefix}%", "brand": brand_value, "appliance_type": appliance},
+                )
+            )
+    if brand_value and appliance:
+        candidates.append(
+            (
+                "brand_appliance_type",
+                {"model_number": None, "model_prefix": None, "brand": brand_value, "appliance_type": appliance},
+            )
+        )
+    if appliance:
+        candidates.append(
+            (
+                "appliance_type",
+                {"model_number": None, "model_prefix": None, "brand": None, "appliance_type": appliance},
+            )
+        )
+    candidates.append(
+        (
+            "complaint_only",
+            {"model_number": None, "model_prefix": None, "brand": None, "appliance_type": None},
+        )
+    )
+    return tuple(candidates)
+
+
+TAG_PATTERNS: dict[str, tuple[str, ...]] = {
+    "no_cool": (r"\bno cool\b", r"\bnot cool", r"\bwarm\b", r"\bnot cooling\b"),
+    "no_heat": (r"\bno heat\b", r"\bnot heat", r"\bnot heating\b", r"\bdoesn.?t heat\b", r"\bwill not preheat\b"),
+    "water_leak": (r"\bleak", r"\bwater.*floor\b", r"\bdripping\b"),
+    "noisy": (r"\bnoise\b", r"\bnoisy\b", r"\bgrind", r"\brattle", r"\bsqueal", r"\bbanging\b"),
+    "no_spin": (r"\bno spin\b", r"\bnot spinning\b", r"\bwon.?t spin\b"),
+    "no_drain": (r"\bno drain\b", r"\bnot drain", r"\bnot draining\b", r"\bwon.?t drain\b", r"\bpump running\b"),
+    "ice_maker_issue": (r"\bice maker\b", r"\bno ice\b", r"\bnot making ice\b", r"\bice bucket\b"),
+    "not_igniting": (r"\bnot ignit", r"\bwon.?t light\b", r"\bno flame\b"),
+    "error_code": (r"\berror code\b", r"\bfault code\b", r"\bcode [a-z0-9-]+\b", r"\b[a-z]{1,3}\d{1,3}\b"),
+    "intermittent_operation": (r"\bintermittent\b", r"\bsometimes\b", r"\boff and on\b", r"\bstops mid"),
+    "no_power": (r"\bno power\b", r"\bwon.?t power on\b", r"\bwill not power on\b", r"\bwon.?t turn on\b"),
+    "display_issue": (r"\bdisplay\b", r"\bscreen\b", r"\bno picture\b", r"\bback ?light\b"),
+    "not_drying": (r"\bnot drying\b", r"\bdoes not dry\b", r"\bclothes.*wet\b"),
+    "fill_issue": (r"\bno water\b", r"\bnot fill", r"\bdoes not fill\b", r"\bfill error\b"),
+    "not_cleaning": (r"\bnot clean", r"\bdishes.*dirty\b", r"\bpoor wash\b"),
+}
+
+
+def _classify_complaint_text(complaint_text: str | None) -> tuple[str, ...]:
+    haystack = str(complaint_text or "").casefold()
+    if not haystack:
+        return ()
+    return tuple(
+        tag
+        for tag, patterns in TAG_PATTERNS.items()
+        if any(re.search(pattern, haystack) for pattern in patterns)
+    )
 
 
 def _confidence_label(similar_request_count: int, recommendations: list[dict[str, object]]) -> str:

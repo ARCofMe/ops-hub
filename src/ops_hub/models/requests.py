@@ -196,6 +196,9 @@ class BlueFolderJobSummary:
     state: str | None = None
     postal_code: str | None = None
     service_request_status: str | None = None
+    model_number: str | None = None
+    brand: str | None = None
+    appliance_type: str | None = None
     customer_contacts: tuple["CustomerContactSummary", ...] = ()
 
 

@@ -190,6 +190,43 @@ class BlueFolderAdapter:
             or sr.findtext(".//status")
             or sr.findtext(".//statusName")
         )
+        model_number = self._first_xml_text(
+            sr,
+            (
+                "modelNumber",
+                "modelNo",
+                "model",
+                ".//modelNumber",
+                ".//modelNo",
+                ".//model",
+                ".//equipmentToService/equipmentItem/modelNo",
+                ".//equipmentToService/equipmentItem/modelNumber",
+            ),
+        )
+        brand = self._first_xml_text(
+            sr,
+            (
+                "brand",
+                "manufacturer",
+                "mfrName",
+                ".//brand",
+                ".//manufacturer",
+                ".//mfrName",
+                ".//equipmentToService/equipmentItem/mfrName",
+            ),
+        )
+        appliance_type = self._first_xml_text(
+            sr,
+            (
+                "applianceType",
+                "equipmentType",
+                "equipType",
+                ".//applianceType",
+                ".//equipmentType",
+                ".//equipType",
+                ".//equipmentToService/equipmentItem/equipType",
+            ),
+        ) or self._infer_appliance_type(" ".join(part for part in (subject, model_number) if part))
 
         if customer_id and customer_location_id and include_customer_contacts:
             with TemporarySysPath(resolved_path), _temporary_bluefolder_env(
@@ -273,8 +310,37 @@ class BlueFolderAdapter:
             state=state,
             postal_code=postal_code,
             service_request_status=service_request_status,
+            model_number=model_number,
+            brand=brand,
+            appliance_type=appliance_type,
             customer_contacts=customer_contacts,
         )
+
+    @staticmethod
+    def _first_xml_text(element: Element, paths: tuple[str, ...]) -> str | None:
+        for path in paths:
+            value = element.findtext(path)
+            cleaned = str(value or "").strip()
+            if cleaned:
+                return cleaned
+        return None
+
+    @staticmethod
+    def _infer_appliance_type(text: str) -> str | None:
+        haystack = text.casefold()
+        patterns = (
+            ("refrigerator", ("refrigerator", "fridge", "freezer", "ice maker")),
+            ("washer", ("washer", "washing machine")),
+            ("dryer", ("dryer",)),
+            ("dishwasher", ("dishwasher",)),
+            ("range", ("range", "oven", "cooktop", "stove")),
+            ("microwave", ("microwave",)),
+            ("tv", ("tv", "television", "screen")),
+        )
+        for appliance_type, needles in patterns:
+            if any(needle in haystack for needle in needles):
+                return appliance_type
+        return None
 
     def _select_customer_phone(self, contacts: list[dict[str, object]], customer_location_id: str | None) -> str | None:
         """Choose the best available customer phone for the SR location."""

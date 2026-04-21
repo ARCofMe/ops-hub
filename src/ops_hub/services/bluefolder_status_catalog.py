@@ -75,6 +75,7 @@ def describe_service_request_status(
         "isWaitingCustomer": is_waiting_customer,
         "isScheduling": is_scheduling,
         "isReview": is_review,
+        "primarySurface": _primary_surface(category),
     }
 
 
@@ -219,3 +220,16 @@ def _category_label(category: str) -> str:
         "closed": "Closed",
         "other": "Other",
     }.get(category, "Other")
+
+
+def _primary_surface(category: str) -> str:
+    return {
+        "parts": "partsdesk",
+        "scheduling": "routedesk",
+        "quote": "routedesk",
+        "waiting_customer": "routedesk",
+        "review": "ops_hub",
+        "new": "ops_hub",
+        "closed": "archive",
+        "other": "ops_hub",
+    }.get(category, "ops_hub")

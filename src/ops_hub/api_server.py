@@ -508,6 +508,16 @@ async def dispatch_technician_api_request(
     if method == "GET" and route_path == "/bluefolder/status_catalog":
         return HTTPStatus.OK, container.bluefolder_service.get_status_catalog_payload()
 
+    if method == "GET" and route_path == "/complaint_intelligence/dashboard":
+        return HTTPStatus.OK, await container.complaint_intelligence_service.get_dashboard_payload()
+
+    if method == "GET" and route_path == "/complaint_intelligence/review_queue":
+        try:
+            limit = max(1, min(int((query.get("limit") or ["25"])[0]), 100))
+        except (TypeError, ValueError):
+            limit = 25
+        return HTTPStatus.OK, await container.complaint_intelligence_service.get_feedback_review_queue(limit=limit)
+
     if route_path.startswith("/dispatch"):
         dispatcher = _resolve_dispatcher_identity(
             container=container,
@@ -618,7 +628,25 @@ async def dispatch_technician_api_request(
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/complaint_intelligence")
                 if sr_id is None:
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
-                return HTTPStatus.OK, await container.complaint_intelligence_service.get_service_request_payload(sr_id=sr_id)
+                current_context = None
+                bluefolder_service = getattr(container, "bluefolder_service", None)
+                summary = None
+                if bluefolder_service is not None:
+                    try:
+                        summary = await bluefolder_service.get_job_summary(f"SR-{sr_id}", include_customer_contacts=False)
+                    except Exception:
+                        summary = None
+                if summary is not None and getattr(summary, "available", False):
+                    current_context = {
+                        "complaintText": getattr(summary, "subject", None),
+                        "modelNumber": getattr(summary, "model_number", None),
+                        "brand": getattr(summary, "brand", None),
+                        "applianceType": getattr(summary, "appliance_type", None),
+                    }
+                return HTTPStatus.OK, await container.complaint_intelligence_service.get_service_request_payload(
+                    sr_id=sr_id,
+                    current_context=current_context,
+                )
         if method == "POST" and route_path.startswith("/dispatch/sr/"):
             if route_path.endswith("/complaint_intelligence/feedback"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/complaint_intelligence/feedback")
