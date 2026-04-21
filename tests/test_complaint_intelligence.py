@@ -31,12 +31,36 @@ def test_complaint_intelligence_returns_sr_evidence(tmp_path: Path) -> None:
     assert payload["similarRequestCount"] == 2
     assert payload["recommendations"][0]["item"] == "FAN-1"
     assert payload["recommendations"][0]["score"] == 1.0
+    assert payload["modelFamilyTrends"]["modelFamily"] == "RF1"
+    assert payload["feedbackSummary"]["counts"] == {}
     assert payload["evidencePacket"]["version"] == "evidence.v1"
     assert payload["evidencePacket"]["confidence"] == "limited"
     assert payload["evidencePacket"]["classification"]["complaintTags"] == ["no_cool"]
     assert payload["evidencePacket"]["rankedParts"][0]["item"] == "FAN-1"
     assert payload["evidencePacket"]["supportingEvidence"][0]["serviceRequestId"] == "1001"
     assert any("evaporator fan" in question.lower() for question in payload["evidencePacket"]["diagnosticQuestions"])
+
+
+def test_complaint_intelligence_records_feedback(tmp_path: Path) -> None:
+    db_path = tmp_path / "complaint_intelligence.db"
+    _build_db(db_path)
+    service = ComplaintIntelligenceService(database_url=f"sqlite:///{db_path}")
+
+    result = asyncio.run(
+        service.record_feedback(
+            sr_id=1001,
+            outcome="helpful",
+            actor_user_id=42,
+            source="ops_hub.routedesk",
+            recommended_item="FAN-1",
+            notes="Matched final repair.",
+        )
+    )
+    payload = asyncio.run(service.get_service_request_payload(sr_id=1001))
+
+    assert result["outcome"] == "helpful"
+    assert payload["feedbackSummary"]["counts"]["helpful"] == 1
+    assert payload["feedbackSummary"]["latest"]["recommendedItem"] == "FAN-1"
 
 
 def _build_db(path: Path) -> None:

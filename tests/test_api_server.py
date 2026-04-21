@@ -217,6 +217,48 @@ def test_dispatch_returns_complaint_intelligence_for_sr() -> None:
     assert payload["srId"] == "1001"
 
 
+def test_dispatch_records_complaint_intelligence_feedback() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        dispatch_service=SimpleNamespace(),
+        complaint_intelligence_service=SimpleNamespace(
+            record_feedback=lambda **kwargs: asyncio.sleep(
+                0,
+                result={
+                    "success": True,
+                    "srId": str(kwargs["sr_id"]),
+                    "outcome": kwargs["outcome"],
+                    "feedbackSummary": {"counts": {"helpful": 1}, "latest": None},
+                },
+            )
+        ),
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_operator_identity=lambda **_: SimpleNamespace(
+                discord_user_id=None,
+                actor_user_id=2001,
+                is_dispatcher=True,
+                is_admin=False,
+            )
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/dispatch/sr/1001/complaint_intelligence/feedback",
+            headers={"Authorization": "Bearer secret", "X-Dispatch-Subject": "route-desk"},
+            body={"outcome": "helpful", "recommendedItem": "FAN-1"},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["outcome"] == "helpful"
+    assert payload["feedbackSummary"]["counts"]["helpful"] == 1
+
+
 def test_dispatch_saves_intake_profile() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

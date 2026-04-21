@@ -688,6 +688,8 @@ class PartsHandoffService:
         questions = [str(item) for item in evidence_packet.get("diagnosticQuestions") or [] if str(item).strip()]
         constraints = [str(item) for item in evidence_packet.get("useConstraints") or [] if str(item).strip()]
         confidence = str(evidence_packet.get("confidence") or "unknown")
+        model_family_trends = intelligence.get("modelFamilyTrends") if isinstance(intelligence.get("modelFamilyTrends"), dict) else None
+        feedback_summary = intelligence.get("feedbackSummary") if isinstance(intelligence.get("feedbackSummary"), dict) else {"counts": {}, "latest": None}
         return {
             "success": True,
             "available": True,
@@ -699,8 +701,16 @@ class PartsHandoffService:
                 "mode": "deterministic_evidence",
                 "opening": self._recommendation_opening(sr_id=sr_id, ranked_parts=ranked_parts, confidence=confidence),
                 "supportedPartRecommendations": ranked_parts,
+                "evidenceSummary": self._recommendation_evidence_summary(
+                    ranked_parts=ranked_parts,
+                    confidence=confidence,
+                    matched_count=int((evidence_packet.get("classification") or {}).get("matchedHistoricalRequestCount") or 0),
+                    model_family_trends=model_family_trends,
+                    feedback_summary=feedback_summary,
+                ),
                 "diagnosticQuestions": questions,
                 "useConstraints": constraints,
+                "feedbackPrompt": "After the repair path is clear, record whether the evidence helped, needs review, or was not useful.",
                 "unsupportedPartsPolicy": (
                     "Do not present unsupported parts as recommendations. If a part is not in "
                     "supportedPartRecommendations, label it as a separate technician hypothesis."
@@ -835,6 +845,23 @@ class PartsHandoffService:
 
         lines.append("Do not add unsupported parts unless clearly labeled as a technician hypothesis.")
         return "\n".join(lines)
+
+    @staticmethod
+    def _recommendation_evidence_summary(
+        *,
+        ranked_parts: list[dict[str, object]],
+        confidence: str,
+        matched_count: int,
+        model_family_trends: dict[str, object] | None,
+        feedback_summary: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "confidence": confidence,
+            "matchedHistoricalRequestCount": matched_count,
+            "topSupportedPart": ranked_parts[0] if ranked_parts else None,
+            "modelFamilyTrends": model_family_trends,
+            "feedbackSummary": feedback_summary,
+        }
 
     def _normalize_status(self, status: str) -> str | None:
         """Normalize a requested parts status and reject unsupported values."""

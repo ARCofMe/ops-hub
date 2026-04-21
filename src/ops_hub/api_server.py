@@ -620,6 +620,21 @@ async def dispatch_technician_api_request(
                     return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
                 return HTTPStatus.OK, await container.complaint_intelligence_service.get_service_request_payload(sr_id=sr_id)
         if method == "POST" and route_path.startswith("/dispatch/sr/"):
+            if route_path.endswith("/complaint_intelligence/feedback"):
+                sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/complaint_intelligence/feedback")
+                if sr_id is None:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid service request id."}
+                try:
+                    return HTTPStatus.OK, await container.complaint_intelligence_service.record_feedback(
+                        sr_id=sr_id,
+                        outcome=str((body or {}).get("outcome") or ""),
+                        actor_user_id=dispatcher_user_id,
+                        source="ops_hub.routedesk",
+                        recommended_item=str((body or {}).get("recommendedItem") or "") or None,
+                        notes=str((body or {}).get("notes") or "") or None,
+                    )
+                except ValueError as exc:
+                    return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
             if route_path.endswith("/sms/preview"):
                 sr_id = _path_int(route_path, prefix="/dispatch/sr/", suffix="/sms/preview")
                 if sr_id is None:

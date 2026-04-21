@@ -53,6 +53,8 @@ class ComplaintIntelligenceService:
                 similar = self._fetch_similar_requests(conn, request, tags)
                 recommendations = self._fetch_recommendations(conn, similar)
                 common_resolutions = self._fetch_common_resolutions(conn, similar)
+                model_family_trends = self._fetch_model_family_trends(conn, request)
+                feedback_summary = self._fetch_feedback_summary(conn, request["id"])
                 evidence_packet = self._build_evidence_packet(
                     request=request,
                     tags=tags,
@@ -87,7 +89,65 @@ class ComplaintIntelligenceService:
             "similarRequestCount": len(similar),
             "recommendations": recommendations,
             "commonResolutions": common_resolutions,
+            "modelFamilyTrends": model_family_trends,
+            "feedbackSummary": feedback_summary,
+            "feedbackCaptureEnabled": True,
             "evidencePacket": evidence_packet,
+        }
+
+    async def record_feedback(
+        self,
+        *,
+        sr_id: int,
+        outcome: str,
+        actor_user_id: int | None,
+        source: str,
+        recommended_item: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, object]:
+        """Persist operator feedback for one SR evidence view."""
+        normalized_outcome = _normalize_feedback_outcome(outcome)
+        if normalized_outcome is None:
+            raise ValueError("Feedback outcome must be one of `helpful`, `not_helpful`, or `needs_review`.")
+
+        db_path = self._sqlite_path(self.database_url or "")
+        if db_path is None or not db_path.exists():
+            raise ValueError("Complaint Intelligence feedback requires a local SQLite database.")
+
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                self._ensure_feedback_table(conn)
+                request = self._fetch_request(conn, sr_id)
+                if request is None:
+                    raise ValueError(f"No Complaint Intelligence record is available for SR {sr_id}.")
+                conn.execute(
+                    """
+                    INSERT INTO recommendation_feedback (
+                        service_request_pk, outcome, actor_user_id, source, recommended_item, notes
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(request["id"]),
+                        normalized_outcome,
+                        actor_user_id,
+                        source,
+                        _clean_optional(recommended_item),
+                        _clean_optional(notes),
+                    ),
+                )
+                conn.commit()
+                feedback_summary = self._fetch_feedback_summary(conn, request["id"])
+        except sqlite3.Error as exc:
+            raise ValueError(f"Complaint Intelligence feedback write failed: {exc}") from exc
+
+        return {
+            "success": True,
+            "srId": str(sr_id),
+            "outcome": normalized_outcome,
+            "feedbackSummary": feedback_summary,
+            "message": f"Recorded Complaint Intelligence feedback as {normalized_outcome.replace('_', ' ')}.",
         }
 
     @staticmethod
@@ -231,6 +291,119 @@ class ComplaintIntelligenceService:
         return [str(row["resolution_notes"]) for row in rows]
 
     @staticmethod
+    def _fetch_model_family_trends(conn: sqlite3.Connection, request: sqlite3.Row) -> dict[str, object] | None:
+        model_family = _model_family_prefix(request["model_number"])
+        if model_family is None:
+            return None
+        rows = conn.execute(
+            """
+            SELECT sr.id
+            FROM service_requests sr
+            WHERE sr.model_number IS NOT NULL
+              AND REPLACE(REPLACE(REPLACE(UPPER(sr.model_number), '-', ''), '/', ''), '.', '') LIKE ?
+            ORDER BY sr.completed_at DESC
+            LIMIT 100
+            """,
+            (f"{model_family}%",),
+        ).fetchall()
+        request_ids = [int(row["id"]) for row in rows]
+        if not request_ids:
+            return None
+        placeholders = ",".join("?" for _ in request_ids)
+        complaint_rows = conn.execute(
+            f"""
+            SELECT ct.tag, COUNT(*) AS tag_count
+            FROM complaint_tags ct
+            WHERE ct.service_request_pk IN ({placeholders})
+            GROUP BY ct.tag
+            ORDER BY tag_count DESC, ct.tag ASC
+            LIMIT 5
+            """,
+            request_ids,
+        ).fetchall()
+        part_rows = conn.execute(
+            f"""
+            SELECT COALESCE(NULLIF(bi.sku, ''), bi.description) AS item, bi.item_type, COUNT(DISTINCT bi.service_request_pk) AS seen_count
+            FROM billed_items bi
+            WHERE bi.service_request_pk IN ({placeholders})
+              AND bi.item_type != 'labor'
+            GROUP BY COALESCE(NULLIF(bi.sku, ''), bi.description), bi.item_type
+            ORDER BY seen_count DESC, item ASC
+            LIMIT 5
+            """,
+            request_ids,
+        ).fetchall()
+        return {
+            "modelFamily": model_family,
+            "requestCount": len(request_ids),
+            "topComplaintTags": [{"tag": row["tag"], "count": row["tag_count"]} for row in complaint_rows],
+            "topParts": [{"item": row["item"], "itemType": row["item_type"], "count": row["seen_count"]} for row in part_rows],
+        }
+
+    @staticmethod
+    def _fetch_feedback_summary(conn: sqlite3.Connection, service_request_pk: int) -> dict[str, object]:
+        ComplaintIntelligenceService._ensure_feedback_table(conn)
+        rows = conn.execute(
+            """
+            SELECT outcome, COUNT(*) AS feedback_count, MAX(created_at) AS last_created_at
+            FROM recommendation_feedback
+            WHERE service_request_pk = ?
+            GROUP BY outcome
+            ORDER BY outcome ASC
+            """,
+            (service_request_pk,),
+        ).fetchall()
+        counts = {str(row["outcome"]): int(row["feedback_count"]) for row in rows}
+        latest = conn.execute(
+            """
+            SELECT outcome, source, recommended_item, notes, actor_user_id, created_at
+            FROM recommendation_feedback
+            WHERE service_request_pk = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (service_request_pk,),
+        ).fetchone()
+        return {
+            "counts": counts,
+            "latest": (
+                {
+                    "outcome": latest["outcome"],
+                    "source": latest["source"],
+                    "recommendedItem": latest["recommended_item"],
+                    "notes": latest["notes"],
+                    "actorUserId": latest["actor_user_id"],
+                    "createdAt": latest["created_at"],
+                }
+                if latest is not None
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _ensure_feedback_table(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recommendation_feedback (
+                id INTEGER PRIMARY KEY,
+                service_request_pk INTEGER NOT NULL REFERENCES service_requests(id),
+                outcome VARCHAR(32) NOT NULL,
+                actor_user_id INTEGER,
+                source VARCHAR(64) NOT NULL,
+                recommended_item VARCHAR(128),
+                notes TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_feedback_sr_outcome
+            ON recommendation_feedback (service_request_pk, outcome, created_at)
+            """
+        )
+
+    @staticmethod
     def _build_evidence_packet(
         *,
         request: sqlite3.Row,
@@ -292,6 +465,9 @@ class ComplaintIntelligenceService:
             "similarRequestCount": 0,
             "recommendations": [],
             "commonResolutions": [],
+            "modelFamilyTrends": None,
+            "feedbackSummary": {"counts": {}, "latest": None},
+            "feedbackCaptureEnabled": False,
             "evidencePacket": None,
         }
 
@@ -314,6 +490,25 @@ def _truncate(value: str | None, max_length: int) -> str | None:
     if len(text_value) <= max_length:
         return text_value
     return f"{text_value[:max_length].rstrip()}..."
+
+
+def _clean_optional(value: str | None) -> str | None:
+    cleaned = str(value or "").strip()
+    return cleaned or None
+
+
+def _normalize_feedback_outcome(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"helpful", "not_helpful", "needs_review"}:
+        return normalized
+    return None
+
+
+def _model_family_prefix(model_number: str | None) -> str | None:
+    cleaned = "".join(character for character in str(model_number or "").upper() if character.isalnum())
+    if not cleaned:
+        return None
+    return cleaned[:5]
 
 
 def _confidence_label(similar_request_count: int, recommendations: list[dict[str, object]]) -> str:
