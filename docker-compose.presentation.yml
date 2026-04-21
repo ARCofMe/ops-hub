@@ -35,7 +35,7 @@ services:
       - ../bluebot-discord-extension:/workspace/bluebot-discord-extension:ro
       - ../photo_ingest/mdsn-photo-ingest:/workspace/photo_ingest/mdsn-photo-ingest:ro
       - ../dispatcher-routing-app:/workspace/dispatcher-routing-app:ro
-      - ../complaint-intelligence:/workspace/complaint-intelligence:ro
+      - ../complaint-intelligence:/workspace/complaint-intelligence
     ports:
       - "8787:8787"
     restart: unless-stopped

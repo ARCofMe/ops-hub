@@ -203,9 +203,9 @@ class ComplaintIntelligenceService:
                 conn.execute(
                     """
                     INSERT INTO recommendation_feedback (
-                        service_request_pk, outcome, actor_user_id, source, recommended_item, notes
+                        service_request_pk, outcome, actor_user_id, source, recommended_item, notes, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """,
                     (
                         int(request["id"]),
@@ -261,9 +261,9 @@ class ComplaintIntelligenceService:
                     conn.execute(
                         """
                         INSERT INTO recommendation_feedback (
-                            service_request_pk, outcome, actor_user_id, source, recommended_item, notes
+                            service_request_pk, outcome, actor_user_id, source, recommended_item, notes, created_at
                         )
-                        VALUES (?, 'helpful', NULL, 'historical_completion', ?, 'Seeded from completed SR billed item.')
+                        VALUES (?, 'helpful', NULL, 'historical_completion', ?, 'Seeded from completed SR billed item.', CURRENT_TIMESTAMP)
                         """,
                         (row["service_request_pk"], row["recommended_item"]),
                     )
