@@ -30,10 +30,39 @@ def tenant_status_options(*, base_path: str | None) -> list[str]:
     service_request = inventory.get("service_request")
     if not isinstance(service_request, dict):
         return []
-    values = service_request.get("tenant_ui_status_options")
-    if not isinstance(values, list):
+    values = _status_values_from_list(service_request.get("tenant_ui_status_options"))
+    if values:
+        return values
+    values = _status_values_from_list(service_request.get("observed_status_values"))
+    live_tenant = inventory.get("live_tenant_extract")
+    if isinstance(live_tenant, dict):
+        live_service_request = live_tenant.get("service_request")
+        if isinstance(live_service_request, dict):
+            values.extend(_status_values_from_list(live_service_request.get("distinct_statuses")))
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(value)
+    return deduped
+
+
+def _status_values_from_list(raw_values: object) -> list[str]:
+    if not isinstance(raw_values, list):
         return []
-    return [str(value).strip() for value in values if str(value).strip()]
+    values: list[str] = []
+    for entry in raw_values:
+        if isinstance(entry, dict):
+            value = entry.get("value")
+        else:
+            value = entry
+        normalized = str(value or "").strip()
+        if normalized:
+            values.append(normalized)
+    return values
 
 
 def describe_service_request_status(
