@@ -133,8 +133,23 @@ def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
         ],
         "categoryCounts": category_counts,
         "primarySurfaceCounts": surface_counts,
+        "surfaceActions": _surface_actions(surface_counts),
         "statusMeta": status_meta,
     }
+
+
+def _surface_actions(surface_counts: dict[str, int]) -> list[dict[str, object]]:
+    actions = [
+        ("partsdesk", "PartsDesk", "Review part-blocked and ordering statuses."),
+        ("routedesk", "RouteDesk", "Review scheduling, quote, and customer follow-up statuses."),
+        ("ops_hub", "Ops Hub", "Review triage, vendor, and escalation statuses."),
+        ("archive", "Archive", "Closed statuses should stay out of active queues."),
+    ]
+    return [
+        {"surface": surface, "label": label, "count": surface_counts.get(surface, 0), "action": action}
+        for surface, label, action in actions
+        if surface_counts.get(surface, 0) > 0
+    ]
 
 
 def _is_closed_status(normalized: str) -> bool:

@@ -28,6 +28,12 @@ def test_status_catalog_payload_counts_primary_surfaces(tmp_path: Path) -> None:
     assert payload["primarySurfaceCounts"]["partsdesk"] == 1
     assert payload["primarySurfaceCounts"]["routedesk"] == 1
     assert payload["primarySurfaceCounts"]["archive"] == 1
+    assert payload["surfaceActions"][0] == {
+        "surface": "partsdesk",
+        "label": "PartsDesk",
+        "count": 1,
+        "action": "Review part-blocked and ordering statuses.",
+    }
 
 
 def test_status_catalog_payload_falls_back_to_observed_and_live_statuses(tmp_path: Path) -> None:
