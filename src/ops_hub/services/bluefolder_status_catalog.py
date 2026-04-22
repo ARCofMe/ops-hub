@@ -81,6 +81,14 @@ def describe_service_request_status(
 
 def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
     options = tenant_status_options(base_path=base_path)
+    status_meta = [describe_service_request_status(value, base_path=base_path) for value in options]
+    surface_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    for item in status_meta:
+        surface = str(item.get("primarySurface") or "ops_hub")
+        category = str(item.get("category") or "other")
+        surface_counts[surface] = surface_counts.get(surface, 0) + 1
+        category_counts[category] = category_counts.get(category, 0) + 1
     return {
         "tenantStatusOptions": options,
         "knownCount": len(options),
@@ -94,7 +102,9 @@ def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
             {"key": "closed", "label": "Closed"},
             {"key": "other", "label": "Other"},
         ],
-        "statusMeta": [describe_service_request_status(value, base_path=base_path) for value in options],
+        "categoryCounts": category_counts,
+        "primarySurfaceCounts": surface_counts,
+        "statusMeta": status_meta,
     }
 
 

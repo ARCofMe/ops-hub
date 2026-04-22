@@ -433,6 +433,21 @@ class ComplaintIntelligenceService:
                     LIMIT 5
                     """
                 ).fetchall()
+                decision_rows = conn.execute(
+                    """
+                    SELECT decision, COUNT(*) AS decision_count, MAX(created_at) AS latest_decision_at
+                    FROM recommendation_part_overrides
+                    GROUP BY decision
+                    """
+                ).fetchall()
+                recent_decisions = conn.execute(
+                    """
+                    SELECT model_number, complaint_tag, recommended_item, decision, created_at
+                    FROM recommendation_part_overrides
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 5
+                    """
+                ).fetchall()
         except sqlite3.Error as exc:
             return {"success": True, "available": False, "message": f"Complaint Intelligence dashboard failed: {exc}"}
 
@@ -440,6 +455,7 @@ class ComplaintIntelligenceService:
         needs_review = int(totals["needs_review"] or 0)
         not_helpful = int(totals["not_helpful"] or 0)
         total = int(totals["total_feedback"] or 0)
+        decision_counts = {str(row["decision"]): int(row["decision_count"] or 0) for row in decision_rows}
         return {
             "success": True,
             "available": True,
@@ -447,6 +463,9 @@ class ComplaintIntelligenceService:
             "helpfulCount": helpful,
             "needsReviewCount": needs_review,
             "notHelpfulCount": not_helpful,
+            "trustedCount": decision_counts.get("trusted", 0),
+            "downgradedCount": decision_counts.get("downgraded", 0),
+            "excludedCount": decision_counts.get("excluded", 0),
             "helpfulRate": round(helpful / total, 3) if total else None,
             "reviewQueueCount": needs_review + not_helpful,
             "weakRecommendations": [
@@ -456,6 +475,16 @@ class ComplaintIntelligenceService:
                     "latestFeedbackAt": row["latest_feedback_at"],
                 }
                 for row in weak_rows
+            ],
+            "recentReviewDecisions": [
+                {
+                    "modelNumber": row["model_number"],
+                    "complaintTag": row["complaint_tag"],
+                    "recommendedItem": row["recommended_item"],
+                    "decision": row["decision"],
+                    "createdAt": row["created_at"],
+                }
+                for row in recent_decisions
             ],
         }
 

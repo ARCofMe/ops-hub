@@ -175,6 +175,12 @@ def test_complaint_intelligence_resolves_review_into_part_decision(tmp_path: Pat
     assert queue["items"] == []
     assert payload["recommendations"] == []
 
+    dashboard = asyncio.run(service.get_dashboard_payload())
+    assert dashboard["excludedCount"] == 1
+    assert dashboard["trustedCount"] == 0
+    assert dashboard["downgradedCount"] == 0
+    assert dashboard["recentReviewDecisions"][0]["recommendedItem"] == "FAN-1"
+
 
 def test_complaint_intelligence_seeds_historical_feedback(tmp_path: Path) -> None:
     db_path = tmp_path / "complaint_intelligence.db"
