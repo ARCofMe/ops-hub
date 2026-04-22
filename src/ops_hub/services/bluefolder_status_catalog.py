@@ -80,6 +80,7 @@ def describe_service_request_status(
     is_waiting_customer = _is_waiting_customer_status(normalized)
     is_scheduling = _is_scheduling_status(normalized)
     is_review = _is_review_status(normalized)
+    routing = _status_routing(normalized)
     category = _category_for_status(
         normalized,
         is_closed=is_closed,
@@ -104,7 +105,12 @@ def describe_service_request_status(
         "isWaitingCustomer": is_waiting_customer,
         "isScheduling": is_scheduling,
         "isReview": is_review,
-        "primarySurface": _primary_surface(category),
+        "primarySurface": routing.get("primarySurface") or _primary_surface(category),
+        "workstream": routing.get("workstream") or category,
+        "statusIntent": routing.get("statusIntent"),
+        "actionRequired": routing.get("actionRequired"),
+        "blocksScheduling": bool(routing.get("blocksScheduling")),
+        "schedulingReleaseCondition": routing.get("schedulingReleaseCondition"),
     }
 
 
@@ -113,11 +119,14 @@ def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
     status_meta = [describe_service_request_status(value, base_path=base_path) for value in options]
     surface_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
+    workstream_counts: dict[str, int] = {}
     for item in status_meta:
         surface = str(item.get("primarySurface") or "ops_hub")
         category = str(item.get("category") or "other")
+        workstream = str(item.get("workstream") or category)
         surface_counts[surface] = surface_counts.get(surface, 0) + 1
         category_counts[category] = category_counts.get(category, 0) + 1
+        workstream_counts[workstream] = workstream_counts.get(workstream, 0) + 1
     return {
         "tenantStatusOptions": options,
         "knownCount": len(options),
@@ -132,6 +141,7 @@ def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
             {"key": "other", "label": "Other"},
         ],
         "categoryCounts": category_counts,
+        "workstreamCounts": workstream_counts,
         "primarySurfaceCounts": surface_counts,
         "surfaceActions": _surface_actions(surface_counts),
         "statusMeta": status_meta,
@@ -140,8 +150,8 @@ def status_catalog_payload(*, base_path: str | None) -> dict[str, object]:
 
 def _surface_actions(surface_counts: dict[str, int]) -> list[dict[str, object]]:
     actions = [
-        ("partsdesk", "PartsDesk", "Review part-blocked and ordering statuses."),
-        ("routedesk", "RouteDesk", "Review scheduling, quote, and customer follow-up statuses."),
+        ("partsdesk", "PartsDesk", "Own part ordering, ETA, and tracking statuses before dispatch schedules."),
+        ("routedesk", "RouteDesk", "Own scheduling, quote, and customer follow-up statuses."),
         ("ops_hub", "Ops Hub", "Review triage, vendor, and escalation statuses."),
         ("archive", "Archive", "Closed statuses should stay out of active queues."),
     ]
@@ -287,3 +297,55 @@ def _primary_surface(category: str) -> str:
         "closed": "archive",
         "other": "ops_hub",
     }.get(category, "ops_hub")
+
+
+def _status_routing(normalized: str) -> dict[str, object]:
+    """Return operational ownership metadata for a tenant SR status."""
+    if not normalized:
+        return {}
+    if any(phrase in normalized for phrase in {"check tracking", "tracking"}):
+        return {
+            "primarySurface": "partsdesk",
+            "workstream": "parts",
+            "statusIntent": "parts_tracking",
+            "actionRequired": "PartsDesk should verify tracking and ETA, then update the SR before dispatch schedules from it.",
+            "blocksScheduling": True,
+            "schedulingReleaseCondition": "Tracking or ETA is confirmed and visible to dispatch.",
+        }
+    if any(
+        phrase in normalized
+        for phrase in {
+            "need parts",
+            "needs parts",
+            "parts/schedule",
+            "submit order",
+            "order parts",
+        }
+    ):
+        return {
+            "primarySurface": "partsdesk",
+            "workstream": "parts",
+            "statusIntent": "parts_order_required",
+            "actionRequired": "PartsDesk should identify/order the needed parts and capture an ETA before RouteDesk schedules the return call.",
+            "blocksScheduling": True,
+            "schedulingReleaseCondition": "Required parts are ordered and an ETA or received date is available.",
+        }
+    if any(phrase in normalized for phrase in {"part eta", "part ordered", "parts ordered", "waiting parts", "awaiting parts", "backordered"}):
+        return {
+            "primarySurface": "partsdesk",
+            "workstream": "parts",
+            "statusIntent": "parts_eta_pending",
+            "actionRequired": "PartsDesk should maintain ETA accuracy and hand off to RouteDesk when the visit can be scheduled.",
+            "blocksScheduling": True,
+            "schedulingReleaseCondition": "ETA is reliable enough to schedule or the part has arrived.",
+        }
+    if any(phrase in normalized for phrase in {"part received", "parts received", "ready to schedule"}):
+        return {
+            "primarySurface": "routedesk",
+            "workstream": "dispatch",
+            "statusIntent": "schedule_return_visit",
+            "actionRequired": "RouteDesk should schedule the return visit; PartsDesk should only remain involved if received parts are disputed.",
+            "blocksScheduling": False,
+            "schedulingReleaseCondition": "Parts are available for the return visit.",
+        }
+    return {}

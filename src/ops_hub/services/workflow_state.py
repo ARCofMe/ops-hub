@@ -1341,7 +1341,8 @@ class WorkflowStateService:
     @staticmethod
     def _is_active_parts_needed_status(service_request_status: str | None) -> bool:
         """Return whether the current SR status still reflects active parts-needed work."""
-        return bool(describe_service_request_status(service_request_status, base_path=None).get("isActiveParts"))
+        status_meta = describe_service_request_status(service_request_status, base_path=None)
+        return bool(status_meta.get("primarySurface") == "partsdesk")
 
     @staticmethod
     def _is_closed_service_request_status(service_request_status: str | None) -> bool:

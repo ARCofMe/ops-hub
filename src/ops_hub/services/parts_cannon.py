@@ -1080,7 +1080,7 @@ class PartsHandoffService:
         active_statuses = [
             str(item.get("raw") or "").strip()
             for item in catalog.get("statusMeta", [])
-            if isinstance(item, dict) and item.get("isActiveParts")
+            if isinstance(item, dict) and item.get("primarySurface") == "partsdesk"
         ]
         if not active_statuses:
             return []
