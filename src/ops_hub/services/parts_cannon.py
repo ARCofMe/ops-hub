@@ -750,6 +750,85 @@ class PartsHandoffService:
             "request": await self._record_payload(record),
         }
 
+    async def claim_case_payload(self, *, reference: str, parts_user_id: int | None, actor_user_id: int) -> dict[str, object]:
+        """Assign or clear all open tracked requests for a parts case and return the refreshed case payload."""
+        normalized_reference = reference.strip()
+        if not normalized_reference:
+            raise ValueError("Parts case reference is required.")
+
+        case = await self._parts_case_for_reference(normalized_reference)
+        open_request_ids = set(case.open_request_ids or [])
+        if not open_request_ids:
+            raise ValueError(
+                f"Parts case `{case.reference}` has no open tracked requests to assign. "
+                "Create or sync a tracked parts request first."
+            )
+
+        records = self.request_store.load()
+        updated_records: list[PartRequestRecord] = []
+        updated_at = datetime.now(UTC).isoformat(timespec="seconds")
+        for index, record in enumerate(records):
+            if record.request_id not in open_request_ids:
+                continue
+            updated = PartRequestRecord(
+                request_id=record.request_id,
+                reference=record.reference,
+                description=record.description,
+                requested_by_user_id=record.requested_by_user_id,
+                technician_bluefolder_user_id=record.technician_bluefolder_user_id,
+                assigned_parts_user_id=parts_user_id,
+                status=record.status,
+                created_at=record.created_at,
+                updated_at=updated_at,
+                last_synced_at=record.last_synced_at,
+                last_reconciled_at=record.last_reconciled_at,
+                downstream_note=record.downstream_note,
+            )
+            records[index] = updated
+            updated_records.append(updated)
+
+        if not updated_records:
+            raise ValueError(f"Parts case `{case.reference}` has no matching open tracked requests to assign.")
+
+        self.request_store.save(records)
+        if self.workflow_state_service is not None:
+            summary = (
+                f"Assigned parts case {case.reference} to parts user {parts_user_id}."
+                if parts_user_id is not None
+                else f"Cleared parts owner for case {case.reference}."
+            )
+            self.workflow_state_service.record_event(
+                event_type="parts_case_claimed" if parts_user_id is not None else "parts_case_unclaimed",
+                source="ops_hub.parts_queue",
+                reference=case.reference,
+                sr_id=case.sr_id,
+                actor_user_id=actor_user_id,
+                summary=summary,
+                details=(
+                    f"assigned_parts_user_id={parts_user_id}; request_ids="
+                    f"{','.join(str(record.request_id) for record in updated_records)}"
+                    if parts_user_id is not None
+                    else f"request_ids={','.join(str(record.request_id) for record in updated_records)}"
+                ),
+                occurred_at=updated_at,
+            )
+
+        if parts_user_id is None:
+            topic = "parts.case.unclaimed"
+            message = f"Unassigned parts case {case.reference}."
+            response = f"Parts case {case.reference} assignment cleared."
+        else:
+            topic = "parts.case.claimed"
+            message = f"Assigned parts case {case.reference} to parts user {parts_user_id}."
+            response = f"Parts case {case.reference} assigned to {self._discord_user_label(parts_user_id)}."
+        await self.notifications.send_notice(topic=topic, message=message)
+
+        return {
+            "success": True,
+            "message": response,
+            **(await self.get_parts_case_payload(reference=case.reference)),
+        }
+
     async def _live_complaint_context(self, sr_id: int) -> dict[str, object] | None:
         bluefolder_service = getattr(self.workflow_state_service, "bluefolder_service", None)
         if bluefolder_service is None:
@@ -931,6 +1010,15 @@ class PartsHandoffService:
             for record in self._matching_records_for_reference(reference)
             if record.status not in {"resolved", "cancelled"}
         ]
+        matching_records = self._matching_records_for_reference(reference)
+        assigned_parts_user_id = next(
+            (
+                record.assigned_parts_user_id
+                for record in sorted(matching_records, key=lambda item: item.updated_at, reverse=True)
+                if record.assigned_parts_user_id is not None
+            ),
+            None,
+        )
         return type(
             "FallbackPartsCase",
             (),
@@ -942,9 +1030,10 @@ class PartsHandoffService:
                 "stage_label": "Tracked Requests Only",
                 "status": "open" if open_request_ids else "inactive",
                 "open_request_ids": open_request_ids,
-                "assigned_parts_user_id": None,
+                "assigned_parts_user_id": assigned_parts_user_id,
                 "requested_by_user_id": None,
                 "technician_bluefolder_user_id": None,
+                "service_request_status": None,
                 "next_action": "Review the tracked request and confirm the next parts step.",
                 "blocker": None,
                 "latest_status_text": None,

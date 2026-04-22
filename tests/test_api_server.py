@@ -1567,6 +1567,59 @@ def test_parts_posts_request_claim() -> None:
     assert payload["parts_user_id"] == 77
 
 
+def test_parts_posts_case_claim() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        parts_cannon_service=SimpleNamespace(
+            claim_case_payload=lambda **kwargs: asyncio.sleep(0, result=kwargs)
+        ),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/parts/cases/SR-100/claim",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+            body={},
+        )
+    )
+
+    assert status == HTTPStatus.OK
+    assert payload["reference"] == "SR-100"
+    assert payload["parts_user_id"] == 77
+
+
+def test_parts_rejects_invalid_case_claim_owner() -> None:
+    settings = SimpleNamespace(technician_api_token="secret")
+    container = SimpleNamespace(
+        technician_api_service=SimpleNamespace(health=_health),
+        technician_directory_service=SimpleNamespace(
+            resolve_identity=lambda **_: SimpleNamespace(discord_user_id=77, is_parts=True, is_admin=False)
+        ),
+        parts_cannon_service=SimpleNamespace(),
+    )
+
+    status, payload = asyncio.run(
+        dispatch_technician_api_request(
+            settings=settings,
+            container=container,
+            method="POST",
+            path="/parts/cases/SR-100/claim",
+            headers={"Authorization": "Bearer secret", "X-Parts-Subject": "77"},
+            body={"assignedPartsUserId": "bad"},
+        )
+    )
+
+    assert status == HTTPStatus.BAD_REQUEST
+    assert payload["message"] == "assignedPartsUserId must be an integer when provided."
+
+
 def test_parts_posts_bluefolder_ready_update() -> None:
     settings = SimpleNamespace(technician_api_token="secret")
     container = SimpleNamespace(

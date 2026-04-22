@@ -1051,6 +1051,39 @@ async def dispatch_technician_api_request(
             except ValueError as exc:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
+        payload_body = body or {}
+        if method == "POST" and route_path.startswith("/parts/cases/"):
+            action_match = _path_action(route_path, prefix="/parts/cases/")
+            if action_match is None:
+                return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            reference, action = action_match
+            if not reference:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": "Invalid parts case reference."}
+            try:
+                if action == "claim":
+                    assigned_parts_user_id = payload_body.get("assignedPartsUserId")
+                    if assigned_parts_user_id is not None and not isinstance(assigned_parts_user_id, int):
+                        return HTTPStatus.BAD_REQUEST, {
+                            "success": False,
+                            "message": "assignedPartsUserId must be an integer when provided.",
+                        }
+                    payload = await container.parts_cannon_service.claim_case_payload(
+                        reference=reference,
+                        parts_user_id=assigned_parts_user_id if isinstance(assigned_parts_user_id, int) else parts_user_id,
+                        actor_user_id=parts_user_id,
+                    )
+                elif action == "unclaim":
+                    payload = await container.parts_cannon_service.claim_case_payload(
+                        reference=reference,
+                        parts_user_id=None,
+                        actor_user_id=parts_user_id,
+                    )
+                else:
+                    return HTTPStatus.NOT_FOUND, {"success": False, "message": "Not found"}
+            except ValueError as exc:
+                return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
+            return HTTPStatus.OK, payload
+
         if method == "GET" and route_path == "/parts/requests":
             return HTTPStatus.OK, await container.parts_cannon_service.get_parts_requests_payload(
                 status=(query.get("status") or [None])[0],
@@ -1069,7 +1102,6 @@ async def dispatch_technician_api_request(
             except ValueError as exc:
                 return HTTPStatus.BAD_REQUEST, {"success": False, "message": str(exc)}
 
-        payload_body = body or {}
         if method == "POST" and route_path == "/parts/requests/sync":
             return HTTPStatus.OK, await container.parts_cannon_service.sync_requests_payload()
 

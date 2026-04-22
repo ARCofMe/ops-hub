@@ -235,6 +235,57 @@ def test_unclaim_parts_request_clears_assignment() -> None:
     assert notifications.records[-1].topic == "parts.request.unclaimed"
 
 
+def test_claim_parts_case_assigns_open_tracked_requests() -> None:
+    service, notifications = _build_service()
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-300",
+                description="Need heating element",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.create_request(
+            PartRequestCreate(
+                reference="SR-300",
+                description="Need igniter",
+                requested_by_user_id=42,
+            )
+        )
+    )
+    asyncio.run(
+        service.update_request(
+            PartRequestUpdate(
+                request_id=2,
+                status="resolved",
+                updated_by_user_id=99,
+            )
+        )
+    )
+
+    payload = asyncio.run(service.claim_case_payload(reference="SR-300", parts_user_id=77, actor_user_id=77))
+
+    assert payload["success"] is True
+    assert "assigned to <@77>" in payload["message"]
+    assert payload["case"]["assignedPartsUserId"] == 77
+    assert service.request_store.records[0].assigned_parts_user_id == 77
+    assert service.request_store.records[1].assigned_parts_user_id is None
+    assert notifications.records[-1].topic == "parts.case.claimed"
+
+
+def test_claim_parts_case_requires_open_tracked_requests() -> None:
+    service, _ = _build_service()
+
+    try:
+        asyncio.run(service.claim_case_payload(reference="SR-300", parts_user_id=77, actor_user_id=77))
+    except ValueError as exc:
+        assert "no open tracked requests" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_parts_queue_summary_reports_counts() -> None:
     service, _ = _build_service()
     asyncio.run(
