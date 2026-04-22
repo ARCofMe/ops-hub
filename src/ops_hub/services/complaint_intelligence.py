@@ -455,7 +455,9 @@ class ComplaintIntelligenceService:
         needs_review = int(totals["needs_review"] or 0)
         not_helpful = int(totals["not_helpful"] or 0)
         total = int(totals["total_feedback"] or 0)
+        weak_total = needs_review + not_helpful
         decision_counts = {str(row["decision"]): int(row["decision_count"] or 0) for row in decision_rows}
+        decision_total = sum(decision_counts.values())
         return {
             "success": True,
             "available": True,
@@ -466,8 +468,16 @@ class ComplaintIntelligenceService:
             "trustedCount": decision_counts.get("trusted", 0),
             "downgradedCount": decision_counts.get("downgraded", 0),
             "excludedCount": decision_counts.get("excluded", 0),
+            "decisionVolume": decision_total,
             "helpfulRate": round(helpful / total, 3) if total else None,
-            "reviewQueueCount": needs_review + not_helpful,
+            "weakFeedbackRate": round(weak_total / total, 3) if total else None,
+            "reviewQueueCount": weak_total,
+            "feedbackHealth": _dashboard_feedback_health(
+                total=total,
+                helpful=helpful,
+                needs_review=needs_review,
+                not_helpful=not_helpful,
+            ),
             "weakRecommendations": [
                 {
                     "recommendedItem": row["recommended_item"],
@@ -1021,6 +1031,30 @@ def _feedback_health(feedback_summary: dict[str, object]) -> dict[str, object]:
         "label": label,
         "totalFeedback": total,
         "helpfulRate": helpful_rate,
+    }
+
+
+def _dashboard_feedback_health(*, total: int, helpful: int, needs_review: int, not_helpful: int) -> dict[str, object]:
+    weak_total = needs_review + not_helpful
+    if total == 0:
+        status = "no_feedback"
+        label = "No evidence feedback has been captured yet"
+    elif not_helpful > helpful:
+        status = "caution"
+        label = "Weak evidence feedback is outpacing helpful feedback"
+    elif weak_total > 0:
+        status = "review_needed"
+        label = "Some evidence feedback still needs operator review"
+    else:
+        status = "healthy"
+        label = "Evidence feedback is currently supportive"
+    return {
+        "status": status,
+        "label": label,
+        "totalFeedback": total,
+        "weakFeedback": weak_total,
+        "helpfulRate": round(helpful / total, 3) if total else None,
+        "weakFeedbackRate": round(weak_total / total, 3) if total else None,
     }
 
 

@@ -137,6 +137,8 @@ def test_complaint_intelligence_dashboard_and_review_queue(tmp_path: Path) -> No
     assert dashboard["available"] is True
     assert dashboard["feedbackVolume"] == 1
     assert dashboard["reviewQueueCount"] == 1
+    assert dashboard["weakFeedbackRate"] == 1.0
+    assert dashboard["feedbackHealth"]["status"] == "caution"
     assert dashboard["weakRecommendations"][0]["recommendedItem"] == "FAN-1"
     assert queue["available"] is True
     assert queue["items"][0]["serviceRequestId"] == "1001"
@@ -179,6 +181,7 @@ def test_complaint_intelligence_resolves_review_into_part_decision(tmp_path: Pat
     assert dashboard["excludedCount"] == 1
     assert dashboard["trustedCount"] == 0
     assert dashboard["downgradedCount"] == 0
+    assert dashboard["decisionVolume"] == 1
     assert dashboard["recentReviewDecisions"][0]["recommendedItem"] == "FAN-1"
 
 
