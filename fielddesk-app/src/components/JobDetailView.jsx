@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { captureNativePhoto, openNativeNavigation, requestNativeLocation } from "../nativeBridge";
 
 const STATUS_ACTIONS = [
   ["En route", "enroute"],
@@ -16,12 +17,25 @@ export default function JobDetailView({
   error,
   actionState,
   onAction,
+  onQueueOfflineAction,
+  bridgeAvailable,
 }) {
   const [note, setNote] = useState("");
   const [partsNeed, setPartsNeed] = useState("");
   const [quoteNeed, setQuoteNeed] = useState("");
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [photoLabel, setPhotoLabel] = useState("before");
+  const [closeoutDraft, setCloseoutDraft] = useState({
+    laborCode: "diagnostic",
+    workPerformed: "",
+    durationMinutes: 60,
+    signedBy: "",
+    customerApproved: false,
+    finalOutcome: "completed",
+    outcomeNote: "",
+  });
+  const [closeoutPreview, setCloseoutPreview] = useState(null);
+  const [bridgeMessage, setBridgeMessage] = useState("");
 
   const sortedTimeline = useMemo(
     () => [...(timeline || [])].sort((left, right) => String(right.occurredAt || "").localeCompare(String(left.occurredAt || ""))),
@@ -68,6 +82,14 @@ export default function JobDetailView({
         <strong>Customer and stop</strong>
         <p>{job.address || "Address unavailable"}</p>
         <p className="muted">{describeStatusMeta(job.statusMeta)}</p>
+        <div className="action-row">
+          <button type="button" className="secondary-button" onClick={() => setBridgeMessage(openNativeNavigation(job.address).message)}>
+            Open native navigation
+          </button>
+          <button type="button" className="secondary-button" onClick={() => setBridgeMessage(requestNativeLocation().message)}>
+            Request device location
+          </button>
+        </div>
       </div>
 
       <div className="action-grid">
@@ -140,14 +162,130 @@ export default function JobDetailView({
           <button type="button" disabled={actionState?.loading} onClick={() => onAction("photoPrepare", { label: photoLabel })}>
             Prepare photo handoff
           </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={actionState?.loading}
+            onClick={() => setBridgeMessage(captureNativePhoto(photoLabel, job.id).message)}
+          >
+            Capture photo (native)
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={actionState?.loading}
+            onClick={() =>
+              setBridgeMessage(
+                onQueueOfflineAction?.("photo_prepare", { srId: job.id, label: photoLabel })?.message || "Queued photo prep."
+              )
+            }
+          >
+            Queue offline photo step
+          </button>
         </div>
         <div className="chip-list">
           <span className="queue-chip">Found: {formatList(photos?.foundTags)}</span>
           <span className="queue-chip">Missing: {formatList(photos?.missingTags)}</span>
+          <span className="queue-chip">Bridge: {bridgeAvailable ? "available" : "browser only"}</span>
         </div>
       </div>
 
+      <div className="detail-block">
+        <strong>Closeout</strong>
+        <label className="field">
+          <span>Labor code</span>
+          <input
+            value={closeoutDraft.laborCode}
+            onChange={(event) => setCloseoutDraft((current) => ({ ...current, laborCode: event.target.value }))}
+            placeholder="diagnostic"
+          />
+        </label>
+        <label className="field">
+          <span>Work performed</span>
+          <textarea
+            rows={4}
+            value={closeoutDraft.workPerformed}
+            onChange={(event) => setCloseoutDraft((current) => ({ ...current, workPerformed: event.target.value }))}
+            placeholder="Describe diagnostic findings, repair performed, and final condition"
+          />
+        </label>
+        <div className="detail-grid">
+          <label className="field">
+            <span>Duration minutes</span>
+            <input
+              type="number"
+              min="1"
+              value={closeoutDraft.durationMinutes}
+              onChange={(event) => setCloseoutDraft((current) => ({ ...current, durationMinutes: Number(event.target.value || 0) }))}
+            />
+          </label>
+          <label className="field">
+            <span>Signed by</span>
+            <input
+              value={closeoutDraft.signedBy}
+              onChange={(event) => setCloseoutDraft((current) => ({ ...current, signedBy: event.target.value }))}
+              placeholder="Customer name"
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span>Outcome note</span>
+          <input
+            value={closeoutDraft.outcomeNote}
+            onChange={(event) => setCloseoutDraft((current) => ({ ...current, outcomeNote: event.target.value }))}
+            placeholder="Optional completion or follow-up note"
+          />
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={closeoutDraft.customerApproved}
+            onChange={(event) => setCloseoutDraft((current) => ({ ...current, customerApproved: event.target.checked }))}
+          />
+          <span>Customer approved work</span>
+        </label>
+        <div className="action-row">
+          <button
+            type="button"
+            disabled={actionState?.loading || !closeoutDraft.workPerformed.trim()}
+            onClick={async () => {
+              const result = await onAction("closeoutPreview", { body: buildCloseoutPayload(closeoutDraft) });
+              setCloseoutPreview(result || null);
+            }}
+          >
+            Preview closeout
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={actionState?.loading || !closeoutDraft.workPerformed.trim()}
+            onClick={() => onAction("closeoutSubmit", { body: buildCloseoutPayload(closeoutDraft) })}
+          >
+            Submit closeout
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              setBridgeMessage(
+                onQueueOfflineAction?.("closeout_submit", { srId: job.id, ...buildCloseoutPayload(closeoutDraft) })?.message || "Queued closeout."
+              )
+            }
+          >
+            Queue offline closeout
+          </button>
+        </div>
+        {closeoutPreview && (
+          <div className="chip-list">
+            <span className="queue-chip">Preview labor: {closeoutPreview.laborCode || closeoutDraft.laborCode}</span>
+            <span className="queue-chip">Duration: {closeoutPreview.durationLabel || `${closeoutDraft.durationMinutes} min`}</span>
+            <span className="queue-chip">Billable: {String(closeoutPreview.billable)}</span>
+          </div>
+        )}
+      </div>
+
       {actionState?.message && <p className={actionState.error ? "error-text" : "muted"}>{actionState.message}</p>}
+      {bridgeMessage && <p className="muted">{bridgeMessage}</p>}
 
       <details className="disclosure-card" open>
         <summary>Parts context</summary>
@@ -187,6 +325,18 @@ function Detail({ label, value }) {
 
 function formatList(items) {
   return Array.isArray(items) && items.length ? items.join(", ") : "none";
+}
+
+function buildCloseoutPayload(draft) {
+  return {
+    laborCode: draft.laborCode,
+    workPerformed: draft.workPerformed,
+    durationMinutes: Number(draft.durationMinutes || 0) || 60,
+    signedBy: draft.signedBy || null,
+    customerApproved: Boolean(draft.customerApproved),
+    finalOutcome: draft.finalOutcome || "completed",
+    outcomeNote: draft.outcomeNote || null,
+  };
 }
 
 function describeStatusMeta(meta) {

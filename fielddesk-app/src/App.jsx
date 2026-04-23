@@ -4,6 +4,13 @@ import JobList from "./components/JobList";
 import JobDetailView from "./components/JobDetailView";
 import SettingsView from "./components/SettingsView";
 import { createFieldDeskApi, defaultFieldDeskConfig } from "./api/client";
+import {
+  enqueueNativeOfflineAction,
+  getNativeHostConfig,
+  getNativeOfflineQueueState,
+  isNativeBridgeAvailable,
+  requestNativePushRegistration,
+} from "./nativeBridge";
 
 const STORAGE_KEY = "fielddesk-web-config";
 
@@ -23,6 +30,11 @@ export default function App() {
   const [actionState, setActionState] = useState(null);
   const [pingState, setPingState] = useState(null);
   const [activeTab, setActiveTab] = useState("today");
+  const [bridgeState, setBridgeState] = useState(() => ({
+    available: isNativeBridgeAvailable(),
+    offlineQueue: getNativeOfflineQueueState(),
+    pushMessage: "",
+  }));
 
   const api = useMemo(() => createFieldDeskApi(() => config), [config]);
   const selectedJob = jobs.find((job) => String(job.id) === String(selectedJobId)) || jobDetail;
@@ -36,6 +48,18 @@ export default function App() {
     document.documentElement.dataset.theme = config.themeMode || "dark";
     document.title = "FieldDesk | OpsHub";
   }, [config.themeMode]);
+
+  useEffect(() => {
+    const nativeConfig = getNativeHostConfig();
+    if (!nativeConfig) return;
+    setConfig((current) => ({ ...current, ...nativeConfig }));
+    setDraftConfig((current) => ({ ...current, ...nativeConfig }));
+    setBridgeState({
+      available: true,
+      offlineQueue: getNativeOfflineQueueState(),
+      pushMessage: "",
+    });
+  }, []);
 
   useEffect(() => {
     if (!config.apiBase || !config.apiToken || !config.technicianSubject) return;
@@ -98,12 +122,16 @@ export default function App() {
       else if (action === "quoteNeeded") result = await api.postQuoteNeeded(selectedJobId, payload.details);
       else if (action === "reschedule") result = await api.postReschedule(selectedJobId, payload.reason);
       else if (action === "photoPrepare") result = await api.postPhotoPrepare(selectedJobId, payload.label);
+      else if (action === "closeoutPreview") result = await api.previewCloseout(selectedJobId, payload.body);
+      else if (action === "closeoutSubmit") result = await api.submitCloseout(selectedJobId, payload.body);
       else result = { success: false, message: "Unsupported action." };
       payload?.onDone?.();
       setActionState({ error: !result?.success, message: result?.message || "Action complete." });
       await Promise.all([loadToday(), loadJob(selectedJobId)]);
+      return result;
     } catch (error) {
       setActionState({ error: true, message: formatError(error) });
+      return null;
     }
   }
 
@@ -115,6 +143,25 @@ export default function App() {
     setConfig(draftConfig);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draftConfig));
     setPingState({ message: "FieldDesk web config saved." });
+  }
+
+  function refreshBridgeState(pushMessage = bridgeState.pushMessage) {
+    setBridgeState({
+      available: isNativeBridgeAvailable(),
+      offlineQueue: getNativeOfflineQueueState(),
+      pushMessage,
+    });
+  }
+
+  function queueOfflineAction(actionType, payload) {
+    const result = enqueueNativeOfflineAction(actionType, payload);
+    refreshBridgeState(result?.message || bridgeState.pushMessage);
+    return result;
+  }
+
+  function requestPushBridge() {
+    const result = requestNativePushRegistration();
+    refreshBridgeState(result?.message || "");
   }
 
   async function pingApi() {
@@ -175,6 +222,8 @@ export default function App() {
               error={jobError}
               actionState={actionState}
               onAction={handleAction}
+              onQueueOfflineAction={queueOfflineAction}
+              bridgeAvailable={bridgeState.available}
             />
           </>
         )}
@@ -197,6 +246,8 @@ export default function App() {
               error={jobError}
               actionState={actionState}
               onAction={handleAction}
+              onQueueOfflineAction={queueOfflineAction}
+              bridgeAvailable={bridgeState.available}
             />
           </>
         )}
@@ -215,10 +266,15 @@ export default function App() {
                 The Android app should persist these values and host this web frontend in a thin wrapper. UI and workflow changes then ship through the frontend instead of requiring a native rewrite for every field change.
               </p>
               <div className="chip-list">
-                <span className="queue-chip">Native bridge later: camera</span>
-                <span className="queue-chip">Native bridge later: offline cache</span>
-                <span className="queue-chip">Native bridge later: push</span>
+                <span className="queue-chip">Bridge: {bridgeState.available ? "connected" : "browser only"}</span>
+                <span className="queue-chip">Offline queued: {bridgeState.offlineQueue?.count || 0}</span>
+                <span className="queue-chip">Push: scaffolded</span>
               </div>
+              <div className="action-row">
+                <button type="button" onClick={requestPushBridge}>Request push bridge</button>
+                <button type="button" className="secondary-button" onClick={() => refreshBridgeState()}>Refresh bridge state</button>
+              </div>
+              {bridgeState.pushMessage && <p className="muted">{bridgeState.pushMessage}</p>}
             </section>
           </>
         )}
@@ -226,6 +282,22 @@ export default function App() {
 
       {jobsError && <p className="error-text">{jobsError}</p>}
       {jobsLoading && <p className="muted">Loading technician queue…</p>}
+      {bridgeState.offlineQueue?.count > 0 && (
+        <section className="panel stack-gap">
+          <p className="section-kicker">Offline Queue</p>
+          <strong>{bridgeState.offlineQueue.count} action(s) are staged in the Android host.</strong>
+          <div className="chip-list">
+            {(bridgeState.offlineQueue.items || []).slice(0, 5).map((item) => (
+              <span key={item.id || `${item.actionType}-${item.createdAtEpochMillis}`} className="queue-chip">
+                {item.actionType}
+              </span>
+            ))}
+          </div>
+          <button type="button" className="secondary-button" onClick={() => queueOfflineAction("fielddesk_refresh", { selectedJobId })}>
+            Queue refresh marker
+          </button>
+        </section>
+      )}
     </main>
   );
 }

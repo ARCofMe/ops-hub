@@ -194,6 +194,12 @@ h2 {
   gap: 6px;
 }
 
+.checkbox-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 input,
 textarea,
 select {
