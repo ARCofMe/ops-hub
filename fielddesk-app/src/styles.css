@@ -1,0 +1,241 @@
+@import "./brand/tokens.css";
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.45;
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.028) 1px, transparent 1px),
+    radial-gradient(circle at top left, var(--bg-radial-cool), transparent 28%),
+    radial-gradient(circle at top right, var(--bg-radial-warm), transparent 24%),
+    linear-gradient(160deg, var(--bg-start) 0%, var(--bg-mid) 48%, var(--bg-end) 100%);
+  background-size: 36px 36px, 36px 36px, auto, auto, auto;
+  color: var(--text-main);
+}
+
+button,
+input,
+textarea,
+select { font: inherit; }
+
+.app-shell {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 16px 14px 32px;
+}
+
+.brand-bar,
+.panel {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%),
+    var(--panel-bg);
+  box-shadow: 0 18px 44px var(--panel-shadow);
+}
+
+.brand-bar {
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.brand-row,
+.section-head,
+.action-row,
+.job-card-top,
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.tab-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.tab-button,
+button {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+}
+
+button.secondary-button,
+.tab-button {
+  background: var(--card-bg);
+  color: var(--text-main);
+}
+
+.tab-button.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 16px;
+}
+
+.panel {
+  padding: 18px;
+}
+
+.stack-gap {
+  display: grid;
+  gap: 14px;
+}
+
+.section-kicker {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.74rem;
+  color: var(--brand-blue);
+  font-weight: 700;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+.muted { color: var(--text-muted); }
+.error-text { color: var(--error); }
+
+.list-stack,
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.job-card,
+.history-entry,
+.detail-block,
+.disclosure-card {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  background: var(--card-bg);
+}
+
+.job-card {
+  padding: 14px;
+  text-align: left;
+}
+
+.job-card.selected {
+  outline: 1px solid var(--accent);
+}
+
+.job-card p,
+.detail-block p,
+.history-entry p {
+  margin: 0;
+}
+
+.job-card-meta,
+.chip-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.job-card-meta span,
+.queue-chip {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--subtle-surface);
+  color: var(--text-soft);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-value,
+.detail-block,
+.history-entry {
+  padding: 12px;
+}
+
+.detail-value span {
+  display: block;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  background: var(--input-bg);
+  color: var(--text-main);
+}
+
+.disclosure-card {
+  padding: 14px;
+}
+
+.disclosure-card summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.disclosure-card[open] summary {
+  margin-bottom: 12px;
+}
+
+.history-entry span,
+.history-entry small {
+  display: block;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+@media (max-width: 860px) {
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid,
+  .action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    padding: 12px 10px 28px;
+  }
+}

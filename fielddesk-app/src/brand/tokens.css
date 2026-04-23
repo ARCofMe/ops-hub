@@ -1,0 +1,76 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "IBM Plex Sans", "Aptos", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f6f8fb;
+
+  --brand-ops: #22d3c5;
+  --brand-route: #f59e0b;
+  --brand-field: #14b8a6;
+  --brand-parts: #38bdf8;
+  --brand-amber: #f59e0b;
+  --brand-cyan: #22d3c5;
+  --brand-blue: #2563eb;
+  --brand-red: #ef4444;
+  --brand-green: #22c55e;
+
+  --surface-950: #07111f;
+  --surface-900: #0b1626;
+  --surface-850: #0f1c2e;
+  --surface-800: #142338;
+  --surface-700: #203149;
+  --surface-glass: rgba(10, 21, 36, 0.86);
+  --surface-card: rgba(15, 28, 46, 0.78);
+
+  --text-main: #f6f8fb;
+  --text-soft: #d9e3ef;
+  --text-muted: #96a6ba;
+
+  --border-subtle: rgba(148, 163, 184, 0.16);
+  --shadow-panel: rgba(2, 6, 23, 0.5);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+
+  --product-accent: var(--brand-field);
+  --product-accent-contrast: #061521;
+  --product-signal: var(--brand-cyan);
+
+  --bg-radial-warm: color-mix(in srgb, var(--product-accent) 18%, transparent);
+  --bg-radial-cool: color-mix(in srgb, var(--product-signal) 18%, transparent);
+  --bg-start: var(--surface-950);
+  --bg-mid: var(--surface-900);
+  --bg-end: #101827;
+  --panel-bg: var(--surface-glass);
+  --panel-border: color-mix(in srgb, var(--product-signal) 24%, var(--border-subtle));
+  --panel-shadow: var(--shadow-panel);
+  --card-bg: var(--surface-card);
+  --card-border: var(--border-subtle);
+  --accent: var(--product-accent);
+  --accent-contrast: var(--product-accent-contrast);
+  --input-bg: rgba(9, 18, 31, 0.94);
+  --subtle-surface: rgba(32, 49, 73, 0.72);
+  --error: var(--brand-red);
+  --success: var(--brand-green);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #172033;
+  --bg-radial-warm: color-mix(in srgb, var(--product-accent) 12%, transparent);
+  --bg-radial-cool: color-mix(in srgb, var(--product-signal) 12%, transparent);
+  --bg-start: #eef4f8;
+  --bg-mid: #f8fafc;
+  --bg-end: #e9eef5;
+  --panel-bg: rgba(255, 255, 255, 0.9);
+  --panel-border: rgba(51, 65, 85, 0.14);
+  --panel-shadow: rgba(15, 23, 42, 0.12);
+  --card-bg: rgba(255, 255, 255, 0.86);
+  --card-border: rgba(51, 65, 85, 0.14);
+  --text-main: #152033;
+  --text-soft: #334155;
+  --text-muted: #64748b;
+  --input-bg: rgba(255, 255, 255, 0.92);
+  --subtle-surface: rgba(226, 232, 240, 0.72);
+}

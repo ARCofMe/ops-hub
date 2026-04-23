@@ -153,23 +153,32 @@ The next parts API expansion after the current routes should add direct case-lev
 
 ### Technician App
 
-There is already a native Android project in `field-desk`.
+There is already a native Android project in `ARCoMTechApp`.
+
+There is now also a web-first FieldDesk frontend in `fielddesk-app`.
 
 Important observations:
 
-- it already has an Ops Hub repository in `field-desk/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt`
-- it already has a backend seam in `field-desk/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt`
+- the Android app already has an Ops Hub repository in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/OpsHubFieldOpsRepository.kt`
+- the Android app already has a backend seam in `ARCoMTechApp/app/src/main/java/com/example/arcomtechapp/data/repo/RepositoryProvider.kt`
 - it still supports direct BlueFolder mode
-- it already has technician-oriented workflow logic in `field-desk/app/src/main/java/com/example/arcomtechapp/workflow/JobWorkflow.kt`
+- it already has technician-oriented workflow logic in the native app
+- the new web FieldDesk already consumes the same `/tech/*` Ops Hub API routes as the native client
 
-That means the tech app should evolve by deepening the Ops Hub path, not by treating BlueFolder-direct as the long-term primary mode.
+That means FieldDesk should evolve by deepening the Ops Hub path and consolidating workflow UI into the web client, not by treating BlueFolder-direct as the long-term primary mode.
 
 Recommended direction:
 
-- keep the Android app
+- keep the Android app as a thin wrapper and native bridge host
+- make the web FieldDesk frontend the primary workflow surface
 - make Ops Hub the default backend mode
 - move field workflow logic toward Ops Hub-native concepts like parts case, quote-needed handoff, timeline, and photo compliance
 - keep BlueFolder-direct only as fallback or migration mode
+- add native bridge hooks only for device capabilities the web client cannot own cleanly:
+  - camera
+  - offline cache and sync
+  - push notifications
+  - background location
 
 ### Dispatch App
 

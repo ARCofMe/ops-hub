@@ -2,7 +2,7 @@
 
 ## Role
 
-FieldDesk is the Android technician app. It should help the technician work the day in the correct order, capture useful job updates, and reduce friction in the field.
+FieldDesk is the technician field surface. The long-term direction is a web-first frontend hosted inside Android, so workflow changes ship through the frontend and Android stays focused on device capabilities.
 
 FieldDesk should prefer OpsHub backend mode. Direct BlueFolder mode is fallback/migration mode, not the long-term primary path.
 
@@ -17,7 +17,7 @@ FieldDesk should prefer OpsHub backend mode. Direct BlueFolder mode is fallback/
 
 ## Identity
 
-FieldDesk identity is per device in Android Settings.
+FieldDesk identity is per device in local wrapper settings.
 
 Recommended model:
 
@@ -38,6 +38,7 @@ Settings:
 4. Set API key.
 5. Set technician ID.
 6. Confirm RouteDesk/PartsDesk/OpsHub URLs are populated if using launchers.
+7. Confirm the same values can be persisted by the Android wrapper host.
 
 Today:
 
@@ -65,7 +66,7 @@ Job detail:
 
 ## How FieldDesk Writes
 
-FieldDesk writes should go through OpsHub:
+FieldDesk writes should go through OpsHub whether the technician is using the browser surface or the Android wrapper:
 
 - notes
 - status updates
@@ -97,7 +98,7 @@ For a real tenant rollout:
 
 ## Presentation Script
 
-FieldDesk is the technician's field surface. It should answer "what is my next stop, what do I need to know, and how do I update the job?" The tablet talks to OpsHub, and OpsHub handles the BlueFolder credential centrally. That keeps field devices safer and makes rollout easier.
+FieldDesk is the technician's field surface. It should answer "what is my next stop, what do I need to know, and how do I update the job?" The web frontend talks to OpsHub, and the Android host should only add device-native support where the browser needs help. OpsHub keeps the BlueFolder credential centralized. That keeps field devices safer and rollout faster.
 
 ## Preflight
 
