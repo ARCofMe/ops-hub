@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BrandBar from "./components/BrandBar";
 import JobList from "./components/JobList";
 import JobDetailView from "./components/JobDetailView";
 import SettingsView from "./components/SettingsView";
 import { createFieldDeskApi, defaultFieldDeskConfig } from "./api/client";
 import {
+  clearNativeOfflineActions,
   enqueueNativeOfflineAction,
   getNativeHostConfig,
   getNativeOfflineQueueState,
   isNativeBridgeAvailable,
+  openNativeExternalUrl,
+  removeNativeOfflineAction,
   requestNativePushRegistration,
 } from "./nativeBridge";
 
@@ -30,18 +33,48 @@ export default function App() {
   const [actionState, setActionState] = useState(null);
   const [pingState, setPingState] = useState(null);
   const [activeTab, setActiveTab] = useState("today");
+  const [jobFilterText, setJobFilterText] = useState("");
+  const [jobFilterScope, setJobFilterScope] = useState("all");
   const [bridgeState, setBridgeState] = useState(() => ({
     available: isNativeBridgeAvailable(),
     offlineQueue: getNativeOfflineQueueState(),
     pushMessage: "",
   }));
+  const jobLoadSequence = useRef(0);
 
   const api = useMemo(() => createFieldDeskApi(() => config), [config]);
   const selectedJob = jobs.find((job) => String(job.id) === String(selectedJobId)) || jobDetail;
+  const filteredJobs = useMemo(() => {
+    const query = jobFilterText.trim().toLowerCase();
+    return jobs.filter((job) => {
+      const status = String(job.status || "").toLowerCase();
+      const partsStage = String(job.partsStage || "").toLowerCase();
+      const matchesScope =
+        jobFilterScope === "all" ||
+        (jobFilterScope === "open" && !status.includes("complete")) ||
+        (jobFilterScope === "done" && status.includes("complete")) ||
+        (jobFilterScope === "parts" && (partsStage.includes("part") || status.includes("part")));
+      if (!matchesScope) return false;
+      if (!query) return true;
+      return [job.id, job.customerName, job.address, job.status, job.partsStage].some((value) => String(value || "").toLowerCase().includes(query));
+    });
+  }, [jobFilterScope, jobFilterText, jobs]);
+  const workspaceLinks = useMemo(
+    () =>
+      [
+        ["Ops Hub", config.opsHubUrl],
+        ["RouteDesk", config.routeDeskUrl],
+        ["PartsDesk", config.partsDeskUrl],
+      ]
+        .filter(([, url]) => typeof url === "string" && url.trim())
+        .map(([label, url]) => ({ label, url })),
+    [config.opsHubUrl, config.partsDeskUrl, config.routeDeskUrl]
+  );
   const counts = {
     queue: jobs.length,
     done: jobs.filter((job) => String(job.status || "").toLowerCase().includes("complete")).length,
     pending: jobs.filter((job) => !String(job.status || "").toLowerCase().includes("complete")).length,
+    parts: jobs.filter((job) => String(job.partsStage || "").toLowerCase().includes("part")).length,
   };
 
   useEffect(() => {
@@ -76,9 +109,12 @@ export default function App() {
     setJobsError("");
     try {
       const payload = await api.getToday();
-      setJobs(Array.isArray(payload) ? payload : []);
-      if (!selectedJobId && Array.isArray(payload) && payload[0]?.id) {
-        setSelectedJobId(String(payload[0].id));
+      const nextJobs = Array.isArray(payload) ? payload : [];
+      setJobs(nextJobs);
+      if (!selectedJobId && nextJobs[0]?.id) {
+        setSelectedJobId(String(nextJobs[0].id));
+      } else if (selectedJobId && !nextJobs.some((job) => String(job.id) === String(selectedJobId))) {
+        setSelectedJobId(nextJobs[0]?.id ? String(nextJobs[0].id) : "");
       }
     } catch (error) {
       setJobsError(formatError(error));
@@ -90,6 +126,7 @@ export default function App() {
   async function loadJob(srId) {
     setJobLoading(true);
     setJobError("");
+    const sequence = ++jobLoadSequence.current;
     try {
       const [jobPayload, timelinePayload, partsPayload, photosPayload] = await Promise.allSettled([
         api.getJob(srId),
@@ -97,6 +134,7 @@ export default function App() {
         api.getParts(srId),
         api.getPhotos(srId),
       ]);
+      if (sequence !== jobLoadSequence.current) return;
       setJobDetail(jobPayload.status === "fulfilled" ? jobPayload.value : null);
       setTimeline(timelinePayload.status === "fulfilled" ? timelinePayload.value : []);
       setParts(partsPayload.status === "fulfilled" ? partsPayload.value : null);
@@ -140,8 +178,15 @@ export default function App() {
   }
 
   function applyConfig() {
-    setConfig(draftConfig);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(draftConfig));
+    const sanitized = sanitizeConfig(draftConfig);
+    const validationError = validateConfig(sanitized);
+    if (validationError) {
+      setPingState({ error: true, message: validationError });
+      return;
+    }
+    setConfig(sanitized);
+    setDraftConfig(sanitized);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
     setPingState({ message: "FieldDesk web config saved." });
   }
 
@@ -159,13 +204,29 @@ export default function App() {
     return result;
   }
 
+  function removeOfflineAction(actionId) {
+    const result = removeNativeOfflineAction(actionId);
+    refreshBridgeState(result?.message || bridgeState.pushMessage);
+  }
+
+  function clearOfflineQueue() {
+    const result = clearNativeOfflineActions();
+    refreshBridgeState(result?.message || bridgeState.pushMessage);
+  }
+
   function requestPushBridge() {
     const result = requestNativePushRegistration();
     refreshBridgeState(result?.message || "");
   }
 
   async function pingApi() {
-    const testApi = createFieldDeskApi(() => draftConfig);
+    const sanitized = sanitizeConfig(draftConfig);
+    const validationError = validateConfig(sanitized);
+    if (validationError) {
+      setPingState({ error: true, message: validationError });
+      return;
+    }
+    const testApi = createFieldDeskApi(() => sanitized);
     setPingState({ loading: true, message: "Checking Ops Hub..." });
     try {
       const payload = await testApi.health();
@@ -204,7 +265,7 @@ export default function App() {
         {(activeTab === "today" || activeTab === "queue") && (
           <>
             <JobList
-              jobs={jobs}
+              jobs={filteredJobs}
               selectedJobId={selectedJobId}
               onSelectJob={(job) => {
                 setSelectedJobId(String(job.id));
@@ -212,6 +273,11 @@ export default function App() {
               }}
               title={activeTab === "today" ? "My Day" : "Queue"}
               subtitle={activeTab === "today" ? "Today" : "All visible jobs"}
+              totalCount={jobs.length}
+              filterText={jobFilterText}
+              filterScope={jobFilterScope}
+              onFilterTextChange={setJobFilterText}
+              onFilterScopeChange={setJobFilterScope}
             />
             <JobDetailView
               job={selectedJob}
@@ -224,6 +290,8 @@ export default function App() {
               onAction={handleAction}
               onQueueOfflineAction={queueOfflineAction}
               bridgeAvailable={bridgeState.available}
+              workspaceLinks={workspaceLinks}
+              onOpenWorkspaceLink={openWorkspaceLink}
             />
           </>
         )}
@@ -231,11 +299,16 @@ export default function App() {
         {activeTab === "job" && (
           <>
             <JobList
-              jobs={jobs}
+              jobs={filteredJobs}
               selectedJobId={selectedJobId}
               onSelectJob={(job) => setSelectedJobId(String(job.id))}
               title="Visible stops"
               subtitle="Queue"
+              totalCount={jobs.length}
+              filterText={jobFilterText}
+              filterScope={jobFilterScope}
+              onFilterTextChange={setJobFilterText}
+              onFilterScopeChange={setJobFilterScope}
             />
             <JobDetailView
               job={selectedJob}
@@ -248,6 +321,8 @@ export default function App() {
               onAction={handleAction}
               onQueueOfflineAction={queueOfflineAction}
               bridgeAvailable={bridgeState.available}
+              workspaceLinks={workspaceLinks}
+              onOpenWorkspaceLink={openWorkspaceLink}
             />
           </>
         )}
@@ -269,6 +344,7 @@ export default function App() {
                 <span className="queue-chip">Bridge: {bridgeState.available ? "connected" : "browser only"}</span>
                 <span className="queue-chip">Offline queued: {bridgeState.offlineQueue?.count || 0}</span>
                 <span className="queue-chip">Push: scaffolded</span>
+                <span className="queue-chip">Parts blockers: {counts.parts}</span>
               </div>
               <div className="action-row">
                 <button type="button" onClick={requestPushBridge}>Request push bridge</button>
@@ -286,20 +362,44 @@ export default function App() {
         <section className="panel stack-gap">
           <p className="section-kicker">Offline Queue</p>
           <strong>{bridgeState.offlineQueue.count} action(s) are staged in the Android host.</strong>
-          <div className="chip-list">
+          <div className="history-list">
             {(bridgeState.offlineQueue.items || []).slice(0, 5).map((item) => (
-              <span key={item.id || `${item.actionType}-${item.createdAtEpochMillis}`} className="queue-chip">
-                {item.actionType}
-              </span>
+              <div key={item.id || `${item.actionType}-${item.createdAtEpochMillis}`} className="history-entry compact-entry">
+                <div className="detail-head">
+                  <p>{item.actionType}</p>
+                  <button type="button" className="secondary-button" onClick={() => removeOfflineAction(item.id)}>Remove</button>
+                </div>
+                <span>{new Date(item.createdAtEpochMillis).toLocaleString()}</span>
+              </div>
             ))}
           </div>
-          <button type="button" className="secondary-button" onClick={() => queueOfflineAction("fielddesk_refresh", { selectedJobId })}>
-            Queue refresh marker
-          </button>
+          <div className="action-row">
+            <button type="button" className="secondary-button" onClick={() => queueOfflineAction("fielddesk_refresh", { selectedJobId })}>
+              Queue refresh marker
+            </button>
+            <button type="button" className="secondary-button" onClick={clearOfflineQueue}>
+              Clear queue
+            </button>
+            <button type="button" className="secondary-button" onClick={() => refreshBridgeState()}>
+              Refresh queue state
+            </button>
+          </div>
         </section>
       )}
     </main>
   );
+
+  function openWorkspaceLink(url) {
+    if (!url) return;
+    const nativeResult = openNativeExternalUrl(url);
+    if (nativeResult?.success || nativeResult?.available) {
+      setPingState({ error: !nativeResult.success, message: nativeResult.message || "Opening workspace..." });
+      return;
+    }
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
 }
 
 function readStoredConfig() {
@@ -307,9 +407,10 @@ function readStoredConfig() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     return {
-      ...defaultFieldDeskConfig,
+      ...sanitizeConfig(defaultFieldDeskConfig),
       themeMode: "dark",
-      ...parsed,
+      ...sanitizeConfig(parsed),
+      ...(getNativeHostConfig() || {}),
     };
   } catch {
     return { ...defaultFieldDeskConfig, themeMode: "dark" };
@@ -318,4 +419,34 @@ function readStoredConfig() {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error || "Unknown error");
+}
+
+function sanitizeConfig(raw) {
+  return {
+    ...defaultFieldDeskConfig,
+    ...(raw || {}),
+    apiBase: normalizeUrl(raw?.apiBase || defaultFieldDeskConfig.apiBase),
+    apiToken: String(raw?.apiToken || "").trim(),
+    technicianSubject: String(raw?.technicianSubject || "").trim(),
+    opsHubUrl: normalizeOptionalUrl(raw?.opsHubUrl),
+    routeDeskUrl: normalizeOptionalUrl(raw?.routeDeskUrl),
+    partsDeskUrl: normalizeOptionalUrl(raw?.partsDeskUrl),
+  };
+}
+
+function validateConfig(config) {
+  if (!config.apiBase) return "Ops Hub API base is required.";
+  if (!/^https?:\/\//i.test(config.apiBase)) return "Ops Hub API base must start with http:// or https://.";
+  if (!config.apiToken) return "Technician API token is required.";
+  if (!config.technicianSubject) return "Technician subject is required.";
+  return "";
+}
+
+function normalizeUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeOptionalUrl(value) {
+  const normalized = normalizeUrl(value);
+  return /^https?:\/\//i.test(normalized) ? normalized : "";
 }

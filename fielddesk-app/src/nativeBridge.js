@@ -55,6 +55,24 @@ export function openNativeNavigation(address) {
   return parseBridgePayload(current.openExternalNavigation(address || ""));
 }
 
+export function openNativeExternalUrl(url) {
+  const current = bridge();
+  if (!current?.openExternalUrl) return { success: false, available: false, message: "Native external-link bridge is not available." };
+  return parseBridgePayload(current.openExternalUrl(url || ""));
+}
+
+export function removeNativeOfflineAction(id) {
+  const current = bridge();
+  if (!current?.removeOfflineAction) return { success: false, available: false, message: "Native offline queue bridge is not available." };
+  return parseBridgePayload(current.removeOfflineAction(String(id || "")));
+}
+
+export function clearNativeOfflineActions() {
+  const current = bridge();
+  if (!current?.clearOfflineActions) return { success: false, available: false, message: "Native offline queue bridge is not available." };
+  return parseBridgePayload(current.clearOfflineActions());
+}
+
 export function isNativeBridgeAvailable() {
   return Boolean(bridge());
 }

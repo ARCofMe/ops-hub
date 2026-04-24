@@ -54,10 +54,51 @@ describe("FieldDesk App", () => {
       expect(screen.getAllByText("Pat Smith").length).toBeGreaterThan(0);
     });
     await waitFor(() => {
-      expect(screen.getByText(/Await office review/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Await office review/).length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Active Job")).toBeInTheDocument();
     expect(screen.getByText("Assigned")).toBeInTheDocument();
+  });
+
+  it("filters the visible queue by search text", async () => {
+    window.localStorage.setItem(
+      "fielddesk-web-config",
+      JSON.stringify({
+        apiBase: "http://127.0.0.1:8787/",
+        apiToken: "token",
+        technicianSubject: "bf:123",
+        themeMode: "dark",
+      })
+    );
+
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).endsWith("/tech/me/today")) {
+        return response([
+          { id: "100", customerName: "Pat Smith", address: "1 Main St", appointmentWindow: "8-10", status: "Scheduled" },
+          { id: "101", customerName: "Jordan Lake", address: "2 Broad St", appointmentWindow: "10-12", status: "Scheduled" },
+        ]);
+      }
+      if (String(url).includes("/tech/jobs/100/timeline")) return response([]);
+      if (String(url).includes("/tech/jobs/100/parts")) return response({});
+      if (String(url).includes("/tech/jobs/100/photos")) return response({});
+      if (String(url).includes("/tech/jobs/100")) return response({ id: "100", customerName: "Pat Smith", status: "Scheduled" });
+      if (String(url).includes("/tech/jobs/101/timeline")) return response([]);
+      if (String(url).includes("/tech/jobs/101/parts")) return response({});
+      if (String(url).includes("/tech/jobs/101/photos")) return response({});
+      if (String(url).includes("/tech/jobs/101")) return response({ id: "101", customerName: "Jordan Lake", status: "Scheduled" });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Jordan Lake")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Customer, SR, address"), { target: { value: "Jordan" } });
+
+    expect(screen.getByText("Jordan Lake")).toBeInTheDocument();
+    expect(screen.getByText("Visible: 1")).toBeInTheDocument();
   });
 
   it("saves settings and pings Ops Hub health", async () => {
@@ -76,6 +117,19 @@ describe("FieldDesk App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Ops Hub technician API reachable.")).toBeInTheDocument();
+    });
+  });
+
+  it("validates malformed config before pinging", async () => {
+    render(<App />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Settings" })[0]);
+    fireEvent.change(screen.getByLabelText("Ops Hub API base"), { target: { value: "127.0.0.1:8787" } });
+    fireEvent.change(screen.getByLabelText("Technician API token"), { target: { value: "token" } });
+    fireEvent.change(screen.getByLabelText("Technician subject"), { target: { value: "bf:321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Ops Hub API base must start with http:// or https://.")).toBeInTheDocument();
     });
   });
 });

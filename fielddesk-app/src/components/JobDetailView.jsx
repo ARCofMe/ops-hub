@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { captureNativePhoto, openNativeNavigation, requestNativeLocation } from "../nativeBridge";
 
 const STATUS_ACTIONS = [
@@ -19,21 +19,15 @@ export default function JobDetailView({
   onAction,
   onQueueOfflineAction,
   bridgeAvailable,
+  workspaceLinks,
+  onOpenWorkspaceLink,
 }) {
   const [note, setNote] = useState("");
   const [partsNeed, setPartsNeed] = useState("");
   const [quoteNeed, setQuoteNeed] = useState("");
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [photoLabel, setPhotoLabel] = useState("before");
-  const [closeoutDraft, setCloseoutDraft] = useState({
-    laborCode: "diagnostic",
-    workPerformed: "",
-    durationMinutes: 60,
-    signedBy: "",
-    customerApproved: false,
-    finalOutcome: "completed",
-    outcomeNote: "",
-  });
+  const [closeoutDraft, setCloseoutDraft] = useState(defaultCloseoutDraft);
   const [closeoutPreview, setCloseoutPreview] = useState(null);
   const [bridgeMessage, setBridgeMessage] = useState("");
 
@@ -41,6 +35,18 @@ export default function JobDetailView({
     () => [...(timeline || [])].sort((left, right) => String(right.occurredAt || "").localeCompare(String(left.occurredAt || ""))),
     [timeline]
   );
+  const workflowSummary = useMemo(() => buildWorkflowSummary(job, parts, photos, timeline), [job, parts, photos, timeline]);
+
+  useEffect(() => {
+    if (!job?.id) return;
+    setCloseoutDraft(readCloseoutDraft(job.id) || defaultCloseoutDraft());
+    setCloseoutPreview(null);
+  }, [job?.id]);
+
+  useEffect(() => {
+    if (!job?.id) return;
+    persistCloseoutDraft(job.id, closeoutDraft);
+  }, [job?.id, closeoutDraft]);
 
   if (!job) {
     return (
@@ -76,6 +82,25 @@ export default function JobDetailView({
         <span className="queue-chip">Next action: {parts?.nextAction || job.nextAction || "Review on site"}</span>
         <span className="queue-chip">Photo mailbox: {photos?.mailboxStatus || "unknown"}</span>
         <span className="queue-chip">Timeline events: {(timeline || []).length}</span>
+        <span className="queue-chip">Workflow: {workflowSummary.statusLabel}</span>
+      </div>
+
+      <div className="detail-block">
+        <strong>Workflow guidance</strong>
+        <div className="chip-list">
+          {workflowSummary.highlights.map((item) => (
+            <span key={item} className="queue-chip">{item}</span>
+          ))}
+        </div>
+        <div className="history-list compact-list">
+          {workflowSummary.checklist.map((item) => (
+            <div key={item.label} className="history-entry compact-entry">
+              <p>{item.label}</p>
+              <span>{item.ready ? "Ready" : "Needs attention"}</span>
+              {item.reason && <small>{item.reason}</small>}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="detail-block">
@@ -83,14 +108,30 @@ export default function JobDetailView({
         <p>{job.address || "Address unavailable"}</p>
         <p className="muted">{describeStatusMeta(job.statusMeta)}</p>
         <div className="action-row">
-          <button type="button" className="secondary-button" onClick={() => setBridgeMessage(openNativeNavigation(job.address).message)}>
+          <button type="button" className="secondary-button" disabled={!bridgeAvailable || !job.address} onClick={() => setBridgeMessage(openNativeNavigation(job.address).message)}>
             Open native navigation
           </button>
-          <button type="button" className="secondary-button" onClick={() => setBridgeMessage(requestNativeLocation().message)}>
+          <button type="button" className="secondary-button" disabled={!bridgeAvailable} onClick={() => setBridgeMessage(requestNativeLocation().message)}>
             Request device location
           </button>
+          <a className={job.customerPhone ? "link-button" : "link-button disabled"} href={job.customerPhone ? `tel:${sanitizePhone(job.customerPhone)}` : undefined}>
+            Call customer
+          </a>
         </div>
       </div>
+
+      {workspaceLinks?.length > 0 && (
+        <div className="detail-block">
+          <strong>Workspace links</strong>
+          <div className="action-row">
+            {workspaceLinks.map((link) => (
+              <button key={link.label} type="button" className="secondary-button" onClick={() => onOpenWorkspaceLink?.(link.url)}>
+                Open {link.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="action-grid">
         {STATUS_ACTIONS.map(([label, value]) => (
@@ -165,7 +206,7 @@ export default function JobDetailView({
           <button
             type="button"
             className="secondary-button"
-            disabled={actionState?.loading}
+            disabled={actionState?.loading || !bridgeAvailable}
             onClick={() => setBridgeMessage(captureNativePhoto(photoLabel, job.id).message)}
           >
             Capture photo (native)
@@ -282,6 +323,21 @@ export default function JobDetailView({
             <span className="queue-chip">Billable: {String(closeoutPreview.billable)}</span>
           </div>
         )}
+        <div className="action-row">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              const next = defaultCloseoutDraft();
+              setCloseoutDraft(next);
+              persistCloseoutDraft(job.id, next);
+              setCloseoutPreview(null);
+            }}
+          >
+            Reset draft
+          </button>
+          <span className="muted">Closeout draft is saved locally per SR.</span>
+        </div>
       </div>
 
       {actionState?.message && <p className={actionState.error ? "error-text" : "muted"}>{actionState.message}</p>}
@@ -314,6 +370,18 @@ export default function JobDetailView({
   );
 }
 
+function defaultCloseoutDraft() {
+  return {
+    laborCode: "diagnostic",
+    workPerformed: "",
+    durationMinutes: 60,
+    signedBy: "",
+    customerApproved: false,
+    finalOutcome: "completed",
+    outcomeNote: "",
+  };
+}
+
 function Detail({ label, value }) {
   return (
     <div className="detail-value">
@@ -337,6 +405,64 @@ function buildCloseoutPayload(draft) {
     finalOutcome: draft.finalOutcome || "completed",
     outcomeNote: draft.outcomeNote || null,
   };
+}
+
+function buildWorkflowSummary(job, parts, photos, timeline) {
+  const checklist = [
+    {
+      label: "Customer reached",
+      ready: Boolean(job?.customerPhone),
+      reason: job?.customerPhone ? "Phone number is available." : "Customer phone is missing from the job payload.",
+    },
+    {
+      label: "Parts path understood",
+      ready: !parts?.blocker,
+      reason: parts?.blocker || parts?.nextAction || "No active parts blocker is loaded.",
+    },
+    {
+      label: "Photo coverage ready",
+      ready: !Array.isArray(photos?.missingTags) || photos.missingTags.length === 0,
+      reason: Array.isArray(photos?.missingTags) && photos.missingTags.length ? `Missing: ${photos.missingTags.join(", ")}` : "Current photo checklist is complete.",
+    },
+    {
+      label: "Activity history present",
+      ready: Array.isArray(timeline) && timeline.length > 0,
+      reason: Array.isArray(timeline) && timeline.length > 0 ? "Timeline context is loaded." : "No timeline events were returned.",
+    },
+  ];
+  const blockers = checklist.filter((item) => !item.ready);
+  return {
+    statusLabel: blockers.length ? `${blockers.length} blocker${blockers.length === 1 ? "" : "s"}` : "Ready to progress",
+    highlights: [
+      job?.status || "Unknown status",
+      parts?.stageLabel || job?.partsStage || "No active parts stage",
+      job?.statusMeta?.categoryLabel || "Standard field workflow",
+    ],
+    checklist,
+  };
+}
+
+function closeoutDraftKey(jobId) {
+  return `fielddesk-closeout-draft-${jobId}`;
+}
+
+function readCloseoutDraft(jobId) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(closeoutDraftKey(jobId));
+    return raw ? { ...defaultCloseoutDraft(), ...JSON.parse(raw) } : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistCloseoutDraft(jobId, draft) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(closeoutDraftKey(jobId), JSON.stringify(draft));
+}
+
+function sanitizePhone(value) {
+  return String(value || "").replace(/[^\d+]/g, "");
 }
 
 function describeStatusMeta(meta) {

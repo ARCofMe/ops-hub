@@ -108,4 +108,7 @@ export const defaultFieldDeskConfig = {
   apiToken: DEFAULT_TOKEN,
   technicianSubject: DEFAULT_SUBJECT,
   timeoutMs: Number(import.meta.env.VITE_OPS_HUB_API_TIMEOUT_MS || 30000),
+  opsHubUrl: "",
+  routeDeskUrl: "",
+  partsDeskUrl: "",
 };
