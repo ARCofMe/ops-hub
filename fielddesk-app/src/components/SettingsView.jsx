@@ -26,6 +26,18 @@ export default function SettingsView({ config, onChange, onApply, onPing, pingSt
           <option value="light">Light</option>
         </select>
       </label>
+      <label className="field">
+        <span>Ops Hub workspace URL</span>
+        <input value={config.opsHubUrl || ""} onChange={(event) => onChange("opsHubUrl", event.target.value)} placeholder="https://ops-hub.example" />
+      </label>
+      <label className="field">
+        <span>RouteDesk URL</span>
+        <input value={config.routeDeskUrl || ""} onChange={(event) => onChange("routeDeskUrl", event.target.value)} placeholder="https://route.example" />
+      </label>
+      <label className="field">
+        <span>PartsDesk URL</span>
+        <input value={config.partsDeskUrl || ""} onChange={(event) => onChange("partsDeskUrl", event.target.value)} placeholder="https://parts.example" />
+      </label>
       <div className="action-row">
         <button type="button" onClick={onApply}>Apply settings</button>
         <button type="button" className="secondary-button" onClick={onPing}>Check connection</button>

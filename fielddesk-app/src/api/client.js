@@ -94,6 +94,9 @@ export function createFieldDeskApi(configProvider) {
     postPhotoPrepare(srId, label) {
       return request(`/tech/jobs/${srId}/photos/prepare`, { method: "POST", body: { label } });
     },
+    uploadJobPhoto(srId, body) {
+      return request(`/tech/jobs/${srId}/photos/upload`, { method: "POST", body });
+    },
     previewCloseout(srId, body) {
       return request(`/tech/jobs/${srId}/closeout/preview`, { method: "POST", body });
     },

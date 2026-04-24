@@ -132,6 +132,55 @@ describe("FieldDesk App", () => {
       expect(screen.getByText("Ops Hub API base must start with http:// or https://.")).toBeInTheDocument();
     });
   });
+
+  it("uploads native camera captures through the web client", async () => {
+    window.localStorage.setItem(
+      "fielddesk-web-config",
+      JSON.stringify({
+        apiBase: "http://127.0.0.1:8787",
+        apiToken: "token",
+        technicianSubject: "bf:123",
+        themeMode: "dark",
+      })
+    );
+
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).endsWith("/tech/me/today")) {
+        return response([{ id: "100", customerName: "Pat Smith", address: "1 Main St", appointmentWindow: "8-10", status: "Scheduled" }]);
+      }
+      if (String(url).endsWith("/tech/jobs/100")) return response({ id: "100", customerName: "Pat Smith", status: "Scheduled" });
+      if (String(url).endsWith("/tech/jobs/100/timeline")) return response([]);
+      if (String(url).endsWith("/tech/jobs/100/parts")) return response({});
+      if (String(url).endsWith("/tech/jobs/100/photos")) return response({ enabled: true, totalPhotos: 1, foundTags: ["before"], missingTags: [] });
+      if (String(url).endsWith("/tech/jobs/100/photos/upload")) return response({ success: true, message: "Photo uploaded." });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Pat Smith").length).toBeGreaterThan(0);
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("fielddesk:native-photo", {
+        detail: {
+          srId: "100",
+          label: "before",
+          filename: "sr-100-before.jpg",
+          contentType: "image/jpeg",
+          dataBase64: "ZmFrZQ==",
+        },
+      })
+    );
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringMatching(/\/tech\/jobs\/100\/photos\/upload$/),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+  });
 });
 
 function response(payload) {

@@ -1,5 +1,6 @@
 export default function JobList({
   jobs,
+  groupedJobs,
   selectedJobId,
   onSelectJob,
   title,
@@ -38,28 +39,52 @@ export default function JobList({
         <span className="queue-chip">Total loaded: {totalCount ?? jobs.length}</span>
         <span className="queue-chip">Filter: {filterScope || "all"}</span>
       </div>
-      <div className="list-stack">
-        {jobs.map((job, index) => (
-          <button
-            key={job.id}
-            type="button"
-            className={String(selectedJobId) === String(job.id) ? "job-card selected" : "job-card"}
-            onClick={() => onSelectJob(job)}
-          >
-            <div className="job-card-top">
-              <strong>{job.customerName || `SR-${job.id}`}</strong>
-              <span>{job.appointmentWindow || "Unscheduled"}</span>
-            </div>
-            <p>{job.address || "Address unavailable"}</p>
-            <div className="job-card-meta">
-              <span>Stop {index + 1}</span>
-              <span>Status: {job.status || "unknown"}</span>
-              <span>{job.partsStage || "No active parts stage"}</span>
-            </div>
-          </button>
-        ))}
-        {!jobs.length && <p className="muted">No jobs match the current queue filter.</p>}
-      </div>
+      {Array.isArray(groupedJobs) && groupedJobs.length ? (
+        <div className="list-stack">
+          {groupedJobs.map((group) => (
+            <section key={group.label} className="detail-block grouped-list">
+              <div className="section-head compact">
+                <strong>{group.label}</strong>
+                <span className="muted">{group.items.length}</span>
+              </div>
+              <div className="list-stack">
+                {group.items.map((job, index) => (
+                  <JobCard key={job.id} job={job} index={index} selectedJobId={selectedJobId} onSelectJob={onSelectJob} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="list-stack">
+          {jobs.map((job, index) => (
+            <JobCard key={job.id} job={job} index={index} selectedJobId={selectedJobId} onSelectJob={onSelectJob} />
+          ))}
+          {!jobs.length && <p className="muted">No jobs match the current queue filter.</p>}
+        </div>
+      )}
     </section>
+  );
+}
+
+function JobCard({ job, index, selectedJobId, onSelectJob }) {
+  return (
+    <button
+      type="button"
+      className={String(selectedJobId) === String(job.id) ? "job-card selected" : "job-card"}
+      onClick={() => onSelectJob(job)}
+    >
+      <div className="job-card-top">
+        <strong>{job.customerName || `SR-${job.id}`}</strong>
+        <span>{job.appointmentWindow || "Unscheduled"}</span>
+      </div>
+      <p>{job.address || "Address unavailable"}</p>
+      <div className="job-card-meta">
+        <span>Stop {index + 1}</span>
+        <span>Status: {job.status || "unknown"}</span>
+        <span>{job.partsStage || "No active parts stage"}</span>
+        {job.rankLabel && <span>{job.rankLabel}</span>}
+      </div>
+    </button>
   );
 }

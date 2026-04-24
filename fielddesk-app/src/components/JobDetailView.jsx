@@ -36,6 +36,7 @@ export default function JobDetailView({
     [timeline]
   );
   const workflowSummary = useMemo(() => buildWorkflowSummary(job, parts, photos, timeline), [job, parts, photos, timeline]);
+  const closeoutGuardrails = useMemo(() => buildCloseoutGuardrails(closeoutDraft, photos, workflowSummary), [closeoutDraft, photos, workflowSummary]);
 
   useEffect(() => {
     if (!job?.id) return;
@@ -233,6 +234,19 @@ export default function JobDetailView({
 
       <div className="detail-block">
         <strong>Closeout</strong>
+        <div className="chip-list">
+          <span className="queue-chip">Guardrails: {closeoutGuardrails.blockers.length ? `${closeoutGuardrails.blockers.length} blocker(s)` : "ready"}</span>
+          <span className="queue-chip">Photos: {photos?.totalPhotos ?? 0}</span>
+        </div>
+        {!!closeoutGuardrails.blockers.length && (
+          <div className="history-list compact-list">
+            {closeoutGuardrails.blockers.map((item) => (
+              <div key={item} className="history-entry compact-entry">
+                <p>{item}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <label className="field">
           <span>Labor code</span>
           <input
@@ -288,7 +302,7 @@ export default function JobDetailView({
         <div className="action-row">
           <button
             type="button"
-            disabled={actionState?.loading || !closeoutDraft.workPerformed.trim()}
+            disabled={actionState?.loading || closeoutGuardrails.blockers.length > 0}
             onClick={async () => {
               const result = await onAction("closeoutPreview", { body: buildCloseoutPayload(closeoutDraft) });
               setCloseoutPreview(result || null);
@@ -299,7 +313,7 @@ export default function JobDetailView({
           <button
             type="button"
             className="secondary-button"
-            disabled={actionState?.loading || !closeoutDraft.workPerformed.trim()}
+            disabled={actionState?.loading || closeoutGuardrails.blockers.length > 0}
             onClick={() => onAction("closeoutSubmit", { body: buildCloseoutPayload(closeoutDraft) })}
           >
             Submit closeout
@@ -307,6 +321,7 @@ export default function JobDetailView({
           <button
             type="button"
             className="secondary-button"
+            disabled={actionState?.loading || closeoutGuardrails.blockers.length > 0}
             onClick={() =>
               setBridgeMessage(
                 onQueueOfflineAction?.("closeout_submit", { srId: job.id, ...buildCloseoutPayload(closeoutDraft) })?.message || "Queued closeout."
@@ -440,6 +455,25 @@ function buildWorkflowSummary(job, parts, photos, timeline) {
     ],
     checklist,
   };
+}
+
+function buildCloseoutGuardrails(draft, photos, workflowSummary) {
+  const blockers = [];
+  if (!draft.workPerformed.trim() || draft.workPerformed.trim().length < 20) {
+    blockers.push("Describe work performed in enough detail before closing the job.");
+  }
+  if (draft.customerApproved && !draft.signedBy.trim()) {
+    blockers.push("Enter who approved the work before closeout.");
+  }
+  if (Array.isArray(photos?.missingTags) && photos.missingTags.length) {
+    blockers.push(`Required photo tags are still missing: ${photos.missingTags.join(", ")}.`);
+  } else if (photos?.enabled && Number(photos?.totalPhotos || 0) <= 0) {
+    blockers.push("Capture at least one required photo before closeout.");
+  }
+  if (!workflowSummary.checklist.find((item) => item.label === "Activity history present")?.ready) {
+    blockers.push("Load current job history before sending closeout so the field context is current.");
+  }
+  return { blockers };
 }
 
 function closeoutDraftKey(jobId) {

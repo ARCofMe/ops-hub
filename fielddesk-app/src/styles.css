@@ -201,6 +201,10 @@ h2 {
   padding: 10px 12px;
 }
 
+.grouped-list {
+  padding: 12px;
+}
+
 .field {
   display: grid;
   gap: 6px;

@@ -35,6 +35,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("today");
   const [jobFilterText, setJobFilterText] = useState("");
   const [jobFilterScope, setJobFilterScope] = useState("all");
+  const [queueReplayState, setQueueReplayState] = useState(null);
   const [bridgeState, setBridgeState] = useState(() => ({
     available: isNativeBridgeAvailable(),
     offlineQueue: getNativeOfflineQueueState(),
@@ -44,9 +45,10 @@ export default function App() {
 
   const api = useMemo(() => createFieldDeskApi(() => config), [config]);
   const selectedJob = jobs.find((job) => String(job.id) === String(selectedJobId)) || jobDetail;
+  const rankedJobs = useMemo(() => jobs.map((job) => ({ ...job, queueScore: scoreJob(job), rankLabel: describeJobRank(scoreJob(job)) })), [jobs]);
   const filteredJobs = useMemo(() => {
     const query = jobFilterText.trim().toLowerCase();
-    return jobs.filter((job) => {
+    return rankedJobs.filter((job) => {
       const status = String(job.status || "").toLowerCase();
       const partsStage = String(job.partsStage || "").toLowerCase();
       const matchesScope =
@@ -58,7 +60,7 @@ export default function App() {
       if (!query) return true;
       return [job.id, job.customerName, job.address, job.status, job.partsStage].some((value) => String(value || "").toLowerCase().includes(query));
     });
-  }, [jobFilterScope, jobFilterText, jobs]);
+  }, [jobFilterScope, jobFilterText, rankedJobs]);
   const workspaceLinks = useMemo(
     () =>
       [
@@ -76,6 +78,7 @@ export default function App() {
     pending: jobs.filter((job) => !String(job.status || "").toLowerCase().includes("complete")).length,
     parts: jobs.filter((job) => String(job.partsStage || "").toLowerCase().includes("part")).length,
   };
+  const groupedJobs = useMemo(() => buildJobSections(filteredJobs), [filteredJobs]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = config.themeMode || "dark";
@@ -104,13 +107,43 @@ export default function App() {
     loadJob(selectedJobId);
   }, [selectedJobId, api]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onNativePhoto = async (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : null;
+      if (!detail?.srId) return;
+      const payload = {
+        label: detail.label || "job photo",
+        filename: detail.filename || `sr-${detail.srId}-photo.jpg`,
+        contentType: detail.contentType || "image/jpeg",
+        dataBase64: detail.dataBase64 || "",
+      };
+      if (!payload.dataBase64) {
+        setActionState({ error: true, message: detail.message || "Native camera capture did not return photo data." });
+        return;
+      }
+      setActionState({ loading: true, message: "Uploading native photo..." });
+      try {
+        const result = await api.uploadJobPhoto(detail.srId, payload);
+        setActionState({ error: !result?.success, message: result?.message || "Photo uploaded." });
+      } catch (error) {
+        queueOfflineAction("photo_upload", { srId: detail.srId, ...payload });
+        setActionState({ error: true, message: `${formatError(error)} Photo upload was queued for replay.` });
+      } finally {
+        await Promise.all([loadToday(), loadJob(detail.srId)]);
+      }
+    };
+    window.addEventListener("fielddesk:native-photo", onNativePhoto);
+    return () => window.removeEventListener("fielddesk:native-photo", onNativePhoto);
+  }, [api]);
+
   async function loadToday() {
     setJobsLoading(true);
     setJobsError("");
     try {
       const payload = await api.getToday();
       const nextJobs = Array.isArray(payload) ? payload : [];
-      setJobs(nextJobs);
+      setJobs(nextJobs.sort((left, right) => scoreJob(right) - scoreJob(left)));
       if (!selectedJobId && nextJobs[0]?.id) {
         setSelectedJobId(String(nextJobs[0].id));
       } else if (selectedJobId && !nextJobs.some((job) => String(job.id) === String(selectedJobId))) {
@@ -236,6 +269,30 @@ export default function App() {
     }
   }
 
+  async function replayOfflineQueue() {
+    const items = Array.isArray(bridgeState.offlineQueue?.items) ? bridgeState.offlineQueue.items : [];
+    if (!items.length) return;
+    setQueueReplayState({ loading: true, message: "Replaying offline actions..." });
+    let replayed = 0;
+    let failed = 0;
+    for (const item of items) {
+      try {
+        const success = await executeQueuedAction(api, item);
+        if (success) {
+          replayed += 1;
+          removeNativeOfflineAction(item.id);
+        } else {
+          failed += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+    refreshBridgeState(failed ? `${replayed} replayed, ${failed} still queued.` : `${replayed} queued action(s) replayed.`);
+    setQueueReplayState({ error: failed > 0, message: failed ? `${replayed} replayed, ${failed} still queued.` : `${replayed} queued action(s) replayed.` });
+    await Promise.all([loadToday(), selectedJobId ? loadJob(selectedJobId) : Promise.resolve()]);
+  }
+
   return (
     <main className="app-shell">
       <BrandBar activeJob={selectedJob} counts={counts} onRefresh={loadToday} refreshDisabled={jobsLoading} />
@@ -266,6 +323,7 @@ export default function App() {
           <>
             <JobList
               jobs={filteredJobs}
+              groupedJobs={activeTab === "today" ? groupedJobs : null}
               selectedJobId={selectedJobId}
               onSelectJob={(job) => {
                 setSelectedJobId(String(job.id));
@@ -300,6 +358,7 @@ export default function App() {
           <>
             <JobList
               jobs={filteredJobs}
+              groupedJobs={null}
               selectedJobId={selectedJobId}
               onSelectJob={(job) => setSelectedJobId(String(job.id))}
               title="Visible stops"
@@ -377,6 +436,9 @@ export default function App() {
             <button type="button" className="secondary-button" onClick={() => queueOfflineAction("fielddesk_refresh", { selectedJobId })}>
               Queue refresh marker
             </button>
+            <button type="button" className="secondary-button" onClick={replayOfflineQueue}>
+              Replay queue
+            </button>
             <button type="button" className="secondary-button" onClick={clearOfflineQueue}>
               Clear queue
             </button>
@@ -384,6 +446,7 @@ export default function App() {
               Refresh queue state
             </button>
           </div>
+          {queueReplayState?.message && <p className={queueReplayState.error ? "error-text" : "muted"}>{queueReplayState.message}</p>}
         </section>
       )}
     </main>
@@ -449,4 +512,95 @@ function normalizeUrl(value) {
 function normalizeOptionalUrl(value) {
   const normalized = normalizeUrl(value);
   return /^https?:\/\//i.test(normalized) ? normalized : "";
+}
+
+function scoreJob(job) {
+  const status = String(job?.status || "").toLowerCase();
+  const partsStage = String(job?.partsStage || "").toLowerCase();
+  let score = 0;
+  if (!status.includes("complete")) score += 40;
+  if (job?.appointmentWindow) score += 20;
+  if (partsStage && !partsStage.includes("none") && !partsStage.includes("received")) score -= 20;
+  if (status.includes("arrive") || status.includes("en route") || status.includes("start")) score += 30;
+  if (status.includes("scheduled")) score += 15;
+  return score;
+}
+
+function describeJobRank(score) {
+  if (score >= 70) return "Next best stop";
+  if (score >= 45) return "Ready today";
+  if (score >= 20) return "Watch list";
+  return "Blocked";
+}
+
+function buildJobSections(items) {
+  const sections = [
+    { label: "Next best stops", items: items.filter((item) => (item.queueScore || 0) >= 70) },
+    { label: "Ready today", items: items.filter((item) => (item.queueScore || 0) >= 45 && (item.queueScore || 0) < 70) },
+    { label: "Needs follow-up", items: items.filter((item) => (item.queueScore || 0) < 45) },
+  ];
+  return sections.filter((section) => section.items.length > 0);
+}
+
+async function executeQueuedAction(api, item) {
+  const payload = parseQueuedPayload(item?.payload);
+  const srId = payload?.srId || item?.srId;
+  if (item?.actionType === "fielddesk_refresh") return true;
+  if (!srId) return false;
+  if (item?.actionType === "photo_prepare") {
+    await api.postPhotoPrepare(srId, payload.label || "before");
+    return true;
+  }
+  if (item?.actionType === "photo_upload") {
+    await api.uploadJobPhoto(srId, {
+      label: payload.label,
+      filename: payload.filename,
+      contentType: payload.contentType,
+      dataBase64: payload.dataBase64,
+    });
+    return true;
+  }
+  if (item?.actionType === "closeout_submit") {
+    const { srId: _, ...body } = payload;
+    await api.submitCloseout(srId, body);
+    return true;
+  }
+  if (item?.actionType === "note") {
+    await api.postNote(srId, payload.note || "");
+    return true;
+  }
+  if (item?.actionType === "status") {
+    await api.postStatus(srId, payload.status || "");
+    return true;
+  }
+  if (item?.actionType === "parts") {
+    await api.postParts(srId, payload.details || "");
+    return true;
+  }
+  if (item?.actionType === "quote_needed") {
+    await api.postQuoteNeeded(srId, payload.details || "", payload.subtype || "customer");
+    return true;
+  }
+  if (item?.actionType === "reschedule") {
+    await api.postReschedule(srId, payload.reason || "");
+    return true;
+  }
+  return false;
+}
+
+function parseQueuedPayload(raw) {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return String(raw)
+      .split("&")
+      .reduce((accumulator, pair) => {
+        const [key, value] = pair.split("=");
+        if (!key) return accumulator;
+        accumulator[key] = decodeURIComponent(value || "");
+        return accumulator;
+      }, {});
+  }
 }
