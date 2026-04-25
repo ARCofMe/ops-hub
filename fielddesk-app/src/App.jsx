@@ -36,12 +36,14 @@ export default function App() {
   const [jobFilterText, setJobFilterText] = useState("");
   const [jobFilterScope, setJobFilterScope] = useState("all");
   const [queueReplayState, setQueueReplayState] = useState(null);
+  const [photoGallery, setPhotoGallery] = useState([]);
   const [bridgeState, setBridgeState] = useState(() => ({
     available: isNativeBridgeAvailable(),
     offlineQueue: getNativeOfflineQueueState(),
     pushMessage: "",
   }));
   const jobLoadSequence = useRef(0);
+  const replaySequence = useRef(0);
 
   const api = useMemo(() => createFieldDeskApi(() => config), [config]);
   const selectedJob = jobs.find((job) => String(job.id) === String(selectedJobId)) || jobDetail;
@@ -108,6 +110,10 @@ export default function App() {
   }, [selectedJobId, api]);
 
   useEffect(() => {
+    setPhotoGallery(readPhotoGallery(selectedJobId));
+  }, [selectedJobId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const onNativePhoto = async (event) => {
       const detail = event?.detail && typeof event.detail === "object" ? event.detail : null;
@@ -125,9 +131,31 @@ export default function App() {
       setActionState({ loading: true, message: "Uploading native photo..." });
       try {
         const result = await api.uploadJobPhoto(detail.srId, payload);
+        recordPhotoGalleryEntry(detail.srId, {
+          label: payload.label,
+          filename: payload.filename,
+          source: "native_capture",
+          status: result?.success === false ? "upload_error" : "uploaded",
+          contentType: payload.contentType,
+          capturedAt: new Date().toISOString(),
+        });
+        if (String(detail.srId) === String(selectedJobId)) {
+          setPhotoGallery(readPhotoGallery(detail.srId));
+        }
         setActionState({ error: !result?.success, message: result?.message || "Photo uploaded." });
       } catch (error) {
         queueOfflineAction("photo_upload", { srId: detail.srId, ...payload });
+        recordPhotoGalleryEntry(detail.srId, {
+          label: payload.label,
+          filename: payload.filename,
+          source: "native_capture",
+          status: "queued",
+          contentType: payload.contentType,
+          capturedAt: new Date().toISOString(),
+        });
+        if (String(detail.srId) === String(selectedJobId)) {
+          setPhotoGallery(readPhotoGallery(detail.srId));
+        }
         setActionState({ error: true, message: `${formatError(error)} Photo upload was queued for replay.` });
       } finally {
         await Promise.all([loadToday(), loadJob(detail.srId)]);
@@ -136,6 +164,23 @@ export default function App() {
     window.addEventListener("fielddesk:native-photo", onNativePhoto);
     return () => window.removeEventListener("fielddesk:native-photo", onNativePhoto);
   }, [api]);
+
+  useEffect(() => {
+    if (!bridgeState.available || !bridgeState.offlineQueue?.count || !config.apiBase || !config.apiToken || !config.technicianSubject) {
+      return undefined;
+    }
+    const triggerReplay = () => {
+      maybeReplayOfflineQueue("background recovery");
+    };
+    const timeoutId = window.setTimeout(triggerReplay, 2500);
+    window.addEventListener("online", triggerReplay);
+    window.addEventListener("focus", triggerReplay);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("online", triggerReplay);
+      window.removeEventListener("focus", triggerReplay);
+    };
+  }, [bridgeState.available, bridgeState.offlineQueue?.count, config.apiBase, config.apiToken, config.technicianSubject]);
 
   async function loadToday() {
     setJobsLoading(true);
@@ -291,6 +336,19 @@ export default function App() {
     refreshBridgeState(failed ? `${replayed} replayed, ${failed} still queued.` : `${replayed} queued action(s) replayed.`);
     setQueueReplayState({ error: failed > 0, message: failed ? `${replayed} replayed, ${failed} still queued.` : `${replayed} queued action(s) replayed.` });
     await Promise.all([loadToday(), selectedJobId ? loadJob(selectedJobId) : Promise.resolve()]);
+    if (selectedJobId) {
+      setPhotoGallery(readPhotoGallery(selectedJobId));
+    }
+  }
+
+  async function maybeReplayOfflineQueue(reason) {
+    const now = Date.now();
+    if (queueReplayState?.loading) return;
+    if (!bridgeState.offlineQueue?.count) return;
+    if (now - replaySequence.current < 30000) return;
+    replaySequence.current = now;
+    setQueueReplayState({ loading: true, message: `Attempting ${reason}...` });
+    await replayOfflineQueue();
   }
 
   return (
@@ -342,6 +400,7 @@ export default function App() {
               timeline={timeline}
               parts={parts}
               photos={photos}
+              photoGallery={photoGallery}
               loading={jobLoading}
               error={jobError}
               actionState={actionState}
@@ -374,6 +433,7 @@ export default function App() {
               timeline={timeline}
               parts={parts}
               photos={photos}
+              photoGallery={photoGallery}
               loading={jobLoading}
               error={jobError}
               actionState={actionState}
@@ -558,6 +618,7 @@ async function executeQueuedAction(api, item) {
       contentType: payload.contentType,
       dataBase64: payload.dataBase64,
     });
+    recordPhotoGalleryStatus(srId, payload.filename, "uploaded");
     return true;
   }
   if (item?.actionType === "closeout_submit") {
@@ -586,6 +647,42 @@ async function executeQueuedAction(api, item) {
     return true;
   }
   return false;
+}
+
+function photoGalleryKey(jobId) {
+  return `fielddesk-photo-gallery-${jobId}`;
+}
+
+function readPhotoGallery(jobId) {
+  if (typeof window === "undefined" || !jobId) return [];
+  try {
+    const raw = window.localStorage.getItem(photoGalleryKey(jobId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPhotoGallery(jobId, items) {
+  if (typeof window === "undefined" || !jobId) return;
+  window.localStorage.setItem(photoGalleryKey(jobId), JSON.stringify(items.slice(0, 20)));
+}
+
+function recordPhotoGalleryEntry(jobId, entry) {
+  if (!jobId) return;
+  const current = readPhotoGallery(jobId);
+  const deduped = current.filter((item) => item.filename !== entry.filename);
+  persistPhotoGallery(jobId, [{ ...entry }, ...deduped]);
+}
+
+function recordPhotoGalleryStatus(jobId, filename, status) {
+  if (!jobId || !filename) return;
+  const current = readPhotoGallery(jobId);
+  persistPhotoGallery(
+    jobId,
+    current.map((item) => (item.filename === filename ? { ...item, status, syncedAt: new Date().toISOString() } : item))
+  );
 }
 
 function parseQueuedPayload(raw) {

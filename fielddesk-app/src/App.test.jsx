@@ -43,7 +43,12 @@ describe("FieldDesk App", () => {
         return response({ stageLabel: "Requested", status: "open", nextAction: "Await office review" });
       }
       if (String(url).endsWith("/tech/jobs/100/photos")) {
-        return response({ mailboxStatus: "ok", foundTags: ["before"], missingTags: ["after"] });
+        return response({
+          mailboxStatus: "ok",
+          foundTags: ["before"],
+          missingTags: ["after"],
+          records: [{ subject: "SR-100 photos", fromEmail: "tech@example.com", receivedAt: "2026-04-25T10:00:00Z", attachmentCount: 2, attachmentNames: ["sr-100-before.jpg"] }],
+        });
       }
       throw new Error(`Unexpected URL ${url}`);
     });
@@ -58,6 +63,7 @@ describe("FieldDesk App", () => {
     });
     expect(screen.getByText("Active Job")).toBeInTheDocument();
     expect(screen.getByText("Assigned")).toBeInTheDocument();
+    expect(screen.getByText("Mailbox records: 1")).toBeInTheDocument();
   });
 
   it("filters the visible queue by search text", async () => {
@@ -179,6 +185,9 @@ describe("FieldDesk App", () => {
         expect.stringMatching(/\/tech\/jobs\/100\/photos\/upload$/),
         expect.objectContaining({ method: "POST" })
       );
+    });
+    await waitFor(() => {
+      expect(window.localStorage.getItem("fielddesk-photo-gallery-100") || "").toContain("sr-100-before.jpg");
     });
   });
 });

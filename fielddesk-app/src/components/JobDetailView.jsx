@@ -13,6 +13,7 @@ export default function JobDetailView({
   timeline,
   parts,
   photos,
+  photoGallery,
   loading,
   error,
   actionState,
@@ -228,9 +229,36 @@ export default function JobDetailView({
         <div className="chip-list">
           <span className="queue-chip">Found: {formatList(photos?.foundTags)}</span>
           <span className="queue-chip">Missing: {formatList(photos?.missingTags)}</span>
+          <span className="queue-chip">Mailbox records: {Array.isArray(photos?.records) ? photos.records.length : 0}</span>
+          <span className="queue-chip">Local captures: {Array.isArray(photoGallery) ? photoGallery.length : 0}</span>
           <span className="queue-chip">Bridge: {bridgeAvailable ? "available" : "browser only"}</span>
         </div>
+        <div className="history-list compact-list">
+          {(photoGallery || []).slice(0, 4).map((entry) => (
+            <div key={`${entry.filename}-${entry.capturedAt}`} className="history-entry compact-entry">
+              <p>{entry.label || entry.filename || "Captured photo"}</p>
+              <span>{[entry.status || "local", entry.filename, entry.capturedAt].filter(Boolean).join(" • ")}</span>
+            </div>
+          ))}
+          {!photoGallery?.length && <p className="muted">No local photo captures have been recorded for this SR yet.</p>}
+        </div>
       </div>
+
+      <details className="disclosure-card">
+        <summary>Photo gallery state</summary>
+        <div className="history-list">
+          {(photos?.records || []).map((record, index) => (
+            <div key={`${record.receivedAt || "record"}-${index}`} className="history-entry">
+              <p>{record.subject || "Mailbox record"}</p>
+              <span>{[record.fromEmail, record.receivedAt, `${record.attachmentCount || 0} attachments`].filter(Boolean).join(" • ")}</span>
+              {Array.isArray(record.attachmentNames) && record.attachmentNames.length > 0 && (
+                <small>{record.attachmentNames.join(", ")}</small>
+              )}
+            </div>
+          ))}
+          {!photos?.records?.length && <p className="muted">No mailbox photo records were returned for this SR yet.</p>}
+        </div>
+      </details>
 
       <div className="detail-block">
         <strong>Closeout</strong>
