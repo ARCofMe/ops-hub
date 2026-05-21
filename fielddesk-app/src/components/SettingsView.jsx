@@ -1,4 +1,13 @@
 export default function SettingsView({ config, onChange, onApply, onPing, pingState }) {
+  const readiness = [
+    ["API base", Boolean(config.apiBase)],
+    ["Token", Boolean(config.apiToken)],
+    ["Technician", Boolean(config.technicianSubject)],
+    ["HTTP base", /^https?:\/\//i.test(config.apiBase || "")],
+    ["Timeout", Number(config.timeoutMs) >= 5000 && Number(config.timeoutMs) <= 120000],
+  ];
+  const readyCount = readiness.filter(([, ready]) => ready).length;
+
   return (
     <section className="panel stack-gap">
       <div className="section-head">
@@ -6,6 +15,18 @@ export default function SettingsView({ config, onChange, onApply, onPing, pingSt
           <p className="section-kicker">Client Settings</p>
           <h2>Wrapper-ready config</h2>
         </div>
+      </div>
+      <div className="detail-grid">
+        <div className="detail-value">
+          <span>Device readiness</span>
+          <strong>{readyCount} / {readiness.length}</strong>
+        </div>
+        {readiness.map(([label, ready]) => (
+          <div key={label} className="detail-value">
+            <span>{label}</span>
+            <strong>{ready ? "Ready" : "Missing"}</strong>
+          </div>
+        ))}
       </div>
       <label className="field">
         <span>Ops Hub API base</span>
@@ -27,6 +48,16 @@ export default function SettingsView({ config, onChange, onApply, onPing, pingSt
         </select>
       </label>
       <label className="field">
+        <span>Request timeout</span>
+        <input
+          type="number"
+          min="5"
+          max="120"
+          value={Math.round((Number(config.timeoutMs) || 30000) / 1000)}
+          onChange={(event) => onChange("timeoutMs", Number(event.target.value) * 1000)}
+        />
+      </label>
+      <label className="field">
         <span>Ops Hub workspace URL</span>
         <input value={config.opsHubUrl || ""} onChange={(event) => onChange("opsHubUrl", event.target.value)} placeholder="https://ops-hub.example" />
       </label>
@@ -42,6 +73,10 @@ export default function SettingsView({ config, onChange, onApply, onPing, pingSt
         <button type="button" onClick={onApply}>Apply settings</button>
         <button type="button" className="secondary-button" onClick={onPing}>Check connection</button>
       </div>
+      <p className="muted">
+        FieldDesk settings are local to this technician device. RouteDesk and PartsDesk URLs are optional handoff links,
+        not a shared FieldDesk launcher.
+      </p>
       {pingState?.message && <p className={pingState.error ? "error-text" : "muted"}>{pingState.message}</p>}
     </section>
   );

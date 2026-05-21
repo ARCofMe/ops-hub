@@ -22,7 +22,7 @@ export function getNativeHostConfig() {
 export function getNativeOfflineQueueState() {
   const current = bridge();
   if (!current?.getOfflineQueueState) return { available: false, count: 0, items: [] };
-  return parseBridgePayload(current.getOfflineQueueState()) || { available: false, count: 0, items: [] };
+  return normalizeOfflineQueueState(parseBridgePayload(current.getOfflineQueueState()));
 }
 
 export function enqueueNativeOfflineAction(actionType, payload) {
@@ -75,4 +75,28 @@ export function clearNativeOfflineActions() {
 
 export function isNativeBridgeAvailable() {
   return Boolean(bridge());
+}
+
+export function getNativeBridgeSummary() {
+  const current = bridge();
+  return {
+    available: Boolean(current),
+    hostConfig: Boolean(current?.getHostConfig),
+    offlineQueue: Boolean(current?.getOfflineQueueState && current?.enqueueOfflineAction),
+    photoCapture: Boolean(current?.capturePhoto),
+    push: Boolean(current?.requestPushRegistration),
+    location: Boolean(current?.getDeviceLocation),
+    navigation: Boolean(current?.openExternalNavigation),
+    externalLinks: Boolean(current?.openExternalUrl),
+  };
+}
+
+function normalizeOfflineQueueState(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const items = Array.isArray(source.items) ? source.items : [];
+  return {
+    available: Boolean(source.available ?? true),
+    count: Number.isFinite(Number(source.count)) ? Number(source.count) : items.length,
+    items,
+  };
 }

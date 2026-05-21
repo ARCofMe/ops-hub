@@ -8,6 +8,7 @@ import {
   clearNativeOfflineActions,
   enqueueNativeOfflineAction,
   getNativeHostConfig,
+  getNativeBridgeSummary,
   getNativeOfflineQueueState,
   isNativeBridgeAvailable,
   openNativeExternalUrl,
@@ -16,14 +17,31 @@ import {
 } from "./nativeBridge";
 
 const STORAGE_KEY = "fielddesk-web-config";
+const PREFERENCES_KEY = "fielddesk-web-preferences";
+const DEFAULT_PREFERENCES = {
+  activeTab: "today",
+  jobFilterText: "",
+  jobFilterScope: "all",
+  compactQueue: false,
+  lastSelectedJobId: "",
+};
+const TAB_ITEMS = [
+  ["today", "My Day"],
+  ["queue", "Queue"],
+  ["job", "Job Detail"],
+  ["settings", "Settings"],
+];
+const FILTER_SCOPES = new Set(["all", "next", "open", "parts", "done", "unscheduled"]);
+const TAB_KEYS = new Set(TAB_ITEMS.map(([key]) => key));
 
 export default function App() {
   const [config, setConfig] = useState(() => readStoredConfig());
   const [draftConfig, setDraftConfig] = useState(() => readStoredConfig());
+  const [preferences, setPreferences] = useState(() => readStoredPreferences());
   const [jobs, setJobs] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
-  const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedJobId, setSelectedJobIdState] = useState(() => preferences.lastSelectedJobId);
   const [jobDetail, setJobDetail] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [parts, setParts] = useState(null);
@@ -32,17 +50,20 @@ export default function App() {
   const [jobError, setJobError] = useState("");
   const [actionState, setActionState] = useState(null);
   const [pingState, setPingState] = useState(null);
-  const [activeTab, setActiveTab] = useState("today");
-  const [jobFilterText, setJobFilterText] = useState("");
-  const [jobFilterScope, setJobFilterScope] = useState("all");
+  const [activeTab, setActiveTabState] = useState(() => normalizeTabKey(preferences.activeTab));
+  const [jobFilterText, setJobFilterTextState] = useState(() => preferences.jobFilterText);
+  const [jobFilterScope, setJobFilterScopeState] = useState(() => normalizeFilterScope(preferences.jobFilterScope));
+  const [compactQueue, setCompactQueueState] = useState(() => Boolean(preferences.compactQueue));
   const [queueReplayState, setQueueReplayState] = useState(null);
   const [photoGallery, setPhotoGallery] = useState([]);
   const [bridgeState, setBridgeState] = useState(() => ({
     available: isNativeBridgeAvailable(),
     offlineQueue: getNativeOfflineQueueState(),
+    summary: getNativeBridgeSummary(),
     pushMessage: "",
   }));
   const jobLoadSequence = useRef(0);
+  const todayLoadSequence = useRef(0);
   const replaySequence = useRef(0);
 
   const api = useMemo(() => createFieldDeskApi(() => config), [config]);
@@ -53,10 +74,13 @@ export default function App() {
     return rankedJobs.filter((job) => {
       const status = String(job.status || "").toLowerCase();
       const partsStage = String(job.partsStage || "").toLowerCase();
+      const queueScore = Number(job.queueScore || 0);
       const matchesScope =
         jobFilterScope === "all" ||
+        (jobFilterScope === "next" && queueScore >= 70) ||
         (jobFilterScope === "open" && !status.includes("complete")) ||
         (jobFilterScope === "done" && status.includes("complete")) ||
+        (jobFilterScope === "unscheduled" && !job.appointmentWindow) ||
         (jobFilterScope === "parts" && (partsStage.includes("part") || status.includes("part")));
       if (!matchesScope) return false;
       if (!query) return true;
@@ -79,13 +103,30 @@ export default function App() {
     done: jobs.filter((job) => String(job.status || "").toLowerCase().includes("complete")).length,
     pending: jobs.filter((job) => !String(job.status || "").toLowerCase().includes("complete")).length,
     parts: jobs.filter((job) => String(job.partsStage || "").toLowerCase().includes("part")).length,
+    next: rankedJobs.filter((job) => (job.queueScore || 0) >= 70).length,
+    unscheduled: rankedJobs.filter((job) => !job.appointmentWindow).length,
+    visible: filteredJobs.length,
   };
   const groupedJobs = useMemo(() => buildJobSections(filteredJobs), [filteredJobs]);
+  const queueSummary = useMemo(() => buildQueueSummary(rankedJobs, filteredJobs), [filteredJobs, rankedJobs]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = config.themeMode || "dark";
     document.title = "FieldDesk | OpsHub";
   }, [config.themeMode]);
+
+  useEffect(() => {
+    safeLocalStorageSet(
+      PREFERENCES_KEY,
+      JSON.stringify({
+        activeTab,
+        jobFilterText,
+        jobFilterScope,
+        compactQueue,
+        lastSelectedJobId: selectedJobId,
+      })
+    );
+  }, [activeTab, compactQueue, jobFilterScope, jobFilterText, selectedJobId]);
 
   useEffect(() => {
     const nativeConfig = getNativeHostConfig();
@@ -95,6 +136,7 @@ export default function App() {
     setBridgeState({
       available: true,
       offlineQueue: getNativeOfflineQueueState(),
+      summary: getNativeBridgeSummary(),
       pushMessage: "",
     });
   }, []);
@@ -183,20 +225,24 @@ export default function App() {
   }, [bridgeState.available, bridgeState.offlineQueue?.count, config.apiBase, config.apiToken, config.technicianSubject]);
 
   async function loadToday() {
+    const sequence = ++todayLoadSequence.current;
     setJobsLoading(true);
     setJobsError("");
     try {
       const payload = await api.getToday();
       const nextJobs = Array.isArray(payload) ? payload : [];
+      if (sequence !== todayLoadSequence.current) return;
       setJobs(nextJobs.sort((left, right) => scoreJob(right) - scoreJob(left)));
       if (!selectedJobId && nextJobs[0]?.id) {
-        setSelectedJobId(String(nextJobs[0].id));
+        setSelectedJobId(nextJobs[0].id);
       } else if (selectedJobId && !nextJobs.some((job) => String(job.id) === String(selectedJobId))) {
-        setSelectedJobId(nextJobs[0]?.id ? String(nextJobs[0].id) : "");
+        setSelectedJobId(nextJobs[0]?.id || "");
       }
     } catch (error) {
+      if (sequence !== todayLoadSequence.current) return;
       setJobsError(formatError(error));
     } finally {
+      if (sequence !== todayLoadSequence.current) return;
       setJobsLoading(false);
     }
   }
@@ -221,7 +267,11 @@ export default function App() {
         .filter((item) => item.status === "rejected")
         .map((item) => formatError(item.reason));
       setJobError(errors[0] || "");
+    } catch (error) {
+      if (sequence !== jobLoadSequence.current) return;
+      setJobError(formatError(error));
     } finally {
+      if (sequence !== jobLoadSequence.current) return;
       setJobLoading(false);
     }
   }
@@ -272,6 +322,7 @@ export default function App() {
     setBridgeState({
       available: isNativeBridgeAvailable(),
       offlineQueue: getNativeOfflineQueueState(),
+      summary: getNativeBridgeSummary(),
       pushMessage,
     });
   }
@@ -316,7 +367,7 @@ export default function App() {
 
   async function replayOfflineQueue() {
     const items = Array.isArray(bridgeState.offlineQueue?.items) ? bridgeState.offlineQueue.items : [];
-    if (!items.length) return;
+    if (!items.length || queueReplayState?.loading) return;
     setQueueReplayState({ loading: true, message: "Replaying offline actions..." });
     let replayed = 0;
     let failed = 0;
@@ -355,15 +406,19 @@ export default function App() {
     <main className="app-shell">
       <BrandBar activeJob={selectedJob} counts={counts} onRefresh={loadToday} refreshDisabled={jobsLoading} />
 
-      <nav className="tab-nav">
-        {[
-          ["today", "My Day"],
-          ["queue", "Queue"],
-          ["job", "Job Detail"],
-          ["settings", "Settings"],
-        ].map(([key, label]) => (
-          <button key={key} type="button" className={activeTab === key ? "tab-button active" : "tab-button"} onClick={() => setActiveTab(key)}>
+      <nav className="tab-nav" aria-label="FieldDesk views">
+        {TAB_ITEMS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={activeTab === key ? "tab-button active" : "tab-button"}
+            aria-current={activeTab === key ? "page" : undefined}
+            onClick={() => setActiveTab(key)}
+          >
             {label}
+            {getTabBadge(key, counts, bridgeState.offlineQueue?.count) && (
+              <span className="tab-badge">{getTabBadge(key, counts, bridgeState.offlineQueue?.count)}</span>
+            )}
           </button>
         ))}
       </nav>
@@ -382,9 +437,10 @@ export default function App() {
             <JobList
               jobs={filteredJobs}
               groupedJobs={activeTab === "today" ? groupedJobs : null}
+              compact={compactQueue}
               selectedJobId={selectedJobId}
               onSelectJob={(job) => {
-                setSelectedJobId(String(job.id));
+                setSelectedJobId(job.id);
                 setActiveTab("job");
               }}
               title={activeTab === "today" ? "My Day" : "Queue"}
@@ -394,6 +450,7 @@ export default function App() {
               filterScope={jobFilterScope}
               onFilterTextChange={setJobFilterText}
               onFilterScopeChange={setJobFilterScope}
+              onClearFilters={clearQueueFilters}
             />
             <JobDetailView
               job={selectedJob}
@@ -410,6 +467,13 @@ export default function App() {
               workspaceLinks={workspaceLinks}
               onOpenWorkspaceLink={openWorkspaceLink}
             />
+            <QueueSummaryPanel
+              summary={queueSummary}
+              counts={counts}
+              compactQueue={compactQueue}
+              onCompactQueueChange={setCompactQueue}
+              onScopeChange={setJobFilterScope}
+            />
           </>
         )}
 
@@ -418,8 +482,9 @@ export default function App() {
             <JobList
               jobs={filteredJobs}
               groupedJobs={null}
+              compact={compactQueue}
               selectedJobId={selectedJobId}
-              onSelectJob={(job) => setSelectedJobId(String(job.id))}
+              onSelectJob={(job) => setSelectedJobId(job.id)}
               title="Visible stops"
               subtitle="Queue"
               totalCount={jobs.length}
@@ -427,6 +492,7 @@ export default function App() {
               filterScope={jobFilterScope}
               onFilterTextChange={setJobFilterText}
               onFilterScopeChange={setJobFilterScope}
+              onClearFilters={clearQueueFilters}
             />
             <JobDetailView
               job={selectedJob}
@@ -464,6 +530,14 @@ export default function App() {
                 <span className="queue-chip">Offline queued: {bridgeState.offlineQueue?.count || 0}</span>
                 <span className="queue-chip">Push: scaffolded</span>
                 <span className="queue-chip">Parts blockers: {counts.parts}</span>
+              </div>
+              <div className="detail-grid">
+                {Object.entries(bridgeState.summary || {}).map(([key, ready]) => (
+                  <div key={key} className="detail-value">
+                    <span>{formatBridgeCapability(key)}</span>
+                    <strong>{ready ? "Ready" : "Unavailable"}</strong>
+                  </div>
+                ))}
               </div>
               <div className="action-row">
                 <button type="button" onClick={requestPushBridge}>Request push bridge</button>
@@ -513,7 +587,10 @@ export default function App() {
   );
 
   function openWorkspaceLink(url) {
-    if (!url) return;
+    if (!isHttpUrl(url)) {
+      setPingState({ error: true, message: "Workspace link must start with http:// or https://." });
+      return;
+    }
     const nativeResult = openNativeExternalUrl(url);
     if (nativeResult?.success || nativeResult?.available) {
       setPingState({ error: !nativeResult.success, message: nativeResult.message || "Opening workspace..." });
@@ -523,12 +600,47 @@ export default function App() {
       window.open(url, "_blank", "noopener,noreferrer");
     }
   }
+
+  function setActiveTab(value) {
+    const nextValue = normalizeTabKey(value);
+    setActiveTabState(nextValue);
+    setPreferences((current) => ({ ...current, activeTab: nextValue }));
+  }
+
+  function setJobFilterText(value) {
+    const nextValue = String(value || "").slice(0, 120);
+    setJobFilterTextState(nextValue);
+    setPreferences((current) => ({ ...current, jobFilterText: nextValue }));
+  }
+
+  function setJobFilterScope(value) {
+    const nextValue = normalizeFilterScope(value);
+    setJobFilterScopeState(nextValue);
+    setPreferences((current) => ({ ...current, jobFilterScope: nextValue }));
+  }
+
+  function setCompactQueue(value) {
+    const nextValue = Boolean(value);
+    setCompactQueueState(nextValue);
+    setPreferences((current) => ({ ...current, compactQueue: nextValue }));
+  }
+
+  function clearQueueFilters() {
+    setJobFilterText("");
+    setJobFilterScope("all");
+  }
+
+  function setSelectedJobId(value) {
+    const nextValue = normalizeIdentifier(value);
+    setSelectedJobIdState(nextValue);
+    setPreferences((current) => ({ ...current, lastSelectedJobId: nextValue }));
+  }
 }
 
 function readStoredConfig() {
   if (typeof window === "undefined") return { ...defaultFieldDeskConfig, themeMode: "dark" };
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const parsed = JSON.parse(safeLocalStorageGet(STORAGE_KEY) || "{}");
     return {
       ...sanitizeConfig(defaultFieldDeskConfig),
       themeMode: "dark",
@@ -540,17 +652,45 @@ function readStoredConfig() {
   }
 }
 
+function readStoredPreferences() {
+  if (typeof window === "undefined") return { ...DEFAULT_PREFERENCES };
+  try {
+    const parsed = JSON.parse(safeLocalStorageGet(PREFERENCES_KEY) || "{}");
+    return {
+      ...DEFAULT_PREFERENCES,
+      ...parsed,
+      activeTab: normalizeTabKey(parsed.activeTab),
+      jobFilterText: String(parsed.jobFilterText || "").slice(0, 120),
+      jobFilterScope: normalizeFilterScope(parsed.jobFilterScope),
+      compactQueue: Boolean(parsed.compactQueue),
+      lastSelectedJobId: normalizeIdentifier(parsed.lastSelectedJobId),
+    };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+}
+
 function formatError(error) {
   return error instanceof Error ? error.message : String(error || "Unknown error");
 }
 
+function formatBridgeCapability(value) {
+  return String(value || "")
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
 function sanitizeConfig(raw) {
+  const themeMode = ["dark", "light"].includes(raw?.themeMode) ? raw.themeMode : "dark";
+  const timeoutMs = clampNumber(raw?.timeoutMs || defaultFieldDeskConfig.timeoutMs, 5000, 120000);
   return {
     ...defaultFieldDeskConfig,
     ...(raw || {}),
     apiBase: normalizeUrl(raw?.apiBase || defaultFieldDeskConfig.apiBase),
     apiToken: String(raw?.apiToken || "").trim(),
     technicianSubject: String(raw?.technicianSubject || "").trim(),
+    timeoutMs,
+    themeMode,
     opsHubUrl: normalizeOptionalUrl(raw?.opsHubUrl),
     routeDeskUrl: normalizeOptionalUrl(raw?.routeDeskUrl),
     partsDeskUrl: normalizeOptionalUrl(raw?.partsDeskUrl),
@@ -572,6 +712,44 @@ function normalizeUrl(value) {
 function normalizeOptionalUrl(value) {
   const normalized = normalizeUrl(value);
   return /^https?:\/\//i.test(normalized) ? normalized : "";
+}
+
+function normalizeTabKey(value) {
+  return TAB_KEYS.has(value) ? value : DEFAULT_PREFERENCES.activeTab;
+}
+
+function normalizeFilterScope(value) {
+  return FILTER_SCOPES.has(value) ? value : DEFAULT_PREFERENCES.jobFilterScope;
+}
+
+function normalizeIdentifier(value) {
+  return String(value || "").trim().slice(0, 80);
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || "").trim());
+}
+
+function clampNumber(value, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return min;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function safeLocalStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return "";
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage is best effort for technician preferences.
+  }
 }
 
 function scoreJob(job) {
@@ -600,6 +778,79 @@ function buildJobSections(items) {
     { label: "Needs follow-up", items: items.filter((item) => (item.queueScore || 0) < 45) },
   ];
   return sections.filter((section) => section.items.length > 0);
+}
+
+function buildQueueSummary(rankedJobs, filteredJobs) {
+  const nextJob = rankedJobs[0] || null;
+  const visibleTop = filteredJobs[0] || null;
+  return {
+    nextJob,
+    visibleTop,
+    hasFilteredView: Boolean(filteredJobs.length && nextJob && visibleTop && String(nextJob.id) !== String(visibleTop.id)),
+    blockers: rankedJobs.filter((job) => (job.queueScore || 0) < 20),
+  };
+}
+
+function getTabBadge(key, counts, offlineCount = 0) {
+  if (key === "today") return counts.next ? String(counts.next) : "";
+  if (key === "queue") return counts.pending ? String(counts.pending) : "";
+  if (key === "job") return counts.parts ? String(counts.parts) : "";
+  if (key === "settings") return offlineCount ? String(offlineCount) : "";
+  return "";
+}
+
+function QueueSummaryPanel({ summary, counts, compactQueue, onCompactQueueChange, onScopeChange }) {
+  return (
+    <section className="panel stack-gap queue-summary-panel">
+      <div className="section-head">
+        <div>
+          <p className="section-kicker">Shift Pulse</p>
+          <h2>Queue posture</h2>
+        </div>
+      </div>
+      <div className="detail-grid">
+        <div className="detail-value">
+          <span>Next stop</span>
+          <strong>{summary.nextJob?.customerName || summary.nextJob?.id || "No loaded stop"}</strong>
+        </div>
+        <div className="detail-value">
+          <span>Visible top</span>
+          <strong>{summary.visibleTop?.id ? `SR-${summary.visibleTop.id}` : "No visible stop"}</strong>
+        </div>
+        <div className="detail-value">
+          <span>Parts blockers</span>
+          <strong>{counts.parts}</strong>
+        </div>
+        <div className="detail-value">
+          <span>Unscheduled</span>
+          <strong>{counts.unscheduled}</strong>
+        </div>
+        <div className="detail-value">
+          <span>Blocked</span>
+          <strong>{summary.blockers.length}</strong>
+        </div>
+      </div>
+      {summary.hasFilteredView && <p className="muted">The current filter is hiding the highest ranked stop.</p>}
+      <div className="action-row">
+        <label className="checkbox-row queue-toggle">
+          <input type="checkbox" checked={compactQueue} onChange={(event) => onCompactQueueChange(event.target.checked)} />
+          <span>Compact queue</span>
+        </label>
+        <button type="button" className="secondary-button" onClick={() => onScopeChange("parts")}>
+          Show parts blockers
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onScopeChange("next")}>
+          Show next stops
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onScopeChange("unscheduled")}>
+          Show unscheduled
+        </button>
+        <button type="button" className="secondary-button" onClick={() => onScopeChange("all")}>
+          Show all
+        </button>
+      </div>
+    </section>
+  );
 }
 
 async function executeQueuedAction(api, item) {

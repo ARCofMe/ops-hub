@@ -15,8 +15,12 @@ export default function BrandBar({ activeJob, counts, onRefresh, refreshDisabled
       </div>
       <div className="chip-list">
         <span className="queue-chip">Queue: {counts.queue}</span>
+        <span className="queue-chip">Visible: {counts.visible}</span>
+        <span className="queue-chip">Next: {counts.next}</span>
         <span className="queue-chip">Done: {counts.done}</span>
         <span className="queue-chip">Pending: {counts.pending}</span>
+        <span className="queue-chip">Parts: {counts.parts}</span>
+        <span className="queue-chip">Unscheduled: {counts.unscheduled}</span>
         <span className="queue-chip">Active: {activeJob?.customerName || "none"}</span>
       </div>
     </header>

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 
@@ -33,7 +35,6 @@ def build_preflight_report(root: Path, *, fielddesk_prefs: Path | None = None) -
             scope="RouteDesk",
             required_keys=("VITE_OPS_HUB_API_BASE", "VITE_OPS_HUB_API_TOKEN", "VITE_DISPATCHER_ID"),
             sibling_keys=("VITE_PARTSAPP_URL",),
-            optional_sibling_keys=("VITE_FIELDDESK_URL",),
         )
     )
     items.extend(
@@ -42,9 +43,9 @@ def build_preflight_report(root: Path, *, fielddesk_prefs: Path | None = None) -
             scope="PartsDesk",
             required_keys=("VITE_OPS_HUB_API_BASE", "VITE_OPS_HUB_API_TOKEN", "VITE_PARTS_USER_ID"),
             sibling_keys=("VITE_ROUTEDESK_URL",),
-            optional_sibling_keys=("VITE_FIELDDESK_URL",),
         )
     )
+    items.extend(_check_ops_hub_docs(repo_root / "ops-hub"))
     items.extend(_check_fielddesk_prefs(fielddesk_prefs))
     return items
 
@@ -90,15 +91,21 @@ def _check_ops_hub(repo: Path) -> list[PreflightItem]:
             detail="required for FieldDesk live workflow APIs",
         )
     )
-    technician_api_host = values.get("OPS_HUB_TECHNICIAN_API_HOST", "")
+    technician_api_host = values.get("OPS_HUB_TECHNICIAN_API_HOST", "").strip()
+    host_missing = _is_placeholder(technician_api_host)
+    host_loopback = technician_api_host in {"127.0.0.1", "localhost", "::1"}
     items.append(
         PreflightItem(
             scope="OpsHub",
-            status="warn" if technician_api_host in {"127.0.0.1", "localhost", "::1"} else "ok",
+            status="fail" if host_missing else "warn" if host_loopback else "ok",
             label="Technician API host",
-            detail="loopback hosts are not tablet-reachable without adb reverse or a tunnel"
-            if technician_api_host in {"127.0.0.1", "localhost", "::1"}
-            else "host is not loopback",
+            detail=(
+                "OPS_HUB_TECHNICIAN_API_HOST is missing"
+                if host_missing
+                else "loopback hosts are not tablet-reachable without adb reverse or a tunnel"
+                if host_loopback
+                else "host is not loopback"
+            ),
         )
     )
     bluefolder_ready = not _is_placeholder(values.get("OPS_HUB_BLUEFOLDER_API_KEY")) and (
@@ -126,13 +133,36 @@ def _check_ops_hub(repo: Path) -> list[PreflightItem]:
     return items
 
 
+def _check_ops_hub_docs(repo: Path) -> list[PreflightItem]:
+    docs = repo / "docs"
+    required_docs = {
+        "milestones.md": ("OpsHub", "Milestone checklist"),
+        "frontend-architecture.md": ("Ecosystem", "Frontend architecture"),
+        "fielddesk-web-wrapper.md": ("FieldDesk", "Web wrapper guide"),
+        "dispatch-guide.md": ("RouteDesk", "Dispatch guide"),
+        "parts-guide.md": ("PartsDesk", "Parts guide"),
+    }
+    items: list[PreflightItem] = []
+    for filename, (scope, label) in required_docs.items():
+        path = docs / filename
+        status = "ok" if path.exists() and path.stat().st_size > 0 else "warn"
+        items.append(
+            PreflightItem(
+                scope=scope,
+                status=status,
+                label=label,
+                detail=f"docs/{filename} {'is present' if status == 'ok' else 'is missing or empty'}",
+            )
+        )
+    return items
+
+
 def _check_web_app(
     repo: Path,
     *,
     scope: str,
     required_keys: tuple[str, ...],
     sibling_keys: tuple[str, ...],
-    optional_sibling_keys: tuple[str, ...],
 ) -> list[PreflightItem]:
     source, values = _load_env(repo, preferred=(".env.local", ".env", ".env.example"))
     items: list[PreflightItem] = [_source_check(scope, source)]
@@ -143,16 +173,47 @@ def _check_web_app(
         items.append(_required(scope, source, values, key, key))
     for key in sibling_keys:
         items.append(_required(scope, source, values, key, key))
-    for key in optional_sibling_keys:
-        items.append(
-            PreflightItem(
-                scope=scope,
-                status="ok" if not _is_placeholder(values.get(key)) else "warn",
-                label=key,
-                detail="optional but recommended for cross-device presentation handoff",
-            )
-        )
+    for key in _url_keys(required_keys + sibling_keys):
+        value = values.get(key)
+        if not _is_placeholder(value):
+            items.append(_url_check(scope, key, value))
     return items
+
+
+def render_json_report(items: Iterable[PreflightItem]) -> str:
+    """Render a machine-readable report without secret values."""
+    rows = list(items)
+    summary = {
+        "fail": sum(1 for item in rows if item.status == "fail"),
+        "warn": sum(1 for item in rows if item.status == "warn"),
+        "manual": sum(1 for item in rows if item.status == "manual"),
+        "ok": sum(1 for item in rows if item.status == "ok"),
+    }
+    return json.dumps(
+        {
+            "summary": summary,
+            "scopes": _scope_summary(rows),
+            "items": [
+                {
+                    "scope": item.scope,
+                    "status": item.status,
+                    "label": item.label,
+                    "detail": item.detail,
+                }
+                for item in rows
+            ],
+        },
+        indent=2,
+        sort_keys=True,
+    )
+
+
+def _scope_summary(items: Iterable[PreflightItem]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for item in items:
+        scope = summary.setdefault(item.scope, {"ok": 0, "warn": 0, "fail": 0, "manual": 0})
+        scope[item.status] = scope.get(item.status, 0) + 1
+    return summary
 
 
 def _check_fielddesk_prefs(path: Path | None) -> list[PreflightItem]:
@@ -176,7 +237,7 @@ def _check_fielddesk_prefs(path: Path | None) -> list[PreflightItem]:
         ]
     values = _parse_android_preferences(path)
     backend_mode = values.get("backend_mode")
-    return [
+    items = [
         PreflightItem(
             scope="FieldDesk",
             status="ok" if backend_mode == "OPS_HUB" else "fail",
@@ -185,9 +246,21 @@ def _check_fielddesk_prefs(path: Path | None) -> list[PreflightItem]:
         ),
         PreflightItem(
             scope="FieldDesk",
-            status="ok" if not _is_placeholder(values.get("ops_hub_base_url")) else "fail",
+            status=(
+                "ok"
+                if not _is_placeholder(values.get("ops_hub_base_url"))
+                and _is_http_url(values.get("ops_hub_base_url"))
+                and not _has_url_credentials(values.get("ops_hub_base_url"))
+                else "fail"
+            ),
             label="OpsHub base URL",
-            detail="ops_hub_base_url is set" if not _is_placeholder(values.get("ops_hub_base_url")) else "ops_hub_base_url is missing",
+            detail=(
+                "ops_hub_base_url is a full http(s) URL without embedded credentials"
+                if not _is_placeholder(values.get("ops_hub_base_url"))
+                and _is_http_url(values.get("ops_hub_base_url"))
+                and not _has_url_credentials(values.get("ops_hub_base_url"))
+                else "ops_hub_base_url is missing, credentialed, or not a full http(s) URL"
+            ),
         ),
         PreflightItem(
             scope="FieldDesk",
@@ -208,6 +281,18 @@ def _check_fielddesk_prefs(path: Path | None) -> list[PreflightItem]:
             detail="RouteDesk and PartsDesk URLs should be set for tablet handoff buttons",
         ),
     ]
+    for key, label in (("route_desk_url", "RouteDesk handoff URL"), ("parts_desk_url", "PartsDesk handoff URL")):
+        value = values.get(key)
+        if not _is_placeholder(value):
+            items.append(
+                PreflightItem(
+                    scope="FieldDesk",
+                    status="ok" if _is_http_url(value) and not _has_url_credentials(value) else "warn",
+                    label=label,
+                    detail=f"{key} {'uses http(s)' if _is_http_url(value) and not _has_url_credentials(value) else 'should be a full http(s) URL without embedded credentials'}",
+                )
+            )
+    return items
 
 
 def _load_env(repo: Path, *, preferred: tuple[str, ...]) -> tuple[Path | None, dict[str, str]]:
@@ -261,6 +346,30 @@ def _required(scope: str, source: Path, values: dict[str, str], key: str, label:
     )
 
 
+def _url_keys(keys: Iterable[str]) -> tuple[str, ...]:
+    return tuple(key for key in keys if key.endswith("_URL") or key.endswith("_BASE"))
+
+
+def _url_check(scope: str, key: str, value: str) -> PreflightItem:
+    valid = _is_http_url(value) and not _has_url_credentials(value)
+    return PreflightItem(
+        scope=scope,
+        status="ok" if valid else "fail",
+        label=f"{key} URL format",
+        detail=f"{key} {'uses http(s)' if valid else 'must be a full http(s) URL without embedded credentials'}",
+    )
+
+
+def _is_http_url(value: str | None) -> bool:
+    parsed = urlparse((value or "").strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _has_url_credentials(value: str | None) -> bool:
+    parsed = urlparse((value or "").strip())
+    return bool(parsed.username or parsed.password)
+
+
 def _is_placeholder(value: str | None) -> bool:
     if value is None:
         return True
@@ -272,9 +381,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd().parent, help="ARCoM workspace root containing app repos.")
     parser.add_argument("--fielddesk-prefs", type=Path, help="Optional exported FieldDesk arcom_prefs.xml from the tablet.")
     parser.add_argument("--strict", action="store_true", help="Treat warnings and manual checks as blockers.")
+    parser.add_argument("--format", choices=("text", "json"), default="text", help="Report output format.")
     args = parser.parse_args(argv)
     items = build_preflight_report(args.root, fielddesk_prefs=args.fielddesk_prefs)
-    print(render_report(items))
+    print(render_json_report(items) if args.format == "json" else render_report(items))
     return 1 if has_blockers(items, strict=args.strict) else 0
 
 

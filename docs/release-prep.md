@@ -72,7 +72,6 @@ Open `Settings` and confirm:
 - dispatcher ID is set
 - default technician is selected
 - PartsDesk launcher is ready
-- FieldDesk launcher is ready
 
 Then confirm:
 
@@ -86,7 +85,6 @@ Open `Settings` and confirm:
 
 - overall status says `Ready for presentation`
 - RouteDesk launcher is ready
-- FieldDesk launcher is ready
 - case restore is enabled
 - filter persistence is enabled
 

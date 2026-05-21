@@ -104,7 +104,58 @@ describe("FieldDesk App", () => {
     fireEvent.change(screen.getByPlaceholderText("Customer, SR, address"), { target: { value: "Jordan" } });
 
     expect(screen.getByText("Jordan Lake")).toBeInTheDocument();
-    expect(screen.getByText("Visible: 1")).toBeInTheDocument();
+    expect(screen.getAllByText("Visible: 1").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(screen.getByText("Filter: all")).toBeInTheDocument();
+    expect(screen.getAllByText("Visible: 2").length).toBeGreaterThan(0);
+  });
+
+  it("restores the last selected job and supports priority queue scopes", async () => {
+    window.localStorage.setItem(
+      "fielddesk-web-config",
+      JSON.stringify({
+        apiBase: "http://127.0.0.1:8787/",
+        apiToken: "token",
+        technicianSubject: "bf:123",
+        themeMode: "dark",
+      })
+    );
+    window.localStorage.setItem(
+      "fielddesk-web-preferences",
+      JSON.stringify({
+        lastSelectedJobId: "101",
+        jobFilterScope: "unscheduled",
+      })
+    );
+
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).endsWith("/tech/me/today")) {
+        return response([
+          { id: "100", customerName: "Pat Smith", address: "1 Main St", appointmentWindow: "8-10", status: "Scheduled" },
+          { id: "101", customerName: "Jordan Lake", address: "2 Broad St", appointmentWindow: "", status: "Scheduled" },
+        ]);
+      }
+      if (String(url).includes("/tech/jobs/101/timeline")) return response([]);
+      if (String(url).includes("/tech/jobs/101/parts")) return response({});
+      if (String(url).includes("/tech/jobs/101/photos")) return response({});
+      if (String(url).includes("/tech/jobs/101")) return response({ id: "101", customerName: "Jordan Lake", status: "Scheduled" });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Jordan Lake").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText("Filter: unscheduled")).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/tech\/jobs\/101$/), expect.anything());
+
+    fireEvent.click(screen.getByRole("button", { name: "Show next stops" }));
+
+    expect(screen.getByText("Filter: next")).toBeInTheDocument();
   });
 
   it("saves settings and pings Ops Hub health", async () => {
